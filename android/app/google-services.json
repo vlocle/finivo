@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "777906354439",
+    "project_id": "finivo-1f04d",
+    "storage_bucket": "finivo-1f04d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:777906354439:android:f4e7abb903d7629b912da2",
+        "android_client_info": {
+          "package_name": "com.example.fingrowth"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "777906354439-mkm5jlcfepqj9pdnk6rthapk8g8mqbf6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.fingrowth",
+            "certificate_hash": "77b6eed2257247c163a6dc1a3f0b8cc7b4c8aa45"
+          }
+        },
+        {
+          "client_id": "777906354439-3fe3ddt5knvcht8mqlehch3hvaq1358m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBBT35yqoN4-qz_R0ZNck9JiWF368ftIqU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "777906354439-3fe3ddt5knvcht8mqlehch3hvaq1358m.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "777906354439-csep7cjkvjc8ch6jbd9an72cnc8kodc7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.fingrowth"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

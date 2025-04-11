@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.FinGrowth" parent="android:Theme.Material.Light.DarkActionBar">
+        <!-- Tùy chỉnh theme của ứng dụng nếu cần -->
+    </style>
+</resources>

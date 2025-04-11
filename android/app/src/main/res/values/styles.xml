@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FinGrowth" parent="android:Theme.Light">
+    </style>
+    <style name="Theme.App.Starting" parent="android:Theme">
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
+</resources>
