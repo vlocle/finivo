@@ -1,3 +1,4 @@
+import 'package:fingrowth/screens/user_guide_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -47,7 +48,19 @@ class UserSettingsScreen extends StatelessWidget {
   }
 
   // Hàm xóa toàn bộ dữ liệu
+  // Hàm xóa toàn bộ dữ liệu của người dùng hiện tại, trừ settingsBox
   Future<void> _clearAllData(BuildContext context) async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    String? userId = appState.userId;
+
+    // Kiểm tra nếu không có userId
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Không tìm thấy thông tin người dùng")),
+      );
+      return;
+    }
+
     bool? confirm = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -67,14 +80,73 @@ class UserSettingsScreen extends StatelessWidget {
     );
 
     if (confirm == true) {
-      var revenueBox = Hive.box('revenueBox');
-      var expenseBox = Hive.box('expenseBox');
-      var transactionBox = Hive.box('transactionBox');
-      await revenueBox.clear();
-      await expenseBox.clear();
-      await transactionBox.clear();
-      Provider.of<AppState>(context, listen: false).notifyListeners();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã làm mới toàn bộ dữ liệu")));
+      try {
+        // Lấy các box
+        var revenueBox = Hive.box('revenueBox');
+        var expenseBox = Hive.box('expenseBox');
+        var transactionBox = Hive.box('transactionBox');
+        var productBox = Hive.box('productBox');
+
+        // Xóa dữ liệu trong revenueBox
+        List<String> revenueKeysToDelete = revenueBox.keys
+            .where((key) => key.toString().startsWith('${userId}_'))
+            .map((key) => key.toString())
+            .toList();
+        for (String key in revenueKeysToDelete) {
+          await revenueBox.delete(key);
+        }
+
+        // Xóa dữ liệu trong expenseBox
+        List<String> expenseKeysToDelete = expenseBox.keys
+            .where((key) => key.toString().startsWith('${userId}_'))
+            .map((key) => key.toString())
+            .toList();
+        for (String key in expenseKeysToDelete) {
+          await expenseBox.delete(key);
+        }
+
+        // Xóa dữ liệu trong transactionBox
+        List<String> transactionKeysToDelete = transactionBox.keys
+            .where((key) => key.toString().startsWith('${userId}_'))
+            .map((key) => key.toString())
+            .toList();
+        for (String key in transactionKeysToDelete) {
+          await transactionBox.delete(key);
+        }
+
+        // Xóa dữ liệu trong productBox
+        List<String> productKeysToDelete = productBox.keys
+            .where((key) => key.toString().startsWith('${userId}_'))
+            .map((key) => key.toString())
+            .toList();
+        for (String key in productKeysToDelete) {
+          await productBox.delete(key);
+        }
+
+        // Đặt lại trạng thái trong AppState, trừ các cài đặt
+        appState.mainRevenue = 0.0;
+        appState.secondaryRevenue = 0.0;
+        appState.otherRevenue = 0.0;
+        appState.fixedExpense = 0.0;
+        appState.variableExpense = 0.0;
+        appState.mainRevenueTransactions.value = [];
+        appState.secondaryRevenueTransactions.value = [];
+        appState.otherRevenueTransactions.value = [];
+        appState.fixedExpenseList.value = [];
+        appState.variableExpenseList.value = [];
+
+        // Thông báo cập nhật giao diện
+        appState.notifyListeners();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Đã làm mới toàn bộ dữ liệu của người dùng")),
+        );
+      } catch (e) {
+        print("Lỗi khi xóa dữ liệu: $e");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Lỗi khi xóa dữ liệu: $e")),
+        );
+      }
     }
   }
 
@@ -192,8 +264,11 @@ class UserSettingsScreen extends StatelessWidget {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Chức năng đang phát triển")));
                     }),
                     const Divider(height: 1),
-                    _buildListTile(context, "Điều khoản sử dụng", Icons.description, () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Chức năng đang phát triển")));
+                    _buildListTile(context, "Hướng dẫn sử dụng", Icons.description, () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => UserGuideScreen()),
+                      );
                     }),
                   ],
                 ),

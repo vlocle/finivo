@@ -37,16 +37,15 @@ class AppState extends ChangeNotifier {
   // Tải cài đặt từ Hive
   void _loadSettings() {
     var settingsBox = Hive.box('settingsBox');
-    _notificationsEnabled = settingsBox.get('notificationsEnabled', defaultValue: true);
-    _isDarkMode = settingsBox.get('isDarkMode', defaultValue: false);
-    // Không gọi notifyListeners() ở đây để tránh cập nhật liên tục
+    _notificationsEnabled = settingsBox.get(getKey('notificationsEnabled'), defaultValue: true);
+    _isDarkMode = settingsBox.get(getKey('isDarkMode'), defaultValue: false);
   }
 
   // Lưu cài đặt vào Hive
   void _saveSettings() {
     var settingsBox = Hive.box('settingsBox');
-    settingsBox.put('notificationsEnabled', _notificationsEnabled);
-    settingsBox.put('isDarkMode', _isDarkMode);
+    settingsBox.put(getKey('notificationsEnabled'), _notificationsEnabled);
+    settingsBox.put(getKey('isDarkMode'), _isDarkMode);
   }
 
   // Các hàm cho cài đặt chung
