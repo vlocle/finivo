@@ -19,15 +19,15 @@
                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="SplashLogo" translatesAutoresizingMaskIntoConstraints="NO" id="zJ7-5k-5gK">
                                 <rect key="frame" x="107" y="348" width="200" height="200"/>
                                 <constraints>
-                                    <constraint firstAttribute="width" constant="200" id="5eG-0k-5vM"/>
-                                    <constraint firstAttribute="height" constant="200" id="K5e-5k-5vM"/>
+                                    <constraint firstAttribute="width" constant="200" id="width-constraint"/>
+                                    <constraint firstAttribute="height" constant="200" id="height-constraint"/>
                                 </constraints>
                             </imageView>
                         </subviews>
                         <color key="backgroundColor" red="0.09803921569" green="0.462745098" blue="0.8235294118" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="zJ7-5k-5gK" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="5eG-0k-5vM"/>
-                            <constraint firstItem="zJ7-5k-5gK" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="K5e-5k-5vM"/>
+                            <constraint firstItem="zJ7-5k-5gK" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="centerX-constraint"/>
+                            <constraint firstItem="zJ7-5k-5gK" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="centerY-constraint"/>
                         </constraints>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                     </view>
