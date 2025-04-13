@@ -570,104 +570,104 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
     return FutureBuilder<List<Map<String, double>>>(
       future: appState.getDailyExpensesForRange(range),
       builder: (context, snapshot) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
-    return const CircularProgressIndicator();
-    }
-    if (snapshot.hasData) {
-    final dailyData = snapshot.data!;
-    double maxExpense = dailyData.isNotEmpty
-    ? dailyData.map((e) => e['totalExpense'] ?? 0).reduce((a, b) => a > b ? a : b)
-        : 1000000;
-    double horizontalInterval = (maxExpense / 5).roundToDouble();
-    horizontalInterval = horizontalInterval > 0 ? horizontalInterval : 100000;
-    return Container(
-    decoration: BoxDecoration(
-    gradient: LinearGradient(
-    colors: isDarkMode
-    ? [Colors.grey[900]!, Colors.grey[850]!]
-        : [Colors.grey.withOpacity(0.1), Colors.white],
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    ),
-    ),
-    child: LineChart(
-    LineChartData(
-    lineBarsData: [
-    _buildLineData(dailyData, 'fixedExpense', Colors.blue, dashArray: [5, 5]),
-    _buildLineData(dailyData, 'variableExpense', Colors.orange, dashArray: [5, 5]),
-    _buildLineData(dailyData, 'totalExpense', Colors.red),
-    ],
-    titlesData: FlTitlesData(
-    bottomTitles: AxisTitles(
-    sideTitles: SideTitles(
-    showTitles: true,
-    reservedSize: 40,
-    getTitlesWidget: (value, _) {
-    int days = range.end.difference(range.start).inDays + 1;
-    if (value.toInt() >= 0 && value.toInt() < days) {
-    DateTime date = range.start.add(Duration(days: value.toInt()));
-    return Transform.rotate(
-    angle: -45 * 3.14159 / 180,
-    child: Text(
-    DateFormat('dd/MM').format(date),
-    style: TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.bold,
-    color: isDarkMode ? Colors.white70 : Colors.black87,
-    ),
-    ),
-    );
-    }
-    return const Text('');
-    },
-    ),
-    ),
-    leftTitles: AxisTitles(
-    sideTitles: SideTitles(
-    showTitles: true,
-    reservedSize: 50,
-    getTitlesWidget: (value, _) => Text(
-    formatNumberCompact(value),
-    style: TextStyle(fontSize: 14, color: isDarkMode ? Colors.white70 : Colors.black87),
-    ),
-    ),
-    ),
-    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-    ),
-    gridData: FlGridData(
-    show: true,
-    drawVerticalLine: false,
-    horizontalInterval: horizontalInterval,
-    getDrawingHorizontalLine: (value) => FlLine(
-    color: isDarkMode ? Colors.white.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
-    strokeWidth: 1,
-    dashArray: [5, 5],
-    ),
-    ),
-    borderData: FlBorderData(show: false),
-    lineTouchData: LineTouchData(
-    touchTooltipData: LineTouchTooltipData(
-    tooltipBgColor: isDarkMode ? Colors.grey[800]! : Colors.white,
-    tooltipBorder: BorderSide(color: isDarkMode ? Colors.grey[600]! : Colors.grey, width: 1),
-    tooltipRoundedRadius: 8,
-    tooltipPadding: const EdgeInsets.all(8),
-    getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
-    String label = spot.barIndex == 0 ? 'Cố Định' : spot.barIndex == 1 ? 'Biến Đổi' : 'Tổng';
-    Color color = spot.barIndex == 0 ? Colors.blue : spot.barIndex == 1 ? Colors.orange : Colors.red;
-    return LineTooltipItem(
-    '$label: ${currencyFormat.format(spot.y)}',
-    TextStyle(color: color, fontWeight: FontWeight.bold),
-    );
-    }).toList(),
-    ),
-    ),
-    ),
-    ),
-    );
-    }
-    return const Text('Không có dữ liệu');
-    },
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const CircularProgressIndicator();
+        }
+        if (snapshot.hasData) {
+          final dailyData = snapshot.data!;
+          double maxExpense = dailyData.isNotEmpty
+              ? dailyData.map((e) => e['totalExpense'] ?? 0).reduce((a, b) => a > b ? a : b)
+              : 1000000;
+          double horizontalInterval = (maxExpense / 5).roundToDouble();
+          horizontalInterval = horizontalInterval > 0 ? horizontalInterval : 100000;
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDarkMode
+                    ? [Colors.grey[900]!, Colors.grey[850]!]
+                    : [Colors.grey.withOpacity(0.1), Colors.white],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+            child: LineChart(
+              LineChartData(
+                lineBarsData: [
+                  _buildLineData(dailyData, 'fixedExpense', Colors.blue, dashArray: [5, 5]),
+                  _buildLineData(dailyData, 'variableExpense', Colors.orange, dashArray: [5, 5]),
+                  _buildLineData(dailyData, 'totalExpense', Colors.red),
+                ],
+                titlesData: FlTitlesData(
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 40,
+                      getTitlesWidget: (value, _) {
+                        int days = range.end.difference(range.start).inDays + 1;
+                        if (value.toInt() >= 0 && value.toInt() < days) {
+                          DateTime date = range.start.add(Duration(days: value.toInt()));
+                          return Transform.rotate(
+                            angle: -45 * 3.14159 / 180,
+                            child: Text(
+                              DateFormat('dd/MM').format(date),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: isDarkMode ? Colors.white70 : Colors.black87,
+                              ),
+                            ),
+                          );
+                        }
+                        return const Text('');
+                      },
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 50,
+                      getTitlesWidget: (value, _) => Text(
+                        formatNumberCompact(value),
+                        style: TextStyle(fontSize: 14, color: isDarkMode ? Colors.white70 : Colors.black87),
+                      ),
+                    ),
+                  ),
+                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: horizontalInterval,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color: isDarkMode ? Colors.white.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
+                    strokeWidth: 1,
+                    dashArray: [5, 5],
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    tooltipBgColor: isDarkMode ? Colors.grey[800]! : Colors.white,
+                    tooltipBorder: BorderSide(color: isDarkMode ? Colors.grey[600]! : Colors.grey, width: 1),
+                    tooltipRoundedRadius: 8,
+                    tooltipPadding: const EdgeInsets.all(8),
+                    getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
+                      String label = spot.barIndex == 0 ? 'Cố Định' : spot.barIndex == 1 ? 'Biến Đổi' : 'Tổng';
+                      Color color = spot.barIndex == 0 ? Colors.blue : spot.barIndex == 1 ? Colors.orange : Colors.red;
+                      return LineTooltipItem(
+                        '$label: ${currencyFormat.format(spot.y)}',
+                        TextStyle(color: color, fontWeight: FontWeight.bold),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return const Text('Không có dữ liệu');
+      },
     );
   }
 

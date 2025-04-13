@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
@@ -41,25 +42,72 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
     super.dispose();
   }
 
+
+  // Hàm saveProducts là để lưu dữ liệu vào trong Hive
   Future<void> saveProducts(AppState appState) async {
-    var box = await Hive.openBox('productBox');
-    String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
-    String key = appState.getKey(baseKey);
-    await box.put(key, jsonEncode(productList));
-    appState.notifyListeners(); // Thông báo cập nhật
+    try {
+      if (appState.userId == null) {
+        throw Exception('User ID không tồn tại');
+      }
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
+      String key = appState.getKey(baseKey);
+
+      await firestore
+          .collection('users')
+          .doc(appState.userId)
+          .collection('products')
+          .doc(key)
+          .set({
+        'products': productList,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      appState.notifyListeners();
+      print('Lưu sản phẩm thành công cho danh mục: $selectedCategory');
+    } catch (e) {
+      print('Lỗi khi lưu vào Firestore: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi khi lưu dữ liệu: $e')),
+      );
+    }
   }
 
+  // Hàm loadProducts này là để tải dữ liệu từ Hive để hiện lại danh sách sản phẩm trong product_service_screen
   Future<void> loadProducts() async {
     final appState = Provider.of<AppState>(context, listen: false);
-    var box = await Hive.openBox('productBox');
-    String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
-    String key = appState.getKey(baseKey);
-    var storedData = box.get(key);
-    setState(() {
-      productList = storedData != null && storedData is String
-          ? List<Map<String, dynamic>>.from(jsonDecode(storedData))
-          : [];
-    });
+    try {
+      if (appState.userId == null) {
+        print('User ID không tồn tại');
+        setState(() {
+          productList = [];
+        });
+        return;
+      }
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
+      String key = appState.getKey(baseKey);
+
+      DocumentSnapshot doc = await firestore
+          .collection('users')
+          .doc(appState.userId)
+          .collection('products')
+          .doc(key)
+          .get();
+
+      setState(() {
+        if (doc.exists && doc['products'] != null) {
+          productList = List<Map<String, dynamic>>.from(doc['products'] ?? []);
+        } else {
+          productList = [];
+        }
+      });
+    } catch (e) {
+      print('Lỗi khi tải từ Firestore: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi khi tải dữ liệu: $e')),
+      );
+    }
   }
 
   void addProduct(AppState appState) {

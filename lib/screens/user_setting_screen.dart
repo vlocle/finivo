@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fingrowth/screens/user_guide_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -48,12 +49,10 @@ class UserSettingsScreen extends StatelessWidget {
   }
 
   // Hàm xóa toàn bộ dữ liệu
-  // Hàm xóa toàn bộ dữ liệu của người dùng hiện tại, trừ settingsBox
   Future<void> _clearAllData(BuildContext context) async {
     final appState = Provider.of<AppState>(context, listen: false);
     String? userId = appState.userId;
 
-    // Kiểm tra nếu không có userId
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Không tìm thấy thông tin người dùng")),
@@ -81,49 +80,41 @@ class UserSettingsScreen extends StatelessWidget {
 
     if (confirm == true) {
       try {
-        // Lấy các box
-        var revenueBox = Hive.box('revenueBox');
-        var expenseBox = Hive.box('expenseBox');
-        var transactionBox = Hive.box('transactionBox');
-        var productBox = Hive.box('productBox');
+        final firestore = FirebaseFirestore.instance;
+        final batch = firestore.batch();
 
-        // Xóa dữ liệu trong revenueBox
-        List<String> revenueKeysToDelete = revenueBox.keys
-            .where((key) => key.toString().startsWith('${userId}_'))
-            .map((key) => key.toString())
-            .toList();
-        for (String key in revenueKeysToDelete) {
-          await revenueBox.delete(key);
+        // Xóa dữ liệu Firestore
+        final collections = ['expenses', 'revenue', 'transactions', 'products'];
+        for (var collection in collections) {
+          var snapshot = await firestore
+              .collection('users')
+              .doc(userId)
+              .collection(collection)
+              .get();
+          for (var doc in snapshot.docs) {
+            batch.delete(doc.reference);
+          }
         }
 
-        // Xóa dữ liệu trong expenseBox
-        List<String> expenseKeysToDelete = expenseBox.keys
-            .where((key) => key.toString().startsWith('${userId}_'))
-            .map((key) => key.toString())
-            .toList();
-        for (String key in expenseKeysToDelete) {
-          await expenseBox.delete(key);
+        // Xóa các subcollections của expenses (fixed, variable, fixedList, v.v.)
+        final expenseSubcollections = ['fixed/daily', 'variable/daily', 'fixedList', 'variableList/monthly', 'monthlyFixed/monthly'];
+        for (var sub in expenseSubcollections) {
+          var parts = sub.split('/');
+          var snapshot = await firestore
+              .collection('users')
+              .doc(userId)
+              .collection('expenses')
+              .doc(parts[0])
+              .collection(parts[1])
+              .get();
+          for (var doc in snapshot.docs) {
+            batch.delete(doc.reference);
+          }
         }
 
-        // Xóa dữ liệu trong transactionBox
-        List<String> transactionKeysToDelete = transactionBox.keys
-            .where((key) => key.toString().startsWith('${userId}_'))
-            .map((key) => key.toString())
-            .toList();
-        for (String key in transactionKeysToDelete) {
-          await transactionBox.delete(key);
-        }
+        await batch.commit();
 
-        // Xóa dữ liệu trong productBox
-        List<String> productKeysToDelete = productBox.keys
-            .where((key) => key.toString().startsWith('${userId}_'))
-            .map((key) => key.toString())
-            .toList();
-        for (String key in productKeysToDelete) {
-          await productBox.delete(key);
-        }
-
-        // Đặt lại trạng thái trong AppState, trừ các cài đặt
+        // Đặt lại trạng thái AppState
         appState.mainRevenue = 0.0;
         appState.secondaryRevenue = 0.0;
         appState.otherRevenue = 0.0;
@@ -135,9 +126,7 @@ class UserSettingsScreen extends StatelessWidget {
         appState.fixedExpenseList.value = [];
         appState.variableExpenseList.value = [];
 
-        // Thông báo cập nhật giao diện
         appState.notifyListeners();
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Đã làm mới toàn bộ dữ liệu của người dùng")),
         );
@@ -171,8 +160,64 @@ class UserSettingsScreen extends StatelessWidget {
     );
 
     if (confirm == true) {
-      await _signOut(context); // Gọi _signOut với context
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tài khoản đã được xóa")));
+      try {
+        final appState = Provider.of<AppState>(context, listen: false);
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) throw Exception("Không tìm thấy tài khoản");
+
+        // Thử xóa tài khoản
+        try {
+          await user.delete();
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'requires-recent-login') {
+            // Yêu cầu đăng nhập lại
+            final GoogleSignIn googleSignIn = GoogleSignIn();
+            final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+            if (googleUser == null) {
+              throw Exception("Đăng nhập lại bị hủy");
+            }
+
+            final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+            final credential = GoogleAuthProvider.credential(
+              accessToken: googleAuth.accessToken,
+              idToken: googleAuth.idToken,
+            );
+
+            // Xác thực lại
+            await FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(credential);
+
+            // Thử xóa lại
+            await FirebaseAuth.instance.currentUser!.delete();
+          } else {
+            rethrow; // Ném lại các lỗi khác
+          }
+        }
+
+        // Xóa dữ liệu Firestore
+        await _clearAllData(context);
+
+        // Đăng xuất Google Sign-In
+        await GoogleSignIn().signOut();
+
+        // Đặt lại AppState
+        appState.logout();
+
+        // Điều hướng về LoginScreen
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => LoginScreen()),
+              (route) => false,
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Tài khoản đã được xóa thành công")),
+        );
+      } catch (e) {
+        print("Lỗi khi xóa tài khoản: $e");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Lỗi khi xóa tài khoản: $e")),
+        );
+      }
     }
   }
 

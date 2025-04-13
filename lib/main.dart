@@ -14,10 +14,10 @@ void main() async {
     await Firebase.initializeApp();
     await Hive.initFlutter();
     await Future.wait([
-      Hive.openBox('productBox'),
-      Hive.openBox('expenseBox'),
-      Hive.openBox('transactionBox'),
-      Hive.openBox('revenueBox'),
+      //Hive.openBox('productBox'),
+      //Hive.openBox('expenseBox'),
+      //Hive.openBox('transactionBox'),
+      //Hive.openBox('revenueBox'),
       Hive.openBox('settingsBox'),
     ]);
     await initializeDateFormatting('vi', null);

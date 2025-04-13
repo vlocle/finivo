@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -213,19 +214,38 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen> with 
   }
 
   void saveUpdatedList(AppState appState) async {
-    var box = Hive.box('expenseBox');
-    String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
-    String key = appState.getKey('variableExpenseList_$monthKey');
+    try {
+      if (appState.userId == null) throw Exception('User ID không tồn tại');
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
+      String key = appState.getKey('variableExpenseList_$monthKey');
 
-    List<Map<String, dynamic>> updatedList = controllers.value
-        .where((controller) => controller.text.isNotEmpty)
-        .map((controller) => {'name': controller.text, 'amount': 0.0})
-        .toList();
+      List<Map<String, dynamic>> updatedList = controllers.value
+          .where((controller) => controller.text.isNotEmpty)
+          .map((controller) => {'name': controller.text, 'amount': 0.0})
+          .toList();
 
-    List<String> jsonList = updatedList.map((item) => jsonEncode(item)).toList();
-    await box.put(key, jsonList);
+      await firestore
+          .collection('users')
+          .doc(appState.userId)
+          .collection('expenses')
+          .doc('variableList')
+          .collection('monthly')
+          .doc(key)
+          .set({
+        'products': updatedList,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã lưu danh sách chi phí biến đổi cho tháng")));
-    Navigator.pop(context, updatedList);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Đã lưu danh sách chi phí biến đổi cho tháng")),
+      );
+      Navigator.pop(context, updatedList);
+    } catch (e) {
+      print("Error saving variable expense list: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Lỗi khi lưu dữ liệu: $e")),
+      );
+    }
   }
 }
