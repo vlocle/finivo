@@ -513,11 +513,9 @@ class AppState extends ChangeNotifier {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       Map<String, double> breakdown = {};
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
         for (String type in ['fixed', 'variable']) {
           DocumentSnapshot doc = await firestore
               .collection('users')
@@ -527,7 +525,6 @@ class AppState extends ChangeNotifier {
               .collection('daily')
               .doc(getKey(type == 'fixed' ? 'fixedExpenseList_$dateKey' : 'variableTransactionHistory_$dateKey'))
               .get();
-
           if (doc.exists && doc['products'] != null) {
             List<dynamic> transactions = doc['products'];
             for (var item in transactions) {
@@ -538,8 +535,21 @@ class AppState extends ChangeNotifier {
           }
         }
       }
-
-      return breakdown;
+      // Nhóm các khoản chi phí dưới 5% vào "Khác"
+      Map<String, double> finalBreakdown = {};
+      double otherTotal = 0.0;
+      double total = breakdown.values.fold(0.0, (sum, value) => sum + value);
+      breakdown.forEach((name, amount) {
+        if (total > 0 && (amount / total) < 0.05) { // Nhỏ hơn 5% tổng chi phí
+          otherTotal += amount;
+        } else {
+          finalBreakdown[name] = amount;
+        }
+      });
+      if (otherTotal > 0) {
+        finalBreakdown['Khác'] = otherTotal;
+      }
+      return finalBreakdown;
     } catch (e) {
       print('Lỗi khi lấy phân bổ chi phí: $e');
       return {};

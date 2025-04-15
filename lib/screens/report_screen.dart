@@ -518,7 +518,18 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                             const SizedBox(height: 12),
                             SizedBox(
                               height: 250,
-                              child: _buildPieChart({'Cố Định': fixedExpense, 'Biến Đổi': variableExpense}),
+                              child: FutureBuilder<Map<String, double>>(
+                                future: appState.getExpenseBreakdown(selectedDateRange!),
+                                builder: (context, breakdownSnapshot) {
+                                  if (breakdownSnapshot.connectionState == ConnectionState.waiting) {
+                                    return const Center(child: CircularProgressIndicator());
+                                  }
+                                  if (breakdownSnapshot.hasData && breakdownSnapshot.data!.isNotEmpty) {
+                                    return _buildPieChart(breakdownSnapshot.data!);
+                                  }
+                                  return const Center(child: Text('Không có dữ liệu chi tiết'));
+                                },
+                              ),
                             ),
                           ],
                         ),
@@ -544,7 +555,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                               ),
                             ),
                             const SizedBox(height: 12),
-                            _buildLegend(),
+                            _buildExpenseLegend(),
                             const SizedBox(height: 12),
                             SizedBox(
                               height: MediaQuery.of(context).size.height * 0.4,
@@ -732,7 +743,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                               ),
                             ),
                             const SizedBox(height: 12),
-                            _buildLegend(),
+                            _buildRevenueLegend(),
                             const SizedBox(height: 12),
                             SizedBox(
                               height: MediaQuery.of(context).size.height * 0.4,
@@ -1076,24 +1087,41 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
 
   Widget _buildPieChart(Map<String, double> data) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    double total = data.values.fold(0.0, (sum, value) => sum + value);
     return PieChart(
       PieChartData(
         sections: data.entries.map((entry) {
+          double percentage = total > 0 ? (entry.value / total) * 100 : 0.0;
           return PieChartSectionData(
             value: entry.value,
-            title:
-            '${entry.key}\n${((entry.value / data.values.fold(0.0, (sum, v) => sum + v)) * 100).toStringAsFixed(1)}%',
+            title: '${entry.key}\n${percentage.toStringAsFixed(1)}%',
             color: _getRandomColor(entry.key).withOpacity(0.8),
             radius: 100,
             titleStyle: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
-              color: isDarkMode ? Colors.white : Colors.white,
+              color: isDarkMode ? Colors.white : Colors.black87,
             ),
+            titlePositionPercentageOffset: 0.55,
           );
         }).toList(),
         sectionsSpace: 2,
         centerSpaceRadius: 40,
+        pieTouchData: PieTouchData(
+          touchCallback: (FlTouchEvent event, pieTouchResponse) {
+            if (!event.isInterestedForInteractions || pieTouchResponse == null || pieTouchResponse.touchedSection == null) {
+              return;
+            }
+            int touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+            String touchedCategory = data.keys.elementAt(touchedIndex);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$touchedCategory: ${currencyFormat.format(data[touchedCategory]!)}'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1129,6 +1157,32 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
           label,
           style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white70 : Colors.black87),
         ),
+      ],
+    );
+  }
+
+  Widget _buildExpenseLegend() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildLegendItem('Cố Định', Colors.blue),
+        const SizedBox(width: 16),
+        _buildLegendItem('Biến Đổi', Colors.orange),
+        const SizedBox(width: 16),
+        _buildLegendItem('Tổng', Colors.red),
+      ],
+    );
+  }
+
+  Widget _buildRevenueLegend() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildLegendItem('Doanh Thu Chính', Colors.green),
+        const SizedBox(width: 16),
+        _buildLegendItem('Doanh Thu Phụ', Colors.blue),
       ],
     );
   }
