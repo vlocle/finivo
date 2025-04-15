@@ -17,7 +17,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
   final NumberFormat currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'VND');
   List<Map<String, dynamic>> productList = [];
   String selectedCategory = "Sản phẩm/Dịch vụ chính";
-
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
@@ -42,8 +41,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
     super.dispose();
   }
 
-
-  // Hàm saveProducts là để lưu dữ liệu vào trong Hive
   Future<void> saveProducts(AppState appState) async {
     try {
       if (appState.userId == null) {
@@ -52,7 +49,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
       String key = appState.getKey(baseKey);
-
       await firestore
           .collection('users')
           .doc(appState.userId)
@@ -62,7 +58,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
         'products': productList,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-
       appState.notifyListeners();
       print('Lưu sản phẩm thành công cho danh mục: $selectedCategory');
     } catch (e) {
@@ -73,7 +68,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
     }
   }
 
-  // Hàm loadProducts này là để tải dữ liệu từ Hive để hiện lại danh sách sản phẩm trong product_service_screen
   Future<void> loadProducts() async {
     final appState = Provider.of<AppState>(context, listen: false);
     try {
@@ -87,14 +81,12 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
       String key = appState.getKey(baseKey);
-
       DocumentSnapshot doc = await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('products')
           .doc(key)
           .get();
-
       setState(() {
         if (doc.exists && doc['products'] != null) {
           productList = List<Map<String, dynamic>>.from(doc['products'] ?? []);
@@ -149,9 +141,20 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: "Tên sản phẩm/dịch vụ")),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: "Tên sản phẩm/dịch vụ"),
+              maxLength: 50, // Giới hạn số ký tự
+              maxLines: 1,
+            ),
             const SizedBox(height: 10),
-            TextField(controller: priceController, decoration: const InputDecoration(labelText: "Giá tiền"), keyboardType: TextInputType.number),
+            TextField(
+              controller: priceController,
+              decoration: const InputDecoration(labelText: "Giá tiền"),
+              keyboardType: TextInputType.number,
+              maxLength: 15, // Giới hạn số ký tự
+              maxLines: 1,
+            ),
           ],
         ),
         actions: [
@@ -189,10 +192,15 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Scaffold(
       body: Stack(
         children: [
-          Container(height: MediaQuery.of(context).size.height * 0.25, color: const Color(0xFF1976D2).withOpacity(0.9)),
+          Container(
+            height: MediaQuery.of(context).size.height * 0.25,
+            color: const Color(0xFF1976D2).withOpacity(0.9),
+          ),
           SafeArea(
             child: Column(
               children: [
@@ -201,30 +209,43 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.pop(context)),
-                          const SizedBox(width: 12),
-                          SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment<String>(value: "Sản phẩm/Dịch vụ chính", label: Text("Chính")),
-                              ButtonSegment<String>(value: "Sản phẩm/Dịch vụ phụ", label: Text("Phụ")),
-                            ],
-                            selected: {selectedCategory},
-                            onSelectionChanged: (newSelection) => setState(() {
-                              selectedCategory = newSelection.first;
-                              loadProducts();
-                            }),
-                            style: SegmentedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              selectedForegroundColor: Colors.white,
-                              selectedBackgroundColor: const Color(0xFF42A5F5),
-                              backgroundColor: Colors.transparent,
-                              side: const BorderSide(color: Colors.white),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      Flexible(
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back, color: Colors.white),
+                              onPressed: () => Navigator.pop(context),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 12),
+                            Flexible(
+                              child: SegmentedButton<String>(
+                                segments: const [
+                                  ButtonSegment<String>(
+                                    value: "Sản phẩm/Dịch vụ chính",
+                                    label: Text("Chính", overflow: TextOverflow.ellipsis),
+                                  ),
+                                  ButtonSegment<String>(
+                                    value: "Sản phẩm/Dịch vụ phụ",
+                                    label: Text("Phụ", overflow: TextOverflow.ellipsis),
+                                  ),
+                                ],
+                                selected: {selectedCategory},
+                                onSelectionChanged: (newSelection) => setState(() {
+                                  selectedCategory = newSelection.first;
+                                  loadProducts();
+                                }),
+                                style: SegmentedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  selectedForegroundColor: Colors.white,
+                                  selectedBackgroundColor: const Color(0xFF42A5F5),
+                                  backgroundColor: Colors.transparent,
+                                  side: const BorderSide(color: Colors.white),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -244,21 +265,46 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                TextField(controller: nameController, decoration: const InputDecoration(labelText: "Tên sản phẩm/dịch vụ", border: OutlineInputBorder())),
+                                TextField(
+                                  controller: nameController,
+                                  decoration: const InputDecoration(
+                                    labelText: "Tên sản phẩm/dịch vụ",
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  maxLines: 1,
+                                  maxLength: 50, // Giới hạn số ký tự để tránh tràn
+                                ),
                                 const SizedBox(height: 10),
-                                TextField(controller: priceController, decoration: const InputDecoration(labelText: "Giá tiền", border: OutlineInputBorder()), keyboardType: TextInputType.number),
+                                TextField(
+                                  controller: priceController,
+                                  decoration: const InputDecoration(
+                                    labelText: "Giá tiền",
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  maxLines: 1,
+                                  maxLength: 15, // Giới hạn số ký tự cho giá tiền
+                                ),
                                 const SizedBox(height: 20),
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF42A5F5),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    minimumSize: const Size(double.infinity, 50),
+                                    minimumSize: Size(screenWidth - 32, 50),
                                   ),
                                   onPressed: () => addProduct(appState),
-                                  child: const Text("Lưu", style: TextStyle(color: Colors.white, fontSize: 16)),
+                                  child: const Text(
+                                    "Lưu",
+                                    style: TextStyle(color: Colors.white, fontSize: 16),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                                 const SizedBox(height: 20),
-                                const Text("Danh sách sản phẩm/dịch vụ", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                const Text(
+                                  "Danh sách sản phẩm/dịch vụ",
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 const SizedBox(height: 10),
                                 Expanded(
                                   child: ListView.builder(
@@ -267,13 +313,29 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
                                       final product = productList[index];
                                       return Card(
                                         child: ListTile(
-                                          title: Text(product["name"], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                          subtitle: Text(currencyFormat.format(product["price"])),
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                          title: Text(
+                                            product["name"],
+                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
+                                          subtitle: Text(
+                                            currencyFormat.format(product["price"]),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
                                           trailing: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              IconButton(icon: const Icon(Icons.edit, color: Colors.blue, size: 18), onPressed: () => editProduct(appState, index)),
-                                              IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 18), onPressed: () => deleteProduct(appState, index)),
+                                              IconButton(
+                                                icon: const Icon(Icons.edit, color: Colors.blue, size: 18),
+                                                onPressed: () => editProduct(appState, index),
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                                                onPressed: () => deleteProduct(appState, index),
+                                              ),
                                             ],
                                           ),
                                         ),

@@ -16,7 +16,6 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen> with Si
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
-
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
@@ -44,7 +43,6 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen> with Si
     double amount = double.tryParse(_amountController.text) ?? 0.0;
     String description = _descriptionController.text.trim();
     if (amount > 0 && description.isNotEmpty) {
-      // Tạo danh sách mới để kích hoạt ValueNotifier
       appState.otherRevenueTransactions.value = [
         ...appState.otherRevenueTransactions.value,
         {'amount': amount, 'description': description}
@@ -65,8 +63,19 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen> with Si
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: _amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Số tiền')),
-            TextField(controller: _descriptionController, decoration: const InputDecoration(labelText: 'Mô tả')),
+            TextField(
+              controller: _amountController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Số tiền'),
+              maxLines: 1,
+              maxLength: 15, // Giới hạn số ký tự
+            ),
+            TextField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(labelText: 'Mô tả'),
+              maxLines: 2,
+              maxLength: 100, // Giới hạn mô tả
+            ),
           ],
         ),
         actions: [
@@ -102,10 +111,15 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen> with Si
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Scaffold(
       body: Stack(
         children: [
-          Container(height: MediaQuery.of(context).size.height * 0.25, color: const Color(0xFF1976D2).withOpacity(0.9)),
+          Container(
+            height: MediaQuery.of(context).size.height * 0.25,
+            color: const Color(0xFF1976D2).withOpacity(0.9),
+          ),
           SafeArea(
             child: Column(
               children: [
@@ -113,9 +127,19 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen> with Si
                   padding: const EdgeInsets.all(16.0),
                   child: Row(
                     children: [
-                      IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.pop(context)),
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
                       const SizedBox(width: 12),
-                      const Text("Chỉnh sửa Doanh thu khác", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white)),
+                      Expanded(
+                        child: Text(
+                          "Chỉnh sửa Doanh thu khác",
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -137,22 +161,36 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen> with Si
                                 TextField(
                                   controller: _amountController,
                                   keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(labelText: 'Số tiền', border: OutlineInputBorder()),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Số tiền',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  maxLines: 1,
+                                  maxLength: 15, // Giới hạn số ký tự
                                 ),
                                 const SizedBox(height: 10),
                                 TextField(
                                   controller: _descriptionController,
-                                  decoration: const InputDecoration(labelText: 'Mô tả', border: OutlineInputBorder()),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Mô tả',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  maxLines: 2,
+                                  maxLength: 100, // Giới hạn mô tả
                                 ),
                                 const SizedBox(height: 20),
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF42A5F5),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    minimumSize: const Size(double.infinity, 50),
+                                    minimumSize: Size(screenWidth - 32, 50), // Full-width trừ padding
                                   ),
                                   onPressed: () => _addTransaction(appState),
-                                  child: const Text("Thêm giao dịch", style: TextStyle(color: Colors.white, fontSize: 16)),
+                                  child: const Text(
+                                    "Thêm giao dịch",
+                                    style: TextStyle(color: Colors.white, fontSize: 16),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                                 const SizedBox(height: 20),
                                 const Divider(thickness: 2),
@@ -165,17 +203,27 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen> with Si
                                         itemBuilder: (context, index) {
                                           return Card(
                                             child: ListTile(
-                                              title: Text(currencyFormat.format(transactions[index]['amount']), style: const TextStyle(fontWeight: FontWeight.bold)),
-                                              subtitle: Text(transactions[index]['description']),
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                              title: Text(
+                                                currencyFormat.format(transactions[index]['amount']),
+                                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
+                                              ),
+                                              subtitle: Text(
+                                                transactions[index]['description'],
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 2,
+                                              ),
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   IconButton(
-                                                    icon: const Icon(Icons.edit, color: Colors.blue),
+                                                    icon: const Icon(Icons.edit, color: Colors.blue, size: 18),
                                                     onPressed: () => _editTransaction(appState, index),
                                                   ),
                                                   IconButton(
-                                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                                    icon: const Icon(Icons.delete, color: Colors.red, size: 18),
                                                     onPressed: () => _deleteTransaction(appState, index),
                                                   ),
                                                 ],

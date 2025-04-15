@@ -1,4 +1,4 @@
-import 'package:firebase_auth/firebase_auth.dart'; // Thêm import này
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -70,7 +70,7 @@ class _RevenueScreenState extends State<RevenueScreen> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser; // Lấy thông tin người dùng
+    final user = FirebaseAuth.instance.currentUser;
     return Consumer<AppState>(
       builder: (context, appState, child) {
         double totalRevenue = appState.getTotalRevenue();
@@ -86,48 +86,79 @@ class _RevenueScreenState extends State<RevenueScreen> with SingleTickerProvider
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Row(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (context) => UserSettingsScreen()),
-                                  );
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 6, offset: const Offset(0, 2))],
-                                  ),
-                                  child: CircleAvatar(
-                                    radius: 24,
-                                    backgroundColor: Colors.white,
-                                    backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null, // Sử dụng ảnh từ tài khoản
-                                    child: user?.photoURL == null ? const Icon(Icons.person, size: 30, color: Color(0xFF1976D2)) : null, // Mặc định nếu không có ảnh
+                          Flexible(
+                            child: Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (context) => UserSettingsScreen()),
+                                    );
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 2),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.2),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: CircleAvatar(
+                                      radius: 24,
+                                      backgroundColor: Colors.white,
+                                      backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                                      child: user?.photoURL == null
+                                          ? const Icon(Icons.person, size: 30, color: Color(0xFF1976D2))
+                                          : null,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${user?.displayName ?? 'Xin chào'}, Finivo", // Hiển thị tên người dùng nếu có
-                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "${user?.displayName ?? 'Finivo'}",
+                                        style: const TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          "Ngày ${DateFormat('d MMMM y', 'vi').format(appState.selectedDate)}",
+                                          style: const TextStyle(fontSize: 12, color: Colors.white),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
-                                    child: Text("Ngày ${DateFormat('d MMMM y', 'vi').format(appState.selectedDate)}", style: const TextStyle(fontSize: 12, color: Colors.white)),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
                           ),
-                          IconButton(icon: const Icon(Icons.calendar_today, color: Colors.white), onPressed: () => _selectDate(context), splashRadius: 20),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.calendar_today, color: Colors.white),
+                            onPressed: () => _selectDate(context),
+                            splashRadius: 20,
+                            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                          ),
                         ],
                       ),
                     ),
@@ -137,34 +168,58 @@ class _RevenueScreenState extends State<RevenueScreen> with SingleTickerProvider
                         padding: const EdgeInsets.symmetric(horizontal: 16.0),
                         child: Column(
                           children: [
-                            SlideTransition(
-                              position: _slideAnimation,
-                              child: FadeTransition(
-                                opacity: _fadeAnimation,
-                                child: Card(
-                                  elevation: 10,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Column(
-                                      children: [
-                                        RevenueCategoryItem(title: 'Doanh thu chính', amount: appState.mainRevenue, icon: Icons.attach_money, onTap: () => _navigateToEditRevenue('Doanh thu chính')),
-                                        const Divider(height: 1, color: Colors.grey),
-                                        RevenueCategoryItem(title: 'Doanh thu phụ', amount: appState.secondaryRevenue, icon: Icons.account_balance_wallet, onTap: () => _navigateToEditRevenue('Doanh thu phụ')),
-                                        const Divider(height: 1, color: Colors.grey),
-                                        RevenueCategoryItem(title: 'Doanh thu khác', amount: appState.otherRevenue, icon: Icons.add_circle_outline, onTap: () => _navigateToEditRevenue('Doanh thu khác')),
-                                        const Divider(height: 1, color: Colors.grey),
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(vertical: 12.0),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text('Tổng doanh thu', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                              Text(currencyFormat.format(totalRevenue), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1976D2))),
-                                            ],
+                            Flexible(
+                              child: SlideTransition(
+                                position: _slideAnimation,
+                                child: FadeTransition(
+                                  opacity: _fadeAnimation,
+                                  child: Card(
+                                    elevation: 10,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          RevenueCategoryItem(
+                                            title: 'Doanh thu chính',
+                                            amount: appState.mainRevenue,
+                                            icon: Icons.attach_money,
+                                            onTap: () => _navigateToEditRevenue('Doanh thu chính'),
                                           ),
-                                        ),
-                                      ],
+                                          const Divider(height: 1, color: Colors.grey),
+                                          RevenueCategoryItem(
+                                            title: 'Doanh thu phụ',
+                                            amount: appState.secondaryRevenue,
+                                            icon: Icons.account_balance_wallet,
+                                            onTap: () => _navigateToEditRevenue('Doanh thu phụ'),
+                                          ),
+                                          const Divider(height: 1, color: Colors.grey),
+                                          RevenueCategoryItem(
+                                            title: 'Doanh thu khác',
+                                            amount: appState.otherRevenue,
+                                            icon: Icons.add_circle_outline,
+                                            onTap: () => _navigateToEditRevenue('Doanh thu khác'),
+                                          ),
+                                          const Divider(height: 1, color: Colors.grey),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 12.0),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                const Text('Tổng doanh thu', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                                Flexible(
+                                                  child: Text(
+                                                    currencyFormat.format(totalRevenue),
+                                                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1976D2)),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -186,19 +241,33 @@ class _RevenueScreenState extends State<RevenueScreen> with SingleTickerProvider
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text(
-                                            currencyFormat.format(appState.getProfit()),
-                                            style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                              color: appState.getProfit() > 0 ? Colors.green : appState.getProfit() < 0 ? Colors.red : Colors.grey,
+                                          Flexible(
+                                            child: Text(
+                                              currencyFormat.format(appState.getProfit()),
+                                              style: TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: appState.getProfit() > 0
+                                                    ? Colors.green
+                                                    : appState.getProfit() < 0
+                                                    ? Colors.red
+                                                    : Colors.grey,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          Text(
-                                            'Biên lợi nhuận: ${appState.getProfitMargin().toStringAsFixed(1)}%',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: appState.getProfitMargin() > 0 ? Colors.green : appState.getProfitMargin() < 0 ? Colors.red : Colors.grey,
+                                          Flexible(
+                                            child: Text(
+                                              'Biên lợi nhuận: ${appState.getProfitMargin().toStringAsFixed(1)}%',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: appState.getProfitMargin() > 0
+                                                    ? Colors.green
+                                                    : appState.getProfitMargin() < 0
+                                                    ? Colors.red
+                                                    : Colors.grey,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
@@ -268,12 +337,21 @@ class RevenueCategoryItem extends StatelessWidget {
                 Text(title, style: const TextStyle(fontSize: 16)),
               ],
             ),
-            Row(
-              children: [
-                Text(currencyFormat.format(amount), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(width: 8),
-                const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-              ],
+            Flexible(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      currencyFormat.format(amount),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                ],
+              ),
             ),
           ],
         ),
