@@ -18,13 +18,11 @@ class _RecommendationScreenState extends State<RecommendationScreen> with Single
   String selectedGoal = 'Tăng doanh thu';
   String goalValue = '';
   DateTimeRange? selectedRange;
-
   final List<String> goals = [
     'Tăng doanh thu',
     'Giảm chi phí',
     'Cải thiện biên lợi nhuận',
   ];
-
   final List<String> industrySuggestions = [
     'Bán lẻ',
     'F&B',
@@ -32,7 +30,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> with Single
     'Sản xuất',
     'Khác',
   ];
-
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<double> _buttonScaleAnimation;
@@ -171,6 +168,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> with Single
         return revenue > 0 ? ((revenue - expense) / revenue * 100) : 0.0;
       })
           .toList();
+
       double profitMarginTrend = dailyProfits.isNotEmpty
           ? (dailyProfits.last - dailyProfits.first)
           : 0.0;
@@ -239,7 +237,6 @@ ${goalValue.isNotEmpty ? '- Mục tiêu: $selectedGoal $goalValue%.' : ''}''';
             start: DateTime.now().subtract(Duration(days: 30)),
             end: DateTime.now(),
           );
-
       final analysis = await _analyzeFinancialData(appState, range);
       String report = analysis['report'];
 
@@ -248,7 +245,7 @@ $report
 Hãy phân tích và đề xuất:
 1. Hai chiến lược tăng doanh thu dựa trên sản phẩm chủ lực và xu hướng.
 2. Một cách giảm chi phí dựa trên điểm bất thường hoặc khoản chi lớn.
-3. Một chiến lược cải thiện biên lợi nhuận${goalValue.isNotEmpty ? ', hướng đến mục tiêu: $selectedGoal $goalValue' : ''}.
+3. Một chiến lược cải thiện biên lợi nhuận${goalValue.isNotEmpty ? ', hướng đến mục tiêu: $selectedGoal $goalValue%' : ''}.
 Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với ngành $industry.''';
 
       var response = await http.post(
@@ -412,36 +409,36 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
                                 },
                               ),
                               const SizedBox(height: 12),
-                              Row(
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    flex: 3,
-                                    child: DropdownButtonFormField<String>(
-                                      value: selectedGoal,
-                                      decoration: InputDecoration(
-                                        labelText: "Mục tiêu",
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                        isDense: true,
-                                      ),
-                                      items: goals
-                                          .map((goal) => DropdownMenuItem(
-                                        value: goal,
-                                        child: Text(goal, overflow: TextOverflow.ellipsis),
-                                      ))
-                                          .toList(),
-                                      onChanged: (value) {
-                                        setState(() {
-                                          selectedGoal = value!;
-                                        });
-                                      },
+                                  DropdownButtonFormField<String>(
+                                    value: selectedGoal,
+                                    decoration: InputDecoration(
+                                      labelText: "Mục tiêu",
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      isDense: true,
                                     ),
+                                    items: goals
+                                        .map((goal) => DropdownMenuItem(
+                                      value: goal,
+                                      child: Text(goal, overflow: TextOverflow.ellipsis),
+                                    ))
+                                        .toList(),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        selectedGoal = value!;
+                                      });
+                                    },
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    flex: 1,
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: 120, // Slightly wider for better visibility
                                     child: TextField(
                                       decoration: InputDecoration(
-                                        labelText: "%",
+                                        labelText: "Mục tiêu (%)",
+                                        hintText: "Nhập số % (ví dụ: 10)",
+                                        suffixText: '%',
                                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                         isDense: true,
                                       ),
@@ -462,13 +459,20 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Expanded(
-                                    child: Text(
-                                      selectedRange == null
-                                          ? "Khoảng thời gian: 30 ngày gần nhất"
-                                          : "Từ ${DateFormat('dd/MM/yyyy').format(selectedRange!.start)} đến ${DateFormat('dd/MM/yyyy').format(selectedRange!.end)}",
-                                      style: TextStyle(fontSize: constraints.maxWidth > 600 ? 16 : 14),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 2,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        selectedRange == null
+                                            ? "Khoảng thời gian: 30 ngày gần nhất"
+                                            : "Từ ${DateFormat('dd/MM/yyyy').format(selectedRange!.start)} đến ${DateFormat('dd/MM/yyyy').format(selectedRange!.end)}",
+                                        style: TextStyle(fontSize: constraints.maxWidth > 600 ? 16 : 14),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
+                                      ),
                                     ),
                                   ),
                                   IconButton(
@@ -509,10 +513,16 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
                                   ),
                                   const SizedBox(width: 8),
                                   IconButton(
-                                    icon: const Icon(Icons.refresh, color: Color(0xFF1976D2), size: 20),
+                                    icon: const Icon(Icons.refresh, color: Color(0xFF1976D2), size: 18),
                                     onPressed: _resetInputs,
                                     tooltip: "Xóa dữ liệu",
-                                    splashRadius: 20,
+                                    splashRadius: 18,
+                                    padding: const EdgeInsets.all(8),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.grey.withOpacity(0.1),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      minimumSize: const Size(40, 40),
+                                    ),
                                   ),
                                 ],
                               ),
