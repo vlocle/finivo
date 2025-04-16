@@ -11,22 +11,20 @@ class RecommendationScreen extends StatefulWidget {
   _RecommendationScreenState createState() => _RecommendationScreenState();
 }
 
-class _RecommendationScreenState extends State<RecommendationScreen> {
+class _RecommendationScreenState extends State<RecommendationScreen> with SingleTickerProviderStateMixin {
   String recommendation = "Nhấn vào nút để nhận khuyến nghị từ A.I";
   bool isLoading = false;
-  String industry = ''; // Ngành nghề
-  String selectedGoal = 'Tăng doanh thu'; // Mục tiêu mặc định
-  String goalValue = ''; // Giá trị mục tiêu (ví dụ: 20%)
-  DateTimeRange? selectedRange; // Khoảng thời gian
+  String industry = '';
+  String selectedGoal = 'Tăng doanh thu';
+  String goalValue = '';
+  DateTimeRange? selectedRange;
 
-  // Danh sách mục tiêu cho dropdown
   final List<String> goals = [
     'Tăng doanh thu',
     'Giảm chi phí',
     'Cải thiện biên lợi nhuận',
   ];
 
-  // Gợi ý ngành nghề
   final List<String> industrySuggestions = [
     'Bán lẻ',
     'F&B',
@@ -35,7 +33,29 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     'Khác',
   ];
 
-  // Hàm tính độ lệch chuẩn
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _buttonScaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(duration: const Duration(milliseconds: 700), vsync: this);
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
+    _buttonScaleAnimation = TweenSequence([
+      TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 0.95), weight: 50),
+      TweenSequenceItem(tween: Tween<double>(begin: 0.95, end: 1.0), weight: 50),
+    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   double _calculateStandardDeviation(List<double> values) {
     if (values.isEmpty) return 0.0;
     double mean = values.reduce((a, b) => a + b) / values.length;
@@ -46,11 +66,9 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
     return math.sqrt(variance);
   }
 
-  // Hàm phân tích dữ liệu tài chính
   Future<Map<String, dynamic>> _analyzeFinancialData(
       AppState appState, DateTimeRange range) async {
     try {
-      // Lấy dữ liệu
       final revenueData = await appState.getRevenueForRange(range);
       final expenseData = await appState.getExpensesForRange(range);
       final overview = await appState.getOverviewForRange(range);
@@ -58,20 +76,17 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       final dailyRevenues = await appState.getDailyRevenueForRange(range);
       final dailyExpenses = await appState.getDailyExpensesForRange(range);
 
-      // Doanh thu
       double totalRevenue = revenueData['totalRevenue'] ?? 0.0;
       double mainRevenue = revenueData['mainRevenue'] ?? 0.0;
       double secondaryRevenue = revenueData['secondaryRevenue'] ?? 0.0;
       double otherRevenue = revenueData['otherRevenue'] ?? 0.0;
 
-      // Tỷ trọng doanh thu
       Map<String, double> revenueShares = {
         'Doanh thu chính': totalRevenue > 0 ? (mainRevenue / totalRevenue * 100) : 0.0,
         'Doanh thu phụ': totalRevenue > 0 ? (secondaryRevenue / totalRevenue * 100) : 0.0,
         'Doanh thu khác': totalRevenue > 0 ? (otherRevenue / totalRevenue * 100) : 0.0,
       };
 
-      // Top sản phẩm
       Map<String, String> topProductsSummary = {};
       topProducts.forEach((category, products) {
         List<MapEntry<String, double>> sortedProducts = products.entries.toList()
@@ -82,7 +97,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
             .join(', ');
       });
 
-      // Xu hướng doanh thu
       List<double> revenueValues = dailyRevenues
           .map((day) => (day['totalRevenue'] ?? 0.0) as double)
           .toList();
@@ -90,7 +104,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           ? ((revenueValues.last - revenueValues.first) / (revenueValues.first == 0 ? 1 : revenueValues.first) * 100)
           : 0.0;
 
-      // Điểm bất thường doanh thu
       List<String> revenueAnomalies = [];
       if (revenueValues.isNotEmpty) {
         double revenueMean = revenueValues.reduce((a, b) => a + b) / revenueValues.length;
@@ -104,18 +117,15 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         }
       }
 
-      // Chi phí
       double totalExpense = expenseData['totalExpense'] ?? 0.0;
       double fixedExpense = expenseData['fixedExpense'] ?? 0.0;
       double variableExpense = expenseData['variableExpense'] ?? 0.0;
 
-      // Tỷ trọng chi phí
       Map<String, double> expenseShares = {
         'Chi phí cố định': totalExpense > 0 ? (fixedExpense / totalExpense * 100) : 0.0,
         'Chi phí biến đổi': totalExpense > 0 ? (variableExpense / totalExpense * 100) : 0.0,
       };
 
-      // Xu hướng chi phí
       List<double> expenseValues = dailyExpenses
           .map((day) => (day['totalExpense'] ?? 0.0) as double)
           .toList();
@@ -123,7 +133,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           ? ((expenseValues.last - expenseValues.first) / (expenseValues.first == 0 ? 1 : expenseValues.first) * 100)
           : 0.0;
 
-      // Điểm bất thường chi phí
       List<String> expenseAnomalies = [];
       if (expenseValues.isNotEmpty) {
         double expenseMean = expenseValues.reduce((a, b) => a + b) / expenseValues.length;
@@ -137,25 +146,21 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         }
       }
 
-      // Lợi nhuận
       double profit = overview['profit'] ?? 0.0;
       double profitMargin = overview['averageProfitMargin'] ?? 0.0;
 
-      // Ước tính lợi nhuận theo danh mục (giả định chi phí biến đổi phân bổ theo doanh thu)
       Map<String, double> categoryProfits = {
         'Doanh thu chính': mainRevenue - (variableExpense * (mainRevenue / (totalRevenue == 0 ? 1 : totalRevenue))),
         'Doanh thu phụ': secondaryRevenue - (variableExpense * (secondaryRevenue / (totalRevenue == 0 ? 1 : totalRevenue))),
         'Doanh thu khác': otherRevenue - (variableExpense * (otherRevenue / (totalRevenue == 0 ? 1 : totalRevenue))),
       };
 
-      // Biên lợi nhuận theo danh mục
       Map<String, double> categoryMargins = {
         'Doanh thu chính': mainRevenue > 0 ? (categoryProfits['Doanh thu chính']! / mainRevenue * 100) : 0.0,
         'Doanh thu phụ': secondaryRevenue > 0 ? (categoryProfits['Doanh thu phụ']! / secondaryRevenue * 100) : 0.0,
         'Doanh thu khác': otherRevenue > 0 ? (categoryProfits['Doanh thu khác']! / otherRevenue * 100) : 0.0,
       };
 
-      // Xu hướng biên lợi nhuận
       List<double> dailyProfits = dailyRevenues
           .asMap()
           .entries
@@ -170,7 +175,6 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
           ? (dailyProfits.last - dailyProfits.first)
           : 0.0;
 
-      // Điểm bất thường biên lợi nhuận
       List<String> profitMarginAnomalies = [];
       if (dailyProfits.isNotEmpty) {
         double profitMarginMean = dailyProfits.reduce((a, b) => a + b) / dailyProfits.length;
@@ -184,9 +188,7 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
         }
       }
 
-      // Tổng hợp báo cáo
-      String report = '''
-Phân tích ${range.end.difference(range.start).inDays + 1} ngày gần nhất:
+      String report = '''Phân tích ${range.end.difference(range.start).inDays + 1} ngày gần nhất:
 - Doanh thu: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(totalRevenue)} VNĐ (chính: ${revenueShares['Doanh thu chính']!.toStringAsFixed(1)}%, phụ: ${revenueShares['Doanh thu phụ']!.toStringAsFixed(1)}%, khác: ${revenueShares['Doanh thu khác']!.toStringAsFixed(1)}%).
   Top sản phẩm:
   + Doanh thu chính: ${topProductsSummary['Doanh thu chính'] ?? 'Không có'}
@@ -205,8 +207,8 @@ Phân tích ${range.end.difference(range.start).inDays + 1} ngày gần nhất:
   Xu hướng biên lợi nhuận: ${profitMarginTrend >= 0 ? '+' : ''}${profitMarginTrend.toStringAsFixed(1)}%.
   Điểm bất thường: ${profitMarginAnomalies.isNotEmpty ? profitMarginAnomalies.join('; ') : 'Không có'}.
 - Ngành nghề: $industry.
-${goalValue.isNotEmpty ? '- Mục tiêu: $selectedGoal $goalValue%.' : ''}
-''';
+${goalValue.isNotEmpty ? '- Mục tiêu: $selectedGoal $goalValue%.' : ''}''';
+
       print('Báo cáo phân tích: $report');
       return {
         'report': report,
@@ -225,45 +227,34 @@ ${goalValue.isNotEmpty ? '- Mục tiêu: $selectedGoal $goalValue%.' : ''}
     }
   }
 
-  // Hàm gọi API AI
   Future<void> getRecommendation() async {
     setState(() {
       isLoading = true;
       recommendation = "Đang phân tích dữ liệu...";
     });
-
     try {
       final appState = Provider.of<AppState>(context, listen: false);
-
-      // Xác định khoảng thời gian
       final range = selectedRange ??
           DateTimeRange(
             start: DateTime.now().subtract(Duration(days: 30)),
             end: DateTime.now(),
           );
 
-      // Phân tích dữ liệu
       final analysis = await _analyzeFinancialData(appState, range);
       String report = analysis['report'];
 
-      // Tạo prompt
-      String prompt = '''
-Bạn là chuyên gia tài chính trong ngành $industry. Dưới đây là phân tích dữ liệu kinh doanh:
-
+      String prompt = '''Bạn là chuyên gia tài chính trong ngành $industry. Dưới đây là phân tích dữ liệu kinh doanh:
 $report
-
 Hãy phân tích và đề xuất:
 1. Hai chiến lược tăng doanh thu dựa trên sản phẩm chủ lực và xu hướng.
 2. Một cách giảm chi phí dựa trên điểm bất thường hoặc khoản chi lớn.
 3. Một chiến lược cải thiện biên lợi nhuận${goalValue.isNotEmpty ? ', hướng đến mục tiêu: $selectedGoal $goalValue' : ''}.
-Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với ngành $industry.
-''';
+Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với ngành $industry.''';
 
-      // Gọi API OpenAI
       var response = await http.post(
         Uri.parse("https://api.openai.com/v1/chat/completions"),
         headers: {
-          "Authorization": "Bearer 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", // Đảm bảo thay API Key
+          "Authorization": "Bearer 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",
           "Content-Type": "application/json",
         },
         body: jsonEncode({
@@ -285,7 +276,6 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
           isLoading = false;
         });
       } else {
-        // Ghi log chi tiết lỗi
         print('Lỗi gọi API OpenAI: Status ${response.statusCode}');
         print('Phản hồi: ${response.body}');
         setState(() {
@@ -294,7 +284,6 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
         });
       }
     } catch (e) {
-      // Ghi log lỗi ngoại lệ
       print('Ngoại lệ khi gọi API: $e');
       setState(() {
         recommendation = "❌ Đã xảy ra lỗi: $e. Vui lòng thử lại.";
@@ -303,7 +292,6 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
     }
   }
 
-  // Hàm chọn khoảng thời gian
   Future<void> _selectDateRange(BuildContext context) async {
     final picked = await showDateRangePicker(
       context: context,
@@ -323,135 +311,259 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
     }
   }
 
+  void _resetInputs() {
+    setState(() {
+      industry = '';
+      selectedGoal = 'Tăng doanh thu';
+      goalValue = '';
+      selectedRange = null;
+      recommendation = "Nhấn vào nút để nhận khuyến nghị từ A.I";
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Khuyến nghị từ A.I")),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                "Nhập thông tin để nhận khuyến nghị tài chính chi tiết:",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              // Ngành nghề
-              Autocomplete<String>(
-                optionsBuilder: (TextEditingValue textEditingValue) {
-                  if (textEditingValue.text.isEmpty) {
-                    return industrySuggestions;
-                  }
-                  return industrySuggestions.where((option) =>
-                      option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
-                },
-                onSelected: (String selection) {
-                  setState(() {
-                    industry = selection;
-                  });
-                },
-                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                  return TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    decoration: const InputDecoration(
-                      labelText: "Ngành nghề (ví dụ: Bán lẻ, F&B)",
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        industry = value;
-                      });
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              // Mục tiêu
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: selectedGoal,
-                      decoration: const InputDecoration(
-                        labelText: "Mục tiêu",
-                        border: OutlineInputBorder(),
-                      ),
-                      items: goals
-                          .map((goal) => DropdownMenuItem(
-                        value: goal,
-                        child: Text(goal),
-                      ))
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedGoal = value!;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 100,
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        labelText: "Giá trị (%)",
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (value) {
-                        setState(() {
-                          goalValue = value;
-                        });
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Khoảng thời gian
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      selectedRange == null
-                          ? "Khoảng thời gian: 30 ngày gần nhất"
-                          : "Từ ${DateFormat('dd/MM/yyyy').format(selectedRange!.start)} đến ${DateFormat('dd/MM/yyyy').format(selectedRange!.end)}",
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.calendar_today),
-                    onPressed: () => _selectDateRange(context),
-                    tooltip: "Chọn khoảng thời gian",
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 20),
-              // Kết quả
-              isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : SelectableText(
-                recommendation,
-                style: const TextStyle(fontSize: 16),
-              ),
-              const SizedBox(height: 20),
-              // Nút nhận khuyến nghị
-              Center(
-                child: ElevatedButton(
-                  onPressed: industry.isEmpty
-                      ? null
-                      : getRecommendation,
-                  child: const Text("Nhận khuyến nghị từ A.I"),
-                ),
-              ),
-            ],
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1976D2),
+        title: Text(
+          "Khuyến nghị từ A.I",
+          style: TextStyle(
+            fontSize: MediaQuery.of(context).size.width > 600 ? 22 : 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
           ),
+        ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              selectedRange == null
+                  ? "30 ngày gần nhất"
+                  : "${DateFormat('dd/MM/yy').format(selectedRange!.start)} - ${DateFormat('dd/MM/yy').format(selectedRange!.end)}",
+              style: const TextStyle(fontSize: 12, color: Colors.white),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final padding = constraints.maxWidth > 600 ? 24.0 : 16.0;
+            return CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.all(padding),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      Card(
+                        elevation: 6,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Thông tin đầu vào",
+                                style: TextStyle(
+                                  fontSize: constraints.maxWidth > 600 ? 18 : 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Autocomplete<String>(
+                                optionsBuilder: (TextEditingValue textEditingValue) {
+                                  if (textEditingValue.text.isEmpty) {
+                                    return industrySuggestions;
+                                  }
+                                  return industrySuggestions.where((option) =>
+                                      option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                                },
+                                onSelected: (String selection) {
+                                  setState(() {
+                                    industry = selection;
+                                  });
+                                },
+                                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                                  return TextField(
+                                    controller: controller,
+                                    focusNode: focusNode,
+                                    decoration: InputDecoration(
+                                      labelText: "Ngành nghề (ví dụ: Bán lẻ, F&B)",
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      isDense: true,
+                                    ),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        industry = value;
+                                      });
+                                    },
+                                    maxLines: 1,
+                                    maxLength: 50,
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: DropdownButtonFormField<String>(
+                                      value: selectedGoal,
+                                      decoration: InputDecoration(
+                                        labelText: "Mục tiêu",
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        isDense: true,
+                                      ),
+                                      items: goals
+                                          .map((goal) => DropdownMenuItem(
+                                        value: goal,
+                                        child: Text(goal, overflow: TextOverflow.ellipsis),
+                                      ))
+                                          .toList(),
+                                      onChanged: (value) {
+                                        setState(() {
+                                          selectedGoal = value!;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 1,
+                                    child: TextField(
+                                      decoration: InputDecoration(
+                                        labelText: "%",
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        isDense: true,
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          goalValue = value;
+                                        });
+                                      },
+                                      maxLines: 1,
+                                      maxLength: 5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      selectedRange == null
+                                          ? "Khoảng thời gian: 30 ngày gần nhất"
+                                          : "Từ ${DateFormat('dd/MM/yyyy').format(selectedRange!.start)} đến ${DateFormat('dd/MM/yyyy').format(selectedRange!.end)}",
+                                      style: TextStyle(fontSize: constraints.maxWidth > 600 ? 16 : 14),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.calendar_today, color: Color(0xFF1976D2), size: 20),
+                                    onPressed: () => _selectDateRange(context),
+                                    tooltip: "Chọn khoảng thời gian",
+                                    splashRadius: 20,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ScaleTransition(
+                                      scale: _buttonScaleAnimation,
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF42A5F5),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          minimumSize: const Size(double.infinity, 50),
+                                        ),
+                                        onPressed: industry.isEmpty
+                                            ? null
+                                            : () {
+                                          _controller.forward(from: 0);
+                                          getRecommendation();
+                                        },
+                                        child: Text(
+                                          "Nhận khuyến nghị từ A.I",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: constraints.maxWidth > 600 ? 16 : 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    icon: const Icon(Icons.refresh, color: Color(0xFF1976D2), size: 20),
+                                    onPressed: _resetInputs,
+                                    tooltip: "Xóa dữ liệu",
+                                    splashRadius: 20,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Card(
+                        elevation: 8,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                industry.isEmpty ? "Kết quả khuyến nghị" : "Khuyến nghị cho ngành $industry",
+                                style: TextStyle(
+                                  fontSize: constraints.maxWidth > 600 ? 18 : 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxHeight: constraints.maxHeight * 0.5,
+                                ),
+                                child: FadeTransition(
+                                  opacity: _fadeAnimation,
+                                  child: isLoading
+                                      ? const Center(child: CircularProgressIndicator())
+                                      : SingleChildScrollView(
+                                    physics: const BouncingScrollPhysics(),
+                                    child: SelectableText(
+                                      recommendation,
+                                      style: TextStyle(fontSize: constraints.maxWidth > 600 ? 16 : 14),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
