@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -13,12 +14,16 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await Firebase.initializeApp();
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
     await Hive.initFlutter();
     await Future.wait([
-      //Hive.openBox('productBox'),
+      Hive.openBox('productsBox'),
       //Hive.openBox('expenseBox'),
-      //Hive.openBox('transactionBox'),
-      //Hive.openBox('revenueBox'),
+      Hive.openBox('transactionsBox'),
+      Hive.openBox('revenueBox'),
       Hive.openBox('settingsBox'),
     ]);
     await initializeDateFormatting('vi', null);

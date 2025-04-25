@@ -49,19 +49,41 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
       String key = appState.getKey(baseKey);
+      String hiveKey = appState.getKey('${selectedCategory}_productList');
+
+      // Chuẩn hóa productList trước khi lưu
+      List<Map<String, dynamic>> standardizedProductList = productList.map((product) {
+        return {
+          'name': product['name'].toString(),
+          'price': product['price'] as num? ?? 0.0,
+        };
+      }).toList();
+
+      // Lưu vào Firestore
       await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('products')
           .doc(key)
           .set({
-        'products': productList,
+        'products': standardizedProductList,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      appState.notifyListeners();
+
+      // Đảm bảo box đã mở và lưu vào Hive
+      if (!Hive.isBoxOpen('productsBox')) {
+        await Hive.openBox('productsBox');
+      }
+      var productsBox = Hive.box('productsBox');
+      await productsBox.put(hiveKey, standardizedProductList).catchError((e) {
+        print('Lỗi khi lưu vào Hive: $e');
+        throw Exception('Không thể lưu vào Hive: $e');
+      });
+
+      appState.notifyProductsUpdated();
       print('Lưu sản phẩm thành công cho danh mục: $selectedCategory');
     } catch (e) {
-      print('Lỗi khi lưu vào Firestore: $e');
+      print('Lỗi khi lưu dữ liệu: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Lỗi khi lưu dữ liệu: $e')),
       );
@@ -78,15 +100,46 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
         });
         return;
       }
+
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
       String key = appState.getKey(baseKey);
+      String hiveKey = appState.getKey('${selectedCategory}_productList');
+
+      if (!Hive.isBoxOpen('productsBox')) {
+        await Hive.openBox('productsBox');
+      }
+      var productsBox = Hive.box('productsBox');
+      print('Hive productsBox keys: ${productsBox.keys}'); // Debug
+
+      // Kiểm tra dữ liệu trong Hive
+      if (productsBox.containsKey(hiveKey)) {
+        var rawData = productsBox.get(hiveKey);
+        print('Raw data from Hive: $rawData'); // Debug
+        List<Map<String, dynamic>> loadedProducts = [];
+        if (rawData != null) {
+          loadedProducts = (rawData as List<dynamic>).map((item) {
+            var map = item as Map<dynamic, dynamic>;
+            return map.map((key, value) {
+              return MapEntry(key.toString(), value);
+            });
+          }).cast<Map<String, dynamic>>().toList();
+        }
+        setState(() {
+          productList = loadedProducts;
+        });
+        print('Tải sản phẩm từ Hive: $productList');
+        return;
+      }
+
+      // Tải từ Firestore
       DocumentSnapshot doc = await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('products')
           .doc(key)
           .get();
+
       setState(() {
         if (doc.exists && doc['products'] != null) {
           productList = List<Map<String, dynamic>>.from(doc['products'] ?? []);
@@ -94,6 +147,10 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
           productList = [];
         }
       });
+
+      // Lưu vào Hive
+      await productsBox.put(hiveKey, productList);
+      print('Tải sản phẩm từ Firestore và lưu vào Hive: $productList');
     } catch (e) {
       print('Lỗi khi tải từ Firestore: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -144,7 +201,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
             TextField(
               controller: nameController,
               decoration: const InputDecoration(labelText: "Tên sản phẩm/dịch vụ"),
-              maxLength: 50, // Giới hạn số ký tự
+              maxLength: 50,
               maxLines: 1,
             ),
             const SizedBox(height: 10),
@@ -152,7 +209,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
               controller: priceController,
               decoration: const InputDecoration(labelText: "Giá tiền"),
               keyboardType: TextInputType.number,
-              maxLength: 15, // Giới hạn số ký tự
+              maxLength: 15,
               maxLines: 1,
             ),
           ],
@@ -193,7 +250,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
     final screenWidth = MediaQuery.of(context).size.width;
-
     return Scaffold(
       body: Stack(
         children: [
@@ -272,7 +328,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
                                     border: OutlineInputBorder(),
                                   ),
                                   maxLines: 1,
-                                  maxLength: 50, // Giới hạn số ký tự để tránh tràn
+                                  maxLength: 50,
                                 ),
                                 const SizedBox(height: 10),
                                 TextField(
@@ -283,7 +339,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
                                   ),
                                   keyboardType: TextInputType.number,
                                   maxLines: 1,
-                                  maxLength: 15, // Giới hạn số ký tự cho giá tiền
+                                  maxLength: 15,
                                 ),
                                 const SizedBox(height: 20),
                                 ElevatedButton(

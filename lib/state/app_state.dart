@@ -8,7 +8,7 @@ import '/screens/expense_manager.dart';
 import '/screens/revenue_manager.dart';
 
 class AppState extends ChangeNotifier {
-  String? userId; // Thêm userId để tách biệt dữ liệu
+  String? userId;
   DateTime selectedDate = DateTime.now();
   double mainRevenue = 0.0;
   double secondaryRevenue = 0.0;
@@ -20,10 +20,10 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<List<Map<String, dynamic>>> mainRevenueTransactions = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> secondaryRevenueTransactions = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> otherRevenueTransactions = ValueNotifier([]);
-
+  final ValueNotifier<bool> productsUpdated = ValueNotifier(false);
   bool _notificationsEnabled = true;
-  String _currentLanguage = 'vi'; // Mặc định là Tiếng Việt
-  bool _isDarkMode = false; // Mặc định là chế độ sáng
+  String _currentLanguage = 'vi';
+  bool _isDarkMode = false;
 
   bool get notificationsEnabled => _notificationsEnabled;
   String get currentLanguage => _currentLanguage;
@@ -31,25 +31,21 @@ class AppState extends ChangeNotifier {
 
   AppState() {
     loadExpenseValues();
-    loadRevenueValues();
     _loadSettings();
   }
 
-  // Tải cài đặt từ Hive
   void _loadSettings() {
     var settingsBox = Hive.box('settingsBox');
     _notificationsEnabled = settingsBox.get(getKey('notificationsEnabled'), defaultValue: true);
     _isDarkMode = settingsBox.get(getKey('isDarkMode'), defaultValue: false);
   }
 
-  // Lưu cài đặt vào Hive
   void _saveSettings() {
     var settingsBox = Hive.box('settingsBox');
     settingsBox.put(getKey('notificationsEnabled'), _notificationsEnabled);
     settingsBox.put(getKey('isDarkMode'), _isDarkMode);
   }
 
-  // Các hàm cho cài đặt chung
   void setNotificationsEnabled(bool value) {
     _notificationsEnabled = value;
     _saveSettings();
@@ -62,11 +58,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Hàm để thiết lập userId sau khi đăng nhập
   void setUserId(String id) {
     if (userId != id) {
       userId = id;
-      _loadInitialData(); // Tải dữ liệu ban đầu
+      _loadInitialData();
     }
   }
 
@@ -85,7 +80,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Hàm hỗ trợ thêm tiền tố userId vào key
   String getKey(String baseKey) {
     return userId != null ? '${userId}_$baseKey' : baseKey;
   }
@@ -93,51 +87,122 @@ class AppState extends ChangeNotifier {
   void setSelectedDate(DateTime date) {
     if (selectedDate != date) {
       selectedDate = date;
-      _loadInitialData(); // Tải dữ liệu khi thay đổi ngày
+      _loadInitialData();
     }
   }
 
   Future<void> _loadInitialData() async {
+    if (userId == null) return;
     await loadRevenueValues();
     await loadExpenseValues();
-    notifyListeners(); // Chỉ gọi 1 lần sau khi tải xong
+    notifyListeners();
   }
 
-  // ========== Doanh Thu ==========
+  void notifyProductsUpdated() {
+    productsUpdated.value = !productsUpdated.value;
+    notifyListeners();
+  }
+
   Future<void> loadRevenueValues() async {
     try {
-      if (userId == null) throw Exception('User ID không tồn tại');
+      if (userId == null) {
+        print('User ID không tồn tại');
+        mainRevenue = 0.0;
+        secondaryRevenue = 0.0;
+        otherRevenue = 0.0;
+        mainRevenueTransactions.value = [];
+        secondaryRevenueTransactions.value = [];
+        otherRevenueTransactions.value = [];
+        notifyListeners();
+        return;
+      }
+
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+      String revenueKey = getKey(dateKey);
+      String mainTransKey = getKey('${dateKey}_mainRevenueTransactions');
+      String secondaryTransKey = getKey('${dateKey}_secondaryRevenueTransactions');
+      String otherTransKey = getKey('${dateKey}_otherRevenueTransactions');
 
-      // Tải doanh thu từ Firestore
-      DocumentSnapshot mainDoc = await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('revenue_Doanh thu chính_$dateKey'))
-          .get();
-      DocumentSnapshot secondaryDoc = await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('revenue_Doanh thu phụ_$dateKey'))
-          .get();
-      DocumentSnapshot otherDoc = await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('revenue_Doanh thu khác_$dateKey'))
-          .get();
+      if (!Hive.isBoxOpen('revenueBox')) await Hive.openBox('revenueBox');
+      if (!Hive.isBoxOpen('transactionsBox')) await Hive.openBox('transactionsBox');
+      var revenueBox = Hive.box('revenueBox');
+      var transactionsBox = Hive.box('transactionsBox');
 
-      mainRevenue = mainDoc.exists ? mainDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      secondaryRevenue = secondaryDoc.exists ? secondaryDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      otherRevenue = otherDoc.exists ? otherDoc['total']?.toDouble() ?? 0.0 : 0.0;
+      print('Hive transactionsBox keys: ${transactionsBox.keys}');
 
-      // Tải lịch sử giao dịch
-      mainRevenueTransactions.value = await RevenueManager.loadTransactionHistory(this, 'Doanh thu chính');
-      secondaryRevenueTransactions.value = await RevenueManager.loadTransactionHistory(this, 'Doanh thu phụ');
-      otherRevenueTransactions.value = await RevenueManager.loadTransactionHistory(this, 'Doanh thu khác');
+      if (revenueBox.containsKey(revenueKey) &&
+          transactionsBox.containsKey(mainTransKey) &&
+          transactionsBox.containsKey(secondaryTransKey) &&
+          transactionsBox.containsKey(otherTransKey)) {
+        var revenueData = revenueBox.get(revenueKey) as Map<dynamic, dynamic>;
+        mainRevenue = revenueData['mainRevenue']?.toDouble() ?? 0.0;
+        secondaryRevenue = revenueData['secondaryRevenue']?.toDouble() ?? 0.0;
+        otherRevenue = revenueData['otherRevenue']?.toDouble() ?? 0.0;
+
+        // Chuyển đổi an toàn cho mainRevenueTransactions
+        var mainData = transactionsBox.get(mainTransKey);
+        mainRevenueTransactions.value = mainData != null
+            ? (mainData as List<dynamic>).map((item) {
+          var map = item as Map<dynamic, dynamic>;
+          return map.map((key, value) => MapEntry(key.toString(), value));
+        }).cast<Map<String, dynamic>>().toList()
+            : [];
+
+        // Chuyển đổi an toàn cho secondaryRevenueTransactions
+        var secondaryData = transactionsBox.get(secondaryTransKey);
+        secondaryRevenueTransactions.value = secondaryData != null
+            ? (secondaryData as List<dynamic>).map((item) {
+          var map = item as Map<dynamic, dynamic>;
+          return map.map((key, value) => MapEntry(key.toString(), value));
+        }).cast<Map<String, dynamic>>().toList()
+            : [];
+
+        // Chuyển đổi an toàn cho otherRevenueTransactions
+        var otherData = transactionsBox.get(otherTransKey);
+        otherRevenueTransactions.value = otherData != null
+            ? (otherData as List<dynamic>).map((item) {
+          var map = item as Map<dynamic, dynamic>;
+          return map.map((key, value) => MapEntry(key.toString(), value));
+        }).cast<Map<String, dynamic>>().toList()
+            : [];
+
+        print('Tải giao dịch từ Hive: main=$mainRevenueTransactions, secondary=$secondaryRevenueTransactions');
+      } else {
+        DocumentSnapshot doc = await firestore
+            .collection('users')
+            .doc(userId)
+            .collection('daily_data')
+            .doc(getKey(dateKey))
+            .get();
+
+        if (doc.exists) {
+          mainRevenue = doc['mainRevenue']?.toDouble() ?? 0.0;
+          secondaryRevenue = doc['secondaryRevenue']?.toDouble() ?? 0.0;
+          otherRevenue = doc['otherRevenue']?.toDouble() ?? 0.0;
+          mainRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['mainRevenueTransactions'] ?? []);
+          secondaryRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['secondaryRevenueTransactions'] ?? []);
+          otherRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['otherRevenueTransactions'] ?? []);
+          print('Tải giao dịch từ Firestore: main=$mainRevenueTransactions, secondary=$secondaryRevenueTransactions');
+        } else {
+          mainRevenue = 0.0;
+          secondaryRevenue = 0.0;
+          otherRevenue = 0.0;
+          mainRevenueTransactions.value = [];
+          secondaryRevenueTransactions.value = [];
+          otherRevenueTransactions.value = [];
+        }
+
+        await revenueBox.put(revenueKey, {
+          'mainRevenue': mainRevenue,
+          'secondaryRevenue': secondaryRevenue,
+          'otherRevenue': otherRevenue,
+          'lastUpdated': DateTime.now().toIso8601String(),
+        });
+        await transactionsBox.put(mainTransKey, mainRevenueTransactions.value);
+        await transactionsBox.put(secondaryTransKey, secondaryRevenueTransactions.value);
+        await transactionsBox.put(otherTransKey, otherRevenueTransactions.value);
+      }
     } catch (e) {
       print('Lỗi khi tải doanh thu: $e');
       mainRevenue = 0.0;
@@ -147,6 +212,7 @@ class AppState extends ChangeNotifier {
       secondaryRevenueTransactions.value = [];
       otherRevenueTransactions.value = [];
     }
+    notifyListeners();
   }
 
   Future<void> setRevenue(double main, double secondary, double other) async {
@@ -154,53 +220,16 @@ class AppState extends ChangeNotifier {
       if (userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+      String revenueKey = getKey(dateKey);
+      String mainTransKey = getKey('${dateKey}_mainRevenueTransactions');
+      String secondaryTransKey = getKey('${dateKey}_secondaryRevenueTransactions');
+      String otherTransKey = getKey('${dateKey}_otherRevenueTransactions');
 
-      // Lưu doanh thu
-      await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('revenue_Doanh thu chính_$dateKey'))
-          .set({
-        'total': main,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('revenue_Doanh thu phụ_$dateKey'))
-          .set({
-        'total': secondary,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('revenue_Doanh thu khác_$dateKey'))
-          .set({
-        'total': other,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Cập nhật trạng thái
       mainRevenue = main;
       secondaryRevenue = secondary;
       otherRevenue = other;
+
       double totalRevenue = main + secondary + other;
-
-      await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('total_revenue_$dateKey'))
-          .set({
-        'total': totalRevenue,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Lấy chi phí từ Firestore
       DocumentSnapshot fixedDoc = await firestore
           .collection('users')
           .doc(userId)
@@ -220,31 +249,65 @@ class AppState extends ChangeNotifier {
 
       double fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
       double variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      double totalExpense = fixedExpense + variableExpense;
+      this.fixedExpense = fixedExpense;
+      this.variableExpense = variableExpense;
 
-      // Tính lợi nhuận
+      double totalExpense = fixedExpense + variableExpense;
       double profit = totalRevenue - totalExpense;
       double profitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
 
-      // Lưu lợi nhuận và tỷ suất lợi nhuận
+      // Chuẩn hóa dữ liệu giao dịch trước khi lưu
+      List<Map<String, dynamic>> standardizedMain = mainRevenueTransactions.value.map((t) {
+        return {
+          'name': t['name'].toString(),
+          'total': t['total'] as num? ?? 0.0,
+          'quantity': t['quantity'] as num? ?? 1.0,
+        };
+      }).toList();
+      List<Map<String, dynamic>> standardizedSecondary = secondaryRevenueTransactions.value.map((t) {
+        return {
+          'name': t['name'].toString(),
+          'total': t['total'] as num? ?? 0.0,
+          'quantity': t['quantity'] as num? ?? 1.0,
+        };
+      }).toList();
+      List<Map<String, dynamic>> standardizedOther = otherRevenueTransactions.value.map((t) {
+        return {
+          'name': t['name'].toString(),
+          'total': t['total'] as num? ?? 0.0,
+          'quantity': t['quantity'] as num? ?? 1.0,
+        };
+      }).toList();
+
       await firestore
           .collection('users')
           .doc(userId)
-          .collection('revenue')
-          .doc(getKey('profit_$dateKey'))
+          .collection('daily_data')
+          .doc(getKey(dateKey))
           .set({
-        'total': profit,
+        'mainRevenue': main,
+        'secondaryRevenue': secondary,
+        'otherRevenue': other,
+        'totalRevenue': totalRevenue,
+        'mainRevenueTransactions': standardizedMain,
+        'secondaryRevenueTransactions': standardizedSecondary,
+        'otherRevenueTransactions': standardizedOther,
+        'profit': profit,
+        'profitMargin': profitMargin,
         'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      var revenueBox = Hive.box('revenueBox');
+      var transactionsBox = Hive.box('transactionsBox');
+      await revenueBox.put(revenueKey, {
+        'mainRevenue': main,
+        'secondaryRevenue': secondary,
+        'otherRevenue': other,
+        'lastUpdated': DateTime.now().toIso8601String(),
       });
-      await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('profitMargin_$dateKey'))
-          .set({
-        'total': profitMargin,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await transactionsBox.put(mainTransKey, standardizedMain);
+      await transactionsBox.put(secondaryTransKey, standardizedSecondary);
+      await transactionsBox.put(otherTransKey, standardizedOther);
 
       notifyListeners();
     } catch (e) {
@@ -253,19 +316,18 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // Các hàm còn lại giữ nguyên
   Map<String, List<model.Transaction>> transactions = {
     'Doanh thu chính': [],
     'Doanh thu phụ': [],
     'Doanh thu khác': [],
   };
 
-  // ========== Chi Phí ==========
   Future<void> loadExpenseValues() async {
     try {
       if (userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-
       DocumentSnapshot fixedDoc = await firestore
           .collection('users')
           .doc(userId)
@@ -282,7 +344,6 @@ class AppState extends ChangeNotifier {
           .collection('daily')
           .doc(getKey('variableTransactionHistory_$dateKey'))
           .get();
-
       fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
       variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
       fixedExpenseList.value = await ExpenseManager.loadFixedExpenses(this);
@@ -311,11 +372,8 @@ class AppState extends ChangeNotifier {
       if (userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-
       fixedExpense = fixed;
       variableExpense = variable;
-
-      // Lưu tổng chi phí vào Firestore
       await firestore
           .collection('users')
           .doc(userId)
@@ -332,26 +390,21 @@ class AppState extends ChangeNotifier {
           .collection('daily')
           .doc(getKey('variableTransactionHistory_$dateKey'))
           .update({'total': variable, 'updatedAt': FieldValue.serverTimestamp()});
-
-      // Tính lợi nhuận
       double totalRevenue = getTotalRevenue();
       double totalExpense = fixed + variable;
       double profit = totalRevenue - totalExpense;
       double profitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
-
       await firestore
           .collection('users')
           .doc(userId)
-          .collection('revenue')
-          .doc(getKey('profit_$dateKey'))
-          .set({'total': profit, 'updatedAt': FieldValue.serverTimestamp()});
-      await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('revenue')
-          .doc(getKey('profitMargin_$dateKey'))
-          .set({'total': profitMargin, 'updatedAt': FieldValue.serverTimestamp()});
-
+          .collection('daily_data')
+          .doc(getKey(dateKey))
+          .set({
+        'profit': profit,
+        'profitMargin': profitMargin,
+        'totalRevenue': totalRevenue,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       notifyListeners();
     } catch (e) {
       print('Lỗi khi lưu chi phí: $e');
@@ -359,7 +412,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // Các hàm báo cáo giữ nguyên, chỉ cập nhật key với _getKey
   Future<Map<String, double>> getRevenueForRange(DateTimeRange range) async {
     try {
       if (userId == null) return {'mainRevenue': 0.0, 'secondaryRevenue': 0.0, 'otherRevenue': 0.0, 'totalRevenue': 0.0};
@@ -368,35 +420,21 @@ class AppState extends ChangeNotifier {
       double secondaryRevenueTotal = 0.0;
       double otherRevenueTotal = 0.0;
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
-        DocumentSnapshot mainDoc = await firestore
+        DocumentSnapshot doc = await firestore
             .collection('users')
             .doc(userId)
-            .collection('revenue')
-            .doc(getKey('revenue_Doanh thu chính_$dateKey'))
+            .collection('daily_data')
+            .doc(getKey(dateKey))
             .get();
-        DocumentSnapshot secondaryDoc = await firestore
-            .collection('users')
-            .doc(userId)
-            .collection('revenue')
-            .doc(getKey('revenue_Doanh thu phụ_$dateKey'))
-            .get();
-        DocumentSnapshot otherDoc = await firestore
-            .collection('users')
-            .doc(userId)
-            .collection('revenue')
-            .doc(getKey('revenue_Doanh thu khác_$dateKey'))
-            .get();
-
-        mainRevenueTotal += mainDoc.exists ? mainDoc['total']?.toDouble() ?? 0.0 : 0.0;
-        secondaryRevenueTotal += secondaryDoc.exists ? secondaryDoc['total']?.toDouble() ?? 0.0 : 0.0;
-        otherRevenueTotal += otherDoc.exists ? otherDoc['total']?.toDouble() ?? 0.0 : 0.0;
+        if (doc.exists) {
+          mainRevenueTotal += doc['mainRevenue']?.toDouble() ?? 0.0;
+          secondaryRevenueTotal += doc['secondaryRevenue']?.toDouble() ?? 0.0;
+          otherRevenueTotal += doc['otherRevenue']?.toDouble() ?? 0.0;
+        }
       }
-
       return {
         'mainRevenue': mainRevenueTotal,
         'secondaryRevenue': secondaryRevenueTotal,
@@ -420,34 +458,18 @@ class AppState extends ChangeNotifier {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       List<Map<String, double>> dailyData = [];
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
-        DocumentSnapshot mainDoc = await firestore
+        DocumentSnapshot doc = await firestore
             .collection('users')
             .doc(userId)
-            .collection('revenue')
-            .doc(getKey('revenue_Doanh thu chính_$dateKey'))
+            .collection('daily_data')
+            .doc(getKey(dateKey))
             .get();
-        DocumentSnapshot secondaryDoc = await firestore
-            .collection('users')
-            .doc(userId)
-            .collection('revenue')
-            .doc(getKey('revenue_Doanh thu phụ_$dateKey'))
-            .get();
-        DocumentSnapshot otherDoc = await firestore
-            .collection('users')
-            .doc(userId)
-            .collection('revenue')
-            .doc(getKey('revenue_Doanh thu khác_$dateKey'))
-            .get();
-
-        double mainRevenue = mainDoc.exists ? mainDoc['total']?.toDouble() ?? 0.0 : 0.0;
-        double secondaryRevenue = secondaryDoc.exists ? secondaryDoc['total']?.toDouble() ?? 0.0 : 0.0;
-        double otherRevenue = otherDoc.exists ? otherDoc['total']?.toDouble() ?? 0.0 : 0.0;
-
+        double mainRevenue = doc.exists ? doc['mainRevenue']?.toDouble() ?? 0.0 : 0.0;
+        double secondaryRevenue = doc.exists ? doc['secondaryRevenue']?.toDouble() ?? 0.0 : 0.0;
+        double otherRevenue = doc.exists ? doc['otherRevenue']?.toDouble() ?? 0.0 : 0.0;
         dailyData.add({
           'mainRevenue': mainRevenue,
           'secondaryRevenue': secondaryRevenue,
@@ -455,7 +477,6 @@ class AppState extends ChangeNotifier {
           'totalRevenue': mainRevenue + secondaryRevenue + otherRevenue,
         });
       }
-
       return dailyData;
     } catch (e) {
       print('Lỗi khi lấy doanh thu hàng ngày: $e');
@@ -470,11 +491,9 @@ class AppState extends ChangeNotifier {
       double fixedExpenseTotal = 0.0;
       double variableExpenseTotal = 0.0;
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
         DocumentSnapshot fixedDoc = await firestore
             .collection('users')
             .doc(userId)
@@ -491,11 +510,9 @@ class AppState extends ChangeNotifier {
             .collection('daily')
             .doc(getKey('variableTransactionHistory_$dateKey'))
             .get();
-
         fixedExpenseTotal += fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
         variableExpenseTotal += variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
       }
-
       return {
         'fixedExpense': fixedExpenseTotal,
         'variableExpense': variableExpenseTotal,
@@ -535,12 +552,11 @@ class AppState extends ChangeNotifier {
           }
         }
       }
-      // Nhóm các khoản chi phí dưới 5% vào "Khác"
       Map<String, double> finalBreakdown = {};
       double otherTotal = 0.0;
       double total = breakdown.values.fold(0.0, (sum, value) => sum + value);
       breakdown.forEach((name, amount) {
-        if (total > 0 && (amount / total) < 0.05) { // Nhỏ hơn 5% tổng chi phí
+        if (total > 0 && (amount / total) < 0.05) {
           otherTotal += amount;
         } else {
           finalBreakdown[name] = amount;
@@ -562,11 +578,9 @@ class AppState extends ChangeNotifier {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       List<Map<String, double>> dailyData = [];
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
         DocumentSnapshot fixedDoc = await firestore
             .collection('users')
             .doc(userId)
@@ -583,17 +597,14 @@ class AppState extends ChangeNotifier {
             .collection('daily')
             .doc(getKey('variableTransactionHistory_$dateKey'))
             .get();
-
         double fixed = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
         double variable = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
-
         dailyData.add({
           'fixedExpense': fixed,
           'variableExpense': variable,
           'totalExpense': fixed + variable,
         });
       }
-
       return dailyData;
     } catch (e) {
       print('Lỗi khi lấy chi phí hàng ngày: $e');
@@ -619,21 +630,15 @@ class AppState extends ChangeNotifier {
       double totalRevenue = 0.0;
       double totalExpense = 0.0;
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
-        // Doanh thu
-        DocumentSnapshot revenueDoc = await firestore
+        DocumentSnapshot dailyDoc = await firestore
             .collection('users')
             .doc(userId)
-            .collection('revenue')
-            .doc(getKey('total_revenue_$dateKey'))
+            .collection('daily_data')
+            .doc(getKey(dateKey))
             .get();
-        totalRevenue += revenueDoc.exists ? revenueDoc['total']?.toDouble() ?? 0.0 : 0.0;
-
-        // Chi phí
         DocumentSnapshot fixedDoc = await firestore
             .collection('users')
             .doc(userId)
@@ -650,19 +655,17 @@ class AppState extends ChangeNotifier {
             .collection('daily')
             .doc(getKey('variableTransactionHistory_$dateKey'))
             .get();
-
+        totalRevenue += dailyDoc.exists ? dailyDoc['totalRevenue']?.toDouble() ?? 0.0 : 0.0;
         double fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
         double variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
         totalExpense += fixedExpense + variableExpense;
       }
-
       double profit = totalRevenue - totalExpense;
       double avgRevenuePerDay = days > 0 ? totalRevenue / days : 0.0;
       double avgExpensePerDay = days > 0 ? totalExpense / days : 0.0;
       double avgProfitPerDay = days > 0 ? profit / days : 0.0;
       double averageProfitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0.0;
       double expenseToRevenueRatio = totalRevenue > 0 ? (totalExpense / totalRevenue) * 100 : 0.0;
-
       return {
         'totalRevenue': totalRevenue,
         'totalExpense': totalExpense,
@@ -692,10 +695,10 @@ class AppState extends ChangeNotifier {
     try {
       if (userId == null) {
         return {
-        'Doanh thu chính': {},
-        'Doanh thu phụ': {},
-        'Doanh thu khác': {},
-      };
+          'Doanh thu chính': {},
+          'Doanh thu phụ': {},
+          'Doanh thu khác': {},
+        };
       }
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       Map<String, Map<String, double>> topProducts = {
@@ -704,20 +707,23 @@ class AppState extends ChangeNotifier {
         'Doanh thu khác': {},
       };
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-        for (String category in topProducts.keys) {
-          String key = getKey('transactionHistory_${category}_$dateKey');
-          DocumentSnapshot doc = await firestore
-              .collection('users')
-              .doc(userId)
-              .collection('transactions')
-              .doc(key)
-              .get();
-          if (doc.exists && doc['transactions'] != null) {
-            List<dynamic> transactions = doc['transactions'];
+        DocumentSnapshot doc = await firestore
+            .collection('users')
+            .doc(userId)
+            .collection('daily_data')
+            .doc(getKey(dateKey))
+            .get();
+        if (doc.exists) {
+          for (String category in topProducts.keys) {
+            String field = category == 'Doanh thu chính'
+                ? 'mainRevenueTransactions'
+                : category == 'Doanh thu phụ'
+                ? 'secondaryRevenueTransactions'
+                : 'otherRevenueTransactions';
+            List<dynamic> transactions = doc[field] ?? [];
             for (var transaction in transactions) {
               String name = transaction['name'] ?? 'Không xác định';
               double total = (transaction['total'] as num?)?.toDouble() ?? 0.0;
@@ -743,21 +749,15 @@ class AppState extends ChangeNotifier {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       List<Map<String, double>> dailyData = [];
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
-        // Doanh thu
-        DocumentSnapshot revenueDoc = await firestore
+        DocumentSnapshot dailyDoc = await firestore
             .collection('users')
             .doc(userId)
-            .collection('revenue')
-            .doc(getKey('total_revenue_$dateKey'))
+            .collection('daily_data')
+            .doc(getKey(dateKey))
             .get();
-        double totalRevenue = revenueDoc.exists ? revenueDoc['total']?.toDouble() ?? 0.0 : 0.0;
-
-        // Chi phí
         DocumentSnapshot fixedDoc = await firestore
             .collection('users')
             .doc(userId)
@@ -774,20 +774,17 @@ class AppState extends ChangeNotifier {
             .collection('daily')
             .doc(getKey('variableTransactionHistory_$dateKey'))
             .get();
-
+        double totalRevenue = dailyDoc.exists ? dailyDoc['totalRevenue']?.toDouble() ?? 0.0 : 0.0;
         double fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
         double variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
         double totalExpense = fixedExpense + variableExpense;
-
         double profit = totalRevenue - totalExpense;
-
         dailyData.add({
           'totalRevenue': totalRevenue,
           'totalExpense': totalExpense,
           'profit': profit,
         });
       }
-
       return dailyData;
     } catch (e) {
       print('Lỗi khi lấy tổng quan hàng ngày: $e');
@@ -802,20 +799,18 @@ class AppState extends ChangeNotifier {
       Map<String, double> productTotals = {};
       double totalRevenue = 0.0;
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-        for (String category in ['Doanh thu chính', 'Doanh thu phụ', 'Doanh thu khác']) {
-          String key = getKey('transactionHistory_${category}_$dateKey');
-          DocumentSnapshot doc = await firestore
-              .collection('users')
-              .doc(userId)
-              .collection('transactions')
-              .doc(key)
-              .get();
-          if (doc.exists && doc['transactions'] != null) {
-            List<dynamic> transactions = doc['transactions'];
+        DocumentSnapshot doc = await firestore
+            .collection('users')
+            .doc(userId)
+            .collection('daily_data')
+            .doc(getKey(dateKey))
+            .get();
+        if (doc.exists) {
+          for (String field in ['mainRevenueTransactions', 'secondaryRevenueTransactions', 'otherRevenueTransactions']) {
+            List<dynamic> transactions = doc[field] ?? [];
             for (var transaction in transactions) {
               String name = transaction['name'] ?? 'Không xác định';
               double total = (transaction['total'] as num?)?.toDouble() ?? 0.0;
@@ -825,7 +820,6 @@ class AppState extends ChangeNotifier {
           }
         }
       }
-
       Map<String, double> breakdown = {};
       if (totalRevenue > 0) {
         productTotals.forEach((name, total) {
@@ -845,20 +839,18 @@ class AppState extends ChangeNotifier {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       Map<String, double> productTotals = {};
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-        for (String category in ['Doanh thu chính', 'Doanh thu phụ', 'Doanh thu khác']) {
-          String key = getKey('transactionHistory_${category}_$dateKey');
-          DocumentSnapshot doc = await firestore
-              .collection('users')
-              .doc(userId)
-              .collection('transactions')
-              .doc(key)
-              .get();
-          if (doc.exists && doc['transactions'] != null) {
-            List<dynamic> transactions = doc['transactions'];
+        DocumentSnapshot doc = await firestore
+            .collection('users')
+            .doc(userId)
+            .collection('daily_data')
+            .doc(getKey(dateKey))
+            .get();
+        if (doc.exists) {
+          for (String field in ['mainRevenueTransactions', 'secondaryRevenueTransactions', 'otherRevenueTransactions']) {
+            List<dynamic> transactions = doc[field] ?? [];
             for (var transaction in transactions) {
               String name = transaction['name'] ?? 'Không xác định';
               double total = (transaction['total'] as num?)?.toDouble() ?? 0.0;
@@ -880,20 +872,18 @@ class AppState extends ChangeNotifier {
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       Map<String, Map<String, double>> productDetails = {};
       int days = range.end.difference(range.start).inDays + 1;
-
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-        for (String category in ['Doanh thu chính', 'Doanh thu phụ', 'Doanh thu khác']) {
-          String key = getKey('transactionHistory_${category}_$dateKey');
-          DocumentSnapshot doc = await firestore
-              .collection('users')
-              .doc(userId)
-              .collection('transactions')
-              .doc(key)
-              .get();
-          if (doc.exists && doc['transactions'] != null) {
-            List<dynamic> transactions = doc['transactions'];
+        DocumentSnapshot doc = await firestore
+            .collection('users')
+            .doc(userId)
+            .collection('daily_data')
+            .doc(getKey(dateKey))
+            .get();
+        if (doc.exists) {
+          for (String field in ['mainRevenueTransactions', 'secondaryRevenueTransactions', 'otherRevenueTransactions']) {
+            List<dynamic> transactions = doc[field] ?? [];
             for (var transaction in transactions) {
               String name = transaction['name'] ?? 'Không xác định';
               double total = (transaction['total'] as num?)?.toDouble() ?? 0.0;

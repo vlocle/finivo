@@ -227,29 +227,46 @@ class ExpenseManager {
     try {
       if (appState.userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      final batch = firestore.batch();
       int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
       double dailyAmount = amount / daysInMonth;
-
-      // Lưu ngày ban đầu để khôi phục sau
       DateTime originalDate = appState.selectedDate;
 
+      // Tải tất cả dữ liệu chi phí cố định của tháng
+      List<Future<DocumentSnapshot>> futures = [];
       for (int day = 1; day <= daysInMonth; day++) {
         DateTime currentDate = DateTime(month.year, month.month, day);
         String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
         String key = appState.getKey('fixedExpenseList_$dateKey');
+        futures.add(
+          firestore
+              .collection('users')
+              .doc(appState.userId)
+              .collection('expenses')
+              .doc('fixed')
+              .collection('daily')
+              .doc(key)
+              .get(),
+        );
+      }
+      List<DocumentSnapshot> docs = await Future.wait(futures);
 
-        DocumentSnapshot doc = await firestore
+      // Cập nhật dữ liệu và thêm vào batch
+      for (int day = 0; day < daysInMonth; day++) {
+        DateTime currentDate = DateTime(month.year, month.month, day + 1);
+        String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
+        String key = appState.getKey('fixedExpenseList_$dateKey');
+        DocumentReference docRef = firestore
             .collection('users')
             .doc(appState.userId)
             .collection('expenses')
             .doc('fixed')
             .collection('daily')
-            .doc(key)
-            .get();
+            .doc(key);
 
         List<Map<String, dynamic>> expenseList = [];
-        if (doc.exists && doc['products'] != null) {
-          expenseList = List<Map<String, dynamic>>.from(doc['products']);
+        if (docs[day].exists && docs[day]['products'] != null) {
+          expenseList = List<Map<String, dynamic>>.from(docs[day]['products']);
         }
 
         var existingItem = expenseList.firstWhere((item) => item['name'] == name, orElse: () => {});
@@ -259,38 +276,36 @@ class ExpenseManager {
           existingItem['amount'] = dailyAmount;
         }
 
-        await saveFixedExpenses(appState, expenseList, date: dateKey);
+        batch.set(docRef, {
+          'products': expenseList,
+          'total': expenseList.fold(0.0, (sum, item) => sum + (item['amount'] ?? 0.0)),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       }
 
+      // Cập nhật danh sách chi phí cố định hàng tháng
       String monthlyKey = appState.getKey('monthlyFixedAmounts_${month.year}_${month.month}');
-      DocumentSnapshot monthlyDoc = await firestore
+      DocumentReference monthlyDocRef = firestore
           .collection('users')
           .doc(appState.userId)
           .collection('expenses')
           .doc('monthlyFixed')
           .collection('monthly')
-          .doc(monthlyKey)
-          .get();
+          .doc(monthlyKey);
 
+      DocumentSnapshot monthlyDoc = await monthlyDocRef.get();
       Map<String, double> monthlyData = {};
       if (monthlyDoc.exists && monthlyDoc['amounts'] != null) {
         monthlyData = Map<String, double>.from(monthlyDoc['amounts']);
       }
       monthlyData[name] = amount;
 
-      await firestore
-          .collection('users')
-          .doc(appState.userId)
-          .collection('expenses')
-          .doc('monthlyFixed')
-          .collection('monthly')
-          .doc(monthlyKey)
-          .set({
+      batch.set(monthlyDocRef, {
         'amounts': monthlyData,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Khôi phục selectedDate ban đầu
+      await batch.commit();
       appState.setSelectedDate(originalDate);
     } catch (e) {
       print("Error saving monthly fixed amount: $e");

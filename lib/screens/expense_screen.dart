@@ -210,11 +210,34 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                         onPressed: () async {
                                           final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
                                           if (amount > 0) {
-                                            await ExpenseManager.saveMonthlyFixedAmount(appState, name, amount, _selectedMonth);
-                                            setStateDialog(() => monthlyControllers[index].clear());
-                                            await appState.loadExpenseValues();
-                                            setState(() {});
-                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã lưu số tiền")));
+                                            showDialog(
+                                              context: context,
+                                              barrierDismissible: false,
+                                              builder: (context) => AlertDialog(
+                                                content: SizedBox(
+                                                  height: 120,
+                                                  child: Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: const [
+                                                      CircularProgressIndicator(),
+                                                      SizedBox(height: 16),
+                                                      Text("Đang lưu...", style: TextStyle(fontSize: 16)),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                            try {
+                                              await ExpenseManager.saveMonthlyFixedAmount(appState, name, amount, _selectedMonth);
+                                              Navigator.pop(context);
+                                              setStateDialog(() => monthlyControllers[index].clear());
+                                              await appState.loadExpenseValues();
+                                              setState(() {});
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã lưu số tiền")));
+                                            } catch (e) {
+                                              Navigator.pop(context);
+                                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+                                            }
                                           }
                                         },
                                       ),
@@ -229,7 +252,70 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                       const SizedBox(width: 8),
                                       IconButton(
                                         icon: const Icon(Icons.edit, color: Color(0xFF1976D2), size: 20),
-                                        onPressed: () => setStateDialog(() => monthlyControllers[index].text = savedAmount.toString()),
+                                        onPressed: () {
+                                          setStateDialog(() => monthlyControllers[index].text = savedAmount.toString());
+                                          showDialog(
+                                            context: context,
+                                            builder: (context) => AlertDialog(
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                              title: Text("Chỉnh sửa số tiền - $name"),
+                                              content: TextField(
+                                                controller: monthlyControllers[index],
+                                                keyboardType: TextInputType.number,
+                                                decoration: InputDecoration(
+                                                  labelText: "Nhập số tiền",
+                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                                ),
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(context),
+                                                  child: const Text("Hủy", style: TextStyle(color: Colors.grey)),
+                                                ),
+                                                TextButton(
+                                                  onPressed: () async {
+                                                    final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
+                                                    if (amount > 0) {
+                                                      showDialog(
+                                                        context: context,
+                                                        barrierDismissible: false,
+                                                        builder: (context) => AlertDialog(
+                                                          content: SizedBox(
+                                                            height: 120,
+                                                            child: Column(
+                                                              mainAxisAlignment: MainAxisAlignment.center,
+                                                              children: const [
+                                                                CircularProgressIndicator(),
+                                                                SizedBox(height: 16),
+                                                                Text("Đang lưu...", style: TextStyle(fontSize: 16)),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      );
+                                                      try {
+                                                        await ExpenseManager.saveMonthlyFixedAmount(appState, name, amount, _selectedMonth);
+                                                        Navigator.pop(context);
+                                                        Navigator.pop(context);
+                                                        setStateDialog(() {});
+                                                        await appState.loadExpenseValues();
+                                                        setState(() {});
+                                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã cập nhật số tiền")));
+                                                      } catch (e) {
+                                                        Navigator.pop(context);
+                                                        Navigator.pop(context);
+                                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+                                                      }
+                                                    } else {
+                                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Số tiền không hợp lệ")));
+                                                    }
+                                                  },
+                                                  child: const Text("Lưu", style: TextStyle(color: Color(0xFF1976D2))),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
                                       ),
                                     ],
                                   ),
@@ -254,14 +340,37 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                         ),
                                       );
                                       if (confirm == true) {
-                                        await ExpenseManager.deleteMonthlyFixedExpense(appState, name, _selectedMonth);
-                                        fixedExpenses.removeAt(index);
-                                        monthlyControllers.removeAt(index);
-                                        await ExpenseManager.saveFixedExpenseList(appState, fixedExpenses);
-                                        await appState.loadExpenseValues();
-                                        setStateDialog(() {});
-                                        setState(() {});
-                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã xóa khoản chi phí")));
+                                        showDialog(
+                                          context: context,
+                                          barrierDismissible: false,
+                                          builder: (context) => AlertDialog(
+                                            content: SizedBox(
+                                              height: 120,
+                                              child: Column(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: const [
+                                                  CircularProgressIndicator(),
+                                                  SizedBox(height: 16),
+                                                  Text("Đang xóa...", style: TextStyle(fontSize: 16)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                        try {
+                                          await ExpenseManager.deleteMonthlyFixedExpense(appState, name, _selectedMonth);
+                                          fixedExpenses.removeAt(index);
+                                          monthlyControllers.removeAt(index);
+                                          await ExpenseManager.saveFixedExpenseList(appState, fixedExpenses);
+                                          Navigator.pop(context);
+                                          await appState.loadExpenseValues();
+                                          setStateDialog(() {});
+                                          setState(() {});
+                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã xóa khoản chi phí")));
+                                        } catch (e) {
+                                          Navigator.pop(context);
+                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+                                        }
                                       }
                                     },
                                   ),
@@ -300,7 +409,6 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
     final user = FirebaseAuth.instance.currentUser;
     double totalExpense = appState.getTotalFixedAndVariableExpense();
     final screenWidth = MediaQuery.of(context).size.width;
-
     return Scaffold(
       body: Stack(
         children: [
@@ -309,95 +417,95 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
             color: const Color(0xFF1976D2).withOpacity(0.9),
           ),
           SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (context) => UserSettingsScreen()),
-                                );
-                              },
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: CircleAvatar(
-                                  radius: screenWidth < 360 ? 20 : 24,
-                                  backgroundColor: Colors.white,
-                                  backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-                                  child: user?.photoURL == null
-                                      ? Icon(
-                                    Icons.person,
-                                    size: screenWidth < 360 ? 24 : 30,
-                                    color: const Color(0xFF1976D2),
-                                  )
-                                      : null,
+            child: SingleChildScrollView( // Thêm SingleChildScrollView để tránh overflow
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => UserSettingsScreen()),
+                                  );
+                                },
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: CircleAvatar(
+                                    radius: screenWidth < 360 ? 20 : 24,
+                                    backgroundColor: Colors.white,
+                                    backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                                    child: user?.photoURL == null
+                                        ? Icon(
+                                      Icons.person,
+                                      size: screenWidth < 360 ? 24 : 30,
+                                      color: const Color(0xFF1976D2),
+                                    )
+                                        : null,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${user?.displayName ?? 'Finivo'}",
-                                    style: TextStyle(
-                                      fontSize: screenWidth < 360 ? 18 : 22,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      "Ngày ${DateFormat('d MMMM y', 'vi').format(appState.selectedDate)}",
-                                      style: const TextStyle(fontSize: 12, color: Colors.white),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "${user?.displayName ?? 'Finivo'}",
+                                      style: TextStyle(
+                                        fontSize: screenWidth < 360 ? 18 : 22,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
                                     ),
-                                  ),
-                                ],
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        "Ngày ${DateFormat('d MMMM y', 'vi').format(appState.selectedDate)}",
+                                        style: const TextStyle(fontSize: 12, color: Colors.white),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.calendar_today, color: Colors.white),
-                        onPressed: () => _selectDate(context),
-                        splashRadius: 20,
-                      ),
-                    ],
+                        IconButton(
+                          icon: const Icon(Icons.calendar_today, color: Colors.white),
+                          onPressed: () => _selectDate(context),
+                          splashRadius: 20,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: Padding(
+                  const SizedBox(height: 16),
+                  Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: Column(
                       children: [
@@ -516,21 +624,26 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                 backgroundColor: const Color(0xFF42A5F5),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 minimumSize: Size(screenWidth - 32, 50),
+                                padding: const EdgeInsets.symmetric(horizontal: 16), // Thêm padding để tránh tràn
                               ),
                               onPressed: () {
                                 _controller.reset();
                                 _controller.forward();
                                 _showMonthlyFixedExpenseDialog(appState);
                               },
-                              child: const Text(
-                                "Thêm cố định tháng",
-                                style: TextStyle(color: Colors.white, fontSize: 16),
-                                overflow: TextOverflow.ellipsis,
+                              child: FittedBox( // Sử dụng FittedBox để tự động điều chỉnh kích thước văn bản
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  "Thêm cố định tháng",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: screenWidth < 360 ? 14 : 16, // Giảm fontSize trên màn hình nhỏ
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 10),
                         Padding(
                           padding: const EdgeInsets.only(bottom: 16.0),
                           child: ScaleTransition(
@@ -540,6 +653,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                 backgroundColor: const Color(0xFF42A5F5),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 minimumSize: Size(screenWidth - 32, 50),
+                                padding: const EdgeInsets.symmetric(horizontal: 16), // Thêm padding để tránh tràn
                               ),
                               onPressed: () {
                                 _controller.reset();
@@ -551,10 +665,15 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                   ),
                                 );
                               },
-                              child: const Text(
-                                "Quản lý chi phí biến đổi",
-                                style: TextStyle(color: Colors.white, fontSize: 16),
-                                overflow: TextOverflow.ellipsis,
+                              child: FittedBox( // Sử dụng FittedBox để tự động điều chỉnh kích thước văn bản
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  "Quản lý chi phí biến đổi",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: screenWidth < 360 ? 14 : 16, // Giảm fontSize trên màn hình nhỏ
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -562,8 +681,8 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                       ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],

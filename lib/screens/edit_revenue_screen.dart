@@ -17,6 +17,7 @@ class _EditRevenueScreenState extends State<EditRevenueScreen> with SingleTicker
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
+  late Future<List<Map<String, dynamic>>> _productsFuture;
 
   @override
   void initState() {
@@ -28,6 +29,9 @@ class _EditRevenueScreenState extends State<EditRevenueScreen> with SingleTicker
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
     _controller.forward();
+    final appState = Provider.of<AppState>(context, listen: false);
+    _productsFuture = RevenueManager.loadProducts(appState, widget.category);
+    appState.productsUpdated.addListener(_onProductsUpdated);
   }
 
   @override
@@ -36,6 +40,14 @@ class _EditRevenueScreenState extends State<EditRevenueScreen> with SingleTicker
     priceController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onProductsUpdated() {
+    // Làm mới Future khi danh sách sản phẩm thay đổi
+    setState(() {
+      final appState = Provider.of<AppState>(context, listen: false);
+      _productsFuture = RevenueManager.loadProducts(appState, widget.category);
+    });
   }
 
   void addTransaction(AppState appState, List<Map<String, dynamic>> transactions, String? selectedProduct, double selectedPrice, bool isFlexiblePrice) {
@@ -136,7 +148,7 @@ class _EditRevenueScreenState extends State<EditRevenueScreen> with SingleTicker
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: FutureBuilder<List<Map<String, dynamic>>>(
-                      future: RevenueManager.loadProducts(appState, widget.category),
+                      future: _productsFuture,
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                         if (snapshot.hasError) return const Center(child: Text("Lỗi tải dữ liệu"));
