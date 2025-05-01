@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'package:intl/intl.dart';
 import 'user_setting_screen.dart';
+import 'skeleton_loading.dart';
 
 class ReportScreen extends StatefulWidget {
   @override
@@ -243,7 +244,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
       future: appState.getOverviewForRange(selectedDateRange!),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const ReportSkeleton();
         }
         if (snapshot.hasData) {
           final data = snapshot.data!;
@@ -302,10 +303,8 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                             _buildKpiItem('Doanh Thu TB/Ngày', avgRevenuePerDay, Icons.bar_chart),
                             _buildKpiItem('Chi Phí TB/Ngày', avgExpensePerDay, Icons.pie_chart),
                             _buildKpiItem('Lợi Nhuận TB/Ngày', avgProfitPerDay, Icons.show_chart),
-                            _buildKpiItem('Tỷ Lệ Chi Phí/Doanh Thu', expenseToRevenueRatio, Icons.percent,
-                                isPercentage: true),
-                            _buildKpiItem('Biên Lợi Nhuận TB', averageProfitMargin, Icons.trending_up,
-                                isPercentage: true),
+                            _buildKpiItem('Tỷ Lệ Chi Phí/Doanh Thu', expenseToRevenueRatio, Icons.percent, isPercentage: true),
+                            _buildKpiItem('Biên Lợi Nhuận TB', averageProfitMargin, Icons.trending_up, isPercentage: true),
                           ],
                         ),
                       ),
@@ -334,7 +333,18 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                             const SizedBox(height: 12),
                             SizedBox(
                               height: MediaQuery.of(context).size.height * 0.4,
-                              child: _buildOverviewTrendChart(appState, selectedDateRange!),
+                              child: FutureBuilder<List<Map<String, double>>>(
+                                future: appState.getDailyOverviewForRange(selectedDateRange!),
+                                builder: (context, trendSnapshot) {
+                                  if (trendSnapshot.connectionState == ConnectionState.waiting) {
+                                    return const Center(child: ReportSkeleton());
+                                  }
+                                  if (trendSnapshot.hasData) {
+                                    return _buildOverviewTrendChart(appState, selectedDateRange!);
+                                  }
+                                  return const Center(child: Text('Không có dữ liệu xu hướng'));
+                                },
+                              ),
                             ),
                           ],
                         ),
@@ -465,7 +475,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
       future: appState.getExpensesForRange(selectedDateRange!),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const ReportSkeleton();
         }
         if (snapshot.hasData) {
           final data = snapshot.data!;
@@ -522,7 +532,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                                 future: appState.getExpenseBreakdown(selectedDateRange!),
                                 builder: (context, breakdownSnapshot) {
                                   if (breakdownSnapshot.connectionState == ConnectionState.waiting) {
-                                    return const Center(child: CircularProgressIndicator());
+                                    return const Center(child: ReportSkeleton());
                                   }
                                   if (breakdownSnapshot.hasData && breakdownSnapshot.data!.isNotEmpty) {
                                     return _buildPieChart(breakdownSnapshot.data!);
@@ -559,7 +569,18 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                             const SizedBox(height: 12),
                             SizedBox(
                               height: MediaQuery.of(context).size.height * 0.4,
-                              child: _buildExpenseTrendChart(appState, selectedDateRange!),
+                              child: FutureBuilder<List<Map<String, double>>>(
+                                future: appState.getDailyExpensesForRange(selectedDateRange!),
+                                builder: (context, trendSnapshot) {
+                                  if (trendSnapshot.connectionState == ConnectionState.waiting) {
+                                    return const Center(child: ReportSkeleton());
+                                  }
+                                  if (trendSnapshot.hasData) {
+                                    return _buildExpenseTrendChart(appState, selectedDateRange!);
+                                  }
+                                  return const Center(child: Text('Không có dữ liệu xu hướng'));
+                                },
+                              ),
                             ),
                           ],
                         ),
@@ -689,7 +710,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
       future: appState.getRevenueForRange(selectedDateRange!),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const ReportSkeleton();
         }
         if (snapshot.hasData) {
           final data = snapshot.data!;
@@ -747,7 +768,18 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                             const SizedBox(height: 12),
                             SizedBox(
                               height: MediaQuery.of(context).size.height * 0.4,
-                              child: _buildRevenueTrendChart(appState, selectedDateRange!),
+                              child: FutureBuilder<List<Map<String, double>>>(
+                                future: appState.getDailyRevenueForRange(selectedDateRange!),
+                                builder: (context, trendSnapshot) {
+                                  if (trendSnapshot.connectionState == ConnectionState.waiting) {
+                                    return const Center(child: ReportSkeleton());
+                                  }
+                                  if (trendSnapshot.hasData) {
+                                    return _buildRevenueTrendChart(appState, selectedDateRange!);
+                                  }
+                                  return const Center(child: Text('Không có dữ liệu xu hướng'));
+                                },
+                              ),
                             ),
                           ],
                         ),
@@ -918,7 +950,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
       future: appState.getProductRevenueDetails(selectedDateRange!),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const ReportSkeleton();
         }
         if (snapshot.hasData) {
           final productDetails = snapshot.data!;
