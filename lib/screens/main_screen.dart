@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:provider/provider.dart';
+import '../state/app_state.dart'; // Import AppState
 import 'revenue_screen.dart';
 import 'expense_screen.dart';
 import 'report_screen.dart';
@@ -12,9 +14,9 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateMixin {
-  int _selectedIndex = 0;
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
+
   final List<Widget> _screens = [
     RevenueScreen(),
     ExpenseScreen(),
@@ -40,12 +42,10 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-      _controller.reset();
-      _controller.forward();
-    });
+  void _onItemTapped(int index, AppState appState) {
+    appState.setSelectedScreenIndex(index); // Lưu chỉ số vào AppState
+    _controller.reset();
+    _controller.forward();
   }
 
   Future<void> _signOut() async {
@@ -55,10 +55,14 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context); // Lấy AppState
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
+    // Thêm log để theo dõi việc xây dựng lại
+    print('MainScreen rebuilt with selectedScreenIndex: ${appState.selectedScreenIndex}');
+
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: _screens[appState.selectedScreenIndex], // Sử dụng selectedScreenIndex từ AppState
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: isDarkMode ? Colors.grey[900]?.withOpacity(0.9) : Colors.white.withOpacity(0.9),
@@ -74,7 +78,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           type: BottomNavigationBarType.fixed,
           items: [
             BottomNavigationBarItem(
-              icon: _selectedIndex == 0
+              icon: appState.selectedScreenIndex == 0
                   ? ScaleTransition(
                 scale: _scaleAnimation,
                 child: Container(
@@ -90,7 +94,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               label: 'Doanh Thu',
             ),
             BottomNavigationBarItem(
-              icon: _selectedIndex == 1
+              icon: appState.selectedScreenIndex == 1
                   ? ScaleTransition(
                 scale: _scaleAnimation,
                 child: Container(
@@ -106,7 +110,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               label: 'Chi Phí',
             ),
             BottomNavigationBarItem(
-              icon: _selectedIndex == 2
+              icon: appState.selectedScreenIndex == 2
                   ? ScaleTransition(
                 scale: _scaleAnimation,
                 child: Container(
@@ -122,7 +126,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               label: 'Báo Cáo',
             ),
             BottomNavigationBarItem(
-              icon: _selectedIndex == 3
+              icon: appState.selectedScreenIndex == 3
                   ? ScaleTransition(
                 scale: _scaleAnimation,
                 child: Container(
@@ -138,11 +142,11 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               label: 'Khuyến nghị',
             ),
           ],
-          currentIndex: _selectedIndex,
+          currentIndex: appState.selectedScreenIndex, // Sử dụng selectedScreenIndex từ AppState
           selectedItemColor: const Color(0xFF1976D2),
           unselectedItemColor: isDarkMode ? Colors.grey[400] : Colors.grey,
           showUnselectedLabels: true,
-          onTap: _onItemTapped,
+          onTap: (index) => _onItemTapped(index, appState), // Truyền AppState vào _onItemTapped
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),

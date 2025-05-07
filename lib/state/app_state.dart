@@ -8,6 +8,9 @@ import '/screens/expense_manager.dart';
 import '/screens/revenue_manager.dart';
 
 class AppState extends ChangeNotifier {
+  int _selectedScreenIndex = 0;
+  int get selectedScreenIndex => _selectedScreenIndex;
+
   String? userId;
   DateTime selectedDate = DateTime.now();
   double mainRevenue = 0.0;
@@ -32,6 +35,11 @@ class AppState extends ChangeNotifier {
   AppState() {
     loadExpenseValues();
     _loadSettings();
+  }
+
+  void setSelectedScreenIndex(int index) {
+    _selectedScreenIndex = index;
+    notifyListeners();
   }
 
   void _loadSettings() {
