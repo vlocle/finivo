@@ -251,7 +251,7 @@ Mỗi khuyến nghị cần lý do, ví dụ thực tế, và phù hợp với n
       var response = await http.post(
         Uri.parse("https://api.openai.com/v1/chat/completions"),
         headers: {
-          "Authorization": "Bearer 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",
+          "Authorization": "Bearer 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",
           "Content-Type": "application/json",
         },
         body: jsonEncode({
