@@ -86,8 +86,10 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
     }
   }
 
-  void _showMonthlyFixedExpenseDialog(AppState appState) {
+  Future<void> _showMonthlyFixedExpenseDialog(AppState appState) async {
+    DateTimeRange? selectedRange;
     final daysInMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0).day;
+
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -145,6 +147,45 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Date range picker
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            selectedRange == null
+                                ? "Chọn khoảng thời gian"
+                                : "${DateFormat('dd/MM/yy').format(selectedRange!.start)} - ${DateFormat('dd/MM/yy').format(selectedRange!.end)}",
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.date_range, color: Color(0xFF1976D2)),
+                            onPressed: () async {
+                              final DateTimeRange? picked = await showDateRangePicker(
+                                context: context,
+                                initialDateRange: selectedRange ??
+                                    DateTimeRange(
+                                      start: _selectedMonth,
+                                      end: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
+                                    ),
+                                firstDate: DateTime(_selectedMonth.year, _selectedMonth.month, 1),
+                                lastDate: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
+                                builder: (context, child) => Theme(
+                                  data: ThemeData.light().copyWith(
+                                    primaryColor: const Color(0xFF1976D2),
+                                    colorScheme: const ColorScheme.light(primary: Color(0xFF1976D2)),
+                                    buttonTheme: const ButtonThemeData(textTheme: ButtonTextTheme.primary),
+                                  ),
+                                  child: child!,
+                                ),
+                              );
+                              if (picked != null) {
+                                setStateDialog(() => selectedRange = picked);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(
@@ -196,7 +237,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                           controller: monthlyControllers[index],
                                           keyboardType: TextInputType.number,
                                           decoration: InputDecoration(
-                                            labelText: "Tháng (VNĐ)",
+                                            labelText: "Số tiền (VNĐ)",
                                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                             focusedBorder: OutlineInputBorder(
                                               borderRadius: BorderRadius.circular(8),
@@ -210,6 +251,12 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                         onPressed: () async {
                                           final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
                                           if (amount > 0) {
+                                            if (selectedRange == null) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text("Vui lòng chọn khoảng thời gian")),
+                                              );
+                                              return;
+                                            }
                                             showDialog(
                                               context: context,
                                               barrierDismissible: false,
@@ -228,7 +275,13 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                               ),
                                             );
                                             try {
-                                              await ExpenseManager.saveMonthlyFixedAmount(appState, name, amount, _selectedMonth);
+                                              await ExpenseManager.saveMonthlyFixedAmount(
+                                                appState,
+                                                name,
+                                                amount,
+                                                _selectedMonth,
+                                                dateRange: selectedRange,
+                                              );
                                               Navigator.pop(context);
                                               setStateDialog(() => monthlyControllers[index].clear());
                                               await appState.loadExpenseValues();
@@ -259,13 +312,56 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                             builder: (context) => AlertDialog(
                                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                               title: Text("Chỉnh sửa số tiền - $name"),
-                                              content: TextField(
-                                                controller: monthlyControllers[index],
-                                                keyboardType: TextInputType.number,
-                                                decoration: InputDecoration(
-                                                  labelText: "Nhập số tiền",
-                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                                ),
+                                              content: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  TextField(
+                                                    controller: monthlyControllers[index],
+                                                    keyboardType: TextInputType.number,
+                                                    decoration: InputDecoration(
+                                                      labelText: "Nhập số tiền",
+                                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(
+                                                        selectedRange == null
+                                                            ? "Chọn khoảng thời gian"
+                                                            : "${DateFormat('dd/MM/yy').format(selectedRange!.start)} - ${DateFormat('dd/MM/yy').format(selectedRange!.end)}",
+                                                        style: const TextStyle(fontSize: 14),
+                                                      ),
+                                                      IconButton(
+                                                        icon: const Icon(Icons.date_range, color: Color(0xFF1976D2)),
+                                                        onPressed: () async {
+                                                          final DateTimeRange? picked = await showDateRangePicker(
+                                                            context: context,
+                                                            initialDateRange: selectedRange ??
+                                                                DateTimeRange(
+                                                                  start: _selectedMonth,
+                                                                  end: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
+                                                                ),
+                                                            firstDate: DateTime(_selectedMonth.year, _selectedMonth.month, 1),
+                                                            lastDate: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
+                                                            builder: (context, child) => Theme(
+                                                              data: ThemeData.light().copyWith(
+                                                                primaryColor: const Color(0xFF1976D2),
+                                                                colorScheme: const ColorScheme.light(primary: Color(0xFF1976D2)),
+                                                                buttonTheme: const ButtonThemeData(textTheme: ButtonTextTheme.primary),
+                                                              ),
+                                                              child: child!,
+                                                            ),
+                                                          );
+                                                          if (picked != null) {
+                                                            setStateDialog(() => selectedRange = picked);
+                                                          }
+                                                        },
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
                                               ),
                                               actions: [
                                                 TextButton(
@@ -276,6 +372,12 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                                   onPressed: () async {
                                                     final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
                                                     if (amount > 0) {
+                                                      if (selectedRange == null) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          const SnackBar(content: Text("Vui lòng chọn khoảng thời gian")),
+                                                        );
+                                                        return;
+                                                      }
                                                       showDialog(
                                                         context: context,
                                                         barrierDismissible: false,
@@ -294,7 +396,13 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                                         ),
                                                       );
                                                       try {
-                                                        await ExpenseManager.saveMonthlyFixedAmount(appState, name, amount, _selectedMonth);
+                                                        await ExpenseManager.saveMonthlyFixedAmount(
+                                                          appState,
+                                                          name,
+                                                          amount,
+                                                          _selectedMonth,
+                                                          dateRange: selectedRange,
+                                                        );
                                                         Navigator.pop(context);
                                                         Navigator.pop(context);
                                                         setStateDialog(() {});
@@ -317,62 +425,61 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                           );
                                         },
                                       ),
-                                    ],
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                                    onPressed: () async {
-                                      bool? confirm = await showDialog(
-                                        context: dialogContext,
-                                        builder: (context) => AlertDialog(
-                                          title: const Text("Xác nhận xóa"),
-                                          content: Text("Bạn có chắc muốn xóa '$name' không? Dữ liệu phân bổ theo ngày sẽ bị xóa."),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(context, false),
-                                              child: const Text("Hủy", style: TextStyle(color: Colors.grey)),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                        onPressed: () async {
+                                          bool? confirm = await showDialog(
+                                            context: dialogContext,
+                                            builder: (context) => AlertDialog(
+                                              title: const Text("Xác nhận xóa"),
+                                              content: Text("Bạn có chắc muốn xóa '$name' không? Dữ liệu phân bổ theo ngày sẽ bị xóa."),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(context, false),
+                                                  child: const Text("Hủy", style: TextStyle(color: Colors.grey)),
+                                                ),
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(context, true),
+                                                  child: const Text("Xóa", style: TextStyle(color: Colors.red)),
+                                                ),
+                                              ],
                                             ),
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(context, true),
-                                              child: const Text("Xóa", style: TextStyle(color: Colors.red)),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                      if (confirm == true) {
-                                        showDialog(
-                                          context: context,
-                                          barrierDismissible: false,
-                                          builder: (context) => AlertDialog(
-                                            content: SizedBox(
-                                              height: 120,
-                                              child: Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: const [
-                                                  CircularProgressIndicator(),
-                                                  SizedBox(height: 16),
-                                                  Text("Đang xóa...", style: TextStyle(fontSize: 16)),
-                                                ],
+                                          );
+                                          if (confirm == true) {
+                                            showDialog(
+                                              context: context,
+                                              barrierDismissible: false,
+                                              builder: (context) => AlertDialog(
+                                                content: SizedBox(
+                                                  height: 120,
+                                                  child: Column(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: const [
+                                                      CircularProgressIndicator(),
+                                                      SizedBox(height: 16),
+                                                      Text("Đang xóa...", style: TextStyle(fontSize: 16)),
+                                                    ],
+                                                  ),
+                                                ),
                                               ),
-                                            ),
-                                          ),
-                                        );
-                                        try {
-                                          await ExpenseManager.deleteMonthlyFixedExpense(appState, name, _selectedMonth);
-                                          fixedExpenses.removeAt(index);
-                                          monthlyControllers.removeAt(index);
-                                          await ExpenseManager.saveFixedExpenseList(appState, fixedExpenses);
-                                          Navigator.pop(context);
-                                          await appState.loadExpenseValues();
-                                          setStateDialog(() {});
-                                          setState(() {});
-                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã xóa khoản chi phí")));
-                                        } catch (e) {
-                                          Navigator.pop(context);
-                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
-                                        }
-                                      }
-                                    },
+                                            );
+                                            try {
+                                              await ExpenseManager.deleteMonthlyFixedExpense(appState, name, _selectedMonth, dateRange: selectedRange);
+                                              fixedExpenses.removeAt(index);
+                                              monthlyControllers.removeAt(index);
+                                              await ExpenseManager.saveFixedExpenseList(appState, fixedExpenses);
+                                              Navigator.pop(context);
+                                              setStateDialog(() {});
+                                              setState(() {});
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã xóa khoản chi phí")));
+                                            } catch (e) {
+                                              Navigator.pop(context);
+                                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+                                            }
+                                          }
+                                        },
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -382,7 +489,9 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        "Sẽ được phân bổ đều cho $daysInMonth ngày",
+                        selectedRange == null
+                            ? "Sẽ được phân bổ đều cho $daysInMonth ngày"
+                            : "Sẽ được phân bổ đều cho ${selectedRange!.end.difference(selectedRange!.start).inDays + 1} ngày",
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                       ),
                     ],
@@ -634,7 +743,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                               child: FittedBox( // Sử dụng FittedBox để tự động điều chỉnh kích thước văn bản
                                 fit: BoxFit.scaleDown,
                                 child: Text(
-                                  "Thêm cố định tháng",
+                                  "Quản lý chi phí cố định",
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: screenWidth < 360 ? 14 : 16, // Giảm fontSize trên màn hình nhỏ

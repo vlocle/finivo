@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../state/app_state.dart';
 
@@ -213,7 +214,16 @@ class ExpenseManager {
           .get();
 
       if (doc.exists && doc['amounts'] != null) {
-        return Map<String, double>.from(doc['amounts']);
+        Map<String, dynamic> rawAmounts = Map<String, dynamic>.from(doc['amounts']);
+        Map<String, double> amounts = {};
+        rawAmounts.forEach((key, value) {
+          if (value is Map && value.containsKey('amount')) {
+            amounts[key] = value['amount']?.toDouble() ?? 0.0;
+          } else {
+            amounts[key] = value?.toDouble() ?? 0.0; // Backward compatibility for old data
+          }
+        });
+        return amounts;
       }
       return {};
     } catch (e) {
@@ -223,19 +233,32 @@ class ExpenseManager {
   }
 
   // Save monthly fixed amounts and distribute daily
-  static Future<void> saveMonthlyFixedAmount(AppState appState, String name, double amount, DateTime month) async {
+  static Future<void> saveMonthlyFixedAmount(AppState appState, String name, double amount, DateTime month, {DateTimeRange? dateRange}) async {
     try {
       if (appState.userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       final batch = firestore.batch();
-      int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-      double dailyAmount = amount / daysInMonth;
+
+      // Calculate days and daily amount based on dateRange or full month
+      int days;
+      List<DateTime> distributionDays = [];
+      if (dateRange != null) {
+        days = dateRange.end.difference(dateRange.start).inDays + 1;
+        for (int i = 0; i < days; i++) {
+          distributionDays.add(dateRange.start.add(Duration(days: i)));
+        }
+      } else {
+        days = DateTime(month.year, month.month + 1, 0).day;
+        for (int day = 1; day <= days; day++) {
+          distributionDays.add(DateTime(month.year, month.month, day));
+        }
+      }
+      double dailyAmount = amount / days;
       DateTime originalDate = appState.selectedDate;
 
-      // Tải tất cả dữ liệu chi phí cố định của tháng
+      // Load all fixed expense data for the selected days
       List<Future<DocumentSnapshot>> futures = [];
-      for (int day = 1; day <= daysInMonth; day++) {
-        DateTime currentDate = DateTime(month.year, month.month, day);
+      for (DateTime currentDate in distributionDays) {
         String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
         String key = appState.getKey('fixedExpenseList_$dateKey');
         futures.add(
@@ -251,9 +274,9 @@ class ExpenseManager {
       }
       List<DocumentSnapshot> docs = await Future.wait(futures);
 
-      // Cập nhật dữ liệu và thêm vào batch
-      for (int day = 0; day < daysInMonth; day++) {
-        DateTime currentDate = DateTime(month.year, month.month, day + 1);
+      // Update data and add to batch
+      for (int i = 0; i < distributionDays.length; i++) {
+        DateTime currentDate = distributionDays[i];
         String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
         String key = appState.getKey('fixedExpenseList_$dateKey');
         DocumentReference docRef = firestore
@@ -265,15 +288,16 @@ class ExpenseManager {
             .doc(key);
 
         List<Map<String, dynamic>> expenseList = [];
-        if (docs[day].exists && docs[day]['products'] != null) {
-          expenseList = List<Map<String, dynamic>>.from(docs[day]['products']);
+        if (docs[i].exists && docs[i]['products'] != null) {
+          expenseList = List<Map<String, dynamic>>.from(docs[i]['products']);
         }
 
         var existingItem = expenseList.firstWhere((item) => item['name'] == name, orElse: () => {});
         if (existingItem.isEmpty) {
-          expenseList.add({'name': name, 'amount': dailyAmount, 'isFixedMonthly': false});
+          expenseList.add({'name': name, 'amount': dailyAmount, 'isFixedMonthly': true});
         } else {
           existingItem['amount'] = dailyAmount;
+          existingItem['isFixedMonthly'] = true;
         }
 
         batch.set(docRef, {
@@ -283,7 +307,7 @@ class ExpenseManager {
         });
       }
 
-      // Cập nhật danh sách chi phí cố định hàng tháng
+      // Update monthly fixed amounts
       String monthlyKey = appState.getKey('monthlyFixedAmounts_${month.year}_${month.month}');
       DocumentReference monthlyDocRef = firestore
           .collection('users')
@@ -294,11 +318,19 @@ class ExpenseManager {
           .doc(monthlyKey);
 
       DocumentSnapshot monthlyDoc = await monthlyDocRef.get();
-      Map<String, double> monthlyData = {};
+      Map<String, dynamic> monthlyData = {};
       if (monthlyDoc.exists && monthlyDoc['amounts'] != null) {
-        monthlyData = Map<String, double>.from(monthlyDoc['amounts']);
+        monthlyData = Map<String, dynamic>.from(monthlyDoc['amounts']);
       }
-      monthlyData[name] = amount;
+      monthlyData[name] = {
+        'amount': amount,
+        'range': dateRange != null
+            ? {
+          'start': dateRange.start.toIso8601String(),
+          'end': dateRange.end.toIso8601String(),
+        }
+            : null,
+      };
 
       batch.set(monthlyDocRef, {
         'amounts': monthlyData,
@@ -314,17 +346,29 @@ class ExpenseManager {
   }
 
   // Delete monthly fixed expense
-  static Future<void> deleteMonthlyFixedExpense(AppState appState, String name, DateTime month) async {
+  static Future<void> deleteMonthlyFixedExpense(AppState appState, String name, DateTime month, {DateTimeRange? dateRange}) async {
     try {
       if (appState.userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
 
-      // Lưu ngày ban đầu để khôi phục sau
+      // Determine days to delete based on dateRange or full month
+      List<DateTime> distributionDays = [];
+      if (dateRange != null) {
+        int days = dateRange.end.difference(dateRange.start).inDays + 1;
+        for (int i = 0; i < days; i++) {
+          distributionDays.add(dateRange.start.add(Duration(days: i)));
+        }
+      } else {
+        int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+        for (int day = 1; day <= daysInMonth; day++) {
+          distributionDays.add(DateTime(month.year, month.month, day));
+        }
+      }
+
       DateTime originalDate = appState.selectedDate;
 
-      for (int day = 1; day <= daysInMonth; day++) {
-        DateTime currentDate = DateTime(month.year, month.month, day);
+      // Delete expense from each day
+      for (DateTime currentDate in distributionDays) {
         String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
         String key = appState.getKey('fixedExpenseList_$dateKey');
 
@@ -342,10 +386,11 @@ class ExpenseManager {
           expenseList = List<Map<String, dynamic>>.from(doc['products']);
         }
 
-        expenseList.removeWhere((item) => item['name'] == name);
+        expenseList.removeWhere((item) => item['name'] == name && item['isFixedMonthly'] == true);
         await saveFixedExpenses(appState, expenseList, date: dateKey);
       }
 
+      // Update monthly fixed amounts
       String monthlyKey = appState.getKey('monthlyFixedAmounts_${month.year}_${month.month}');
       DocumentSnapshot monthlyDoc = await firestore
           .collection('users')
@@ -356,9 +401,9 @@ class ExpenseManager {
           .doc(monthlyKey)
           .get();
 
-      Map<String, double> monthlyData = {};
+      Map<String, dynamic> monthlyData = {};
       if (monthlyDoc.exists && monthlyDoc['amounts'] != null) {
-        monthlyData = Map<String, double>.from(monthlyDoc['amounts']);
+        monthlyData = Map<String, dynamic>.from(monthlyDoc['amounts']);
       }
       monthlyData.remove(name);
 
@@ -374,7 +419,6 @@ class ExpenseManager {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Khôi phục selectedDate ban đầu
       appState.setSelectedDate(originalDate);
     } catch (e) {
       print("Error deleting monthly fixed expense: $e");

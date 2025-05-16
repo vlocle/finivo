@@ -27,14 +27,15 @@ class AppState extends ChangeNotifier {
   bool _notificationsEnabled = true;
   String _currentLanguage = 'vi';
   bool _isDarkMode = false;
+  String _lastRecommendation = "Nhấn vào nút để nhận khuyến nghị từ A.I";
 
   bool get notificationsEnabled => _notificationsEnabled;
   String get currentLanguage => _currentLanguage;
   bool get isDarkMode => _isDarkMode;
+  String get lastRecommendation => _lastRecommendation;
 
   AppState() {
     loadExpenseValues();
-    _loadSettings();
   }
 
   void setSelectedScreenIndex(int index) {
@@ -46,12 +47,20 @@ class AppState extends ChangeNotifier {
     var settingsBox = Hive.box('settingsBox');
     _notificationsEnabled = settingsBox.get(getKey('notificationsEnabled'), defaultValue: true);
     _isDarkMode = settingsBox.get(getKey('isDarkMode'), defaultValue: false);
+    _lastRecommendation = settingsBox.get(getKey('lastRecommendation'), defaultValue: "Nhấn vào nút để nhận khuyến nghị từ A.I");
+    print('Tải cài đặt: key=${getKey('lastRecommendation')}, lastRecommendation=$_lastRecommendation');
   }
 
   void _saveSettings() {
-    var settingsBox = Hive.box('settingsBox');
-    settingsBox.put(getKey('notificationsEnabled'), _notificationsEnabled);
-    settingsBox.put(getKey('isDarkMode'), _isDarkMode);
+    try {
+      var settingsBox = Hive.box('settingsBox');
+      settingsBox.put(getKey('notificationsEnabled'), _notificationsEnabled);
+      settingsBox.put(getKey('isDarkMode'), _isDarkMode);
+      settingsBox.put(getKey('lastRecommendation'), _lastRecommendation);
+      print('Đã lưu cài đặt: lastRecommendation=${_lastRecommendation}');
+    } catch (e) {
+      print('Lỗi khi lưu cài đặt: $e');
+    }
   }
 
   void setNotificationsEnabled(bool value) {
@@ -66,9 +75,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLastRecommendation(String recommendation) {
+    _lastRecommendation = recommendation;
+    _saveSettings();
+    notifyListeners();
+  }
+
   void setUserId(String id) {
     if (userId != id) {
       userId = id;
+      _loadSettings();
       _loadInitialData();
     }
   }
@@ -85,6 +101,8 @@ class AppState extends ChangeNotifier {
     otherRevenueTransactions.value = [];
     fixedExpenseList.value = [];
     variableExpenseList.value = [];
+    //_lastRecommendation = "Nhấn vào nút để nhận khuyến nghị từ A.I";
+    _saveSettings();
     notifyListeners();
   }
 
@@ -148,7 +166,6 @@ class AppState extends ChangeNotifier {
         secondaryRevenue = revenueData['secondaryRevenue']?.toDouble() ?? 0.0;
         otherRevenue = revenueData['otherRevenue']?.toDouble() ?? 0.0;
 
-        // Chuyển đổi an toàn cho mainRevenueTransactions
         var mainData = transactionsBox.get(mainTransKey);
         mainRevenueTransactions.value = mainData != null
             ? (mainData as List<dynamic>).map((item) {
@@ -157,7 +174,6 @@ class AppState extends ChangeNotifier {
         }).cast<Map<String, dynamic>>().toList()
             : [];
 
-        // Chuyển đổi an toàn cho secondaryRevenueTransactions
         var secondaryData = transactionsBox.get(secondaryTransKey);
         secondaryRevenueTransactions.value = secondaryData != null
             ? (secondaryData as List<dynamic>).map((item) {
@@ -166,7 +182,6 @@ class AppState extends ChangeNotifier {
         }).cast<Map<String, dynamic>>().toList()
             : [];
 
-        // Chuyển đổi an toàn cho otherRevenueTransactions
         var otherData = transactionsBox.get(otherTransKey);
         otherRevenueTransactions.value = otherData != null
             ? (otherData as List<dynamic>).map((item) {
@@ -264,7 +279,6 @@ class AppState extends ChangeNotifier {
       double profit = totalRevenue - totalExpense;
       double profitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
 
-      // Chuẩn hóa dữ liệu giao dịch trước khi lưu
       List<Map<String, dynamic>> standardizedMain = mainRevenueTransactions.value.map((t) {
         return {
           'name': t['name'].toString(),
@@ -324,7 +338,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // Các hàm còn lại giữ nguyên
   Map<String, List<model.Transaction>> transactions = {
     'Doanh thu chính': [],
     'Doanh thu phụ': [],
@@ -718,7 +731,6 @@ class AppState extends ChangeNotifier {
       double totalExpense = 0.0;
       int days = range.end.difference(range.start).inDays + 1;
 
-      // Tạo danh sách các Future để truy vấn đồng thời
       List<Future<DocumentSnapshot>> dailyFutures = [];
       List<Future<DocumentSnapshot>> fixedFutures = [];
       List<Future<DocumentSnapshot>> variableFutures = [];
@@ -760,12 +772,10 @@ class AppState extends ChangeNotifier {
         );
       }
 
-      // Chờ tất cả các truy vấn hoàn tất đồng thời
       List<DocumentSnapshot> dailyDocs = await Future.wait(dailyFutures);
       List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
       List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
 
-      // Xử lý dữ liệu
       for (int i = 0; i < days; i++) {
         totalRevenue += dailyDocs[i].exists ? dailyDocs[i]['totalRevenue']?.toDouble() ?? 0.0 : 0.0;
         double fixedExpense = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;

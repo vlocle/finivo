@@ -21,7 +21,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     RevenueScreen(),
     ExpenseScreen(),
     ReportScreen(),
-    RecommendationScreen(),
+    AnalysisScreen(),
   ];
 
   @override
