@@ -552,11 +552,10 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
           color: const Color(0xFF1976D2).withOpacity(0.9),
         ),
         SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -641,8 +640,12 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Padding(
+              ),
+              SliverToBoxAdapter(
+                child: const SizedBox(height: 8),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Column(
                     children: [
@@ -836,8 +839,8 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                     ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],
