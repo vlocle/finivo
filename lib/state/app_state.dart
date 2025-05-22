@@ -1,5 +1,6 @@
-import 'dart:convert';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
@@ -12,12 +13,22 @@ class AppState extends ChangeNotifier {
   int get selectedScreenIndex => _selectedScreenIndex;
 
   String? userId;
-  DateTime selectedDate = DateTime.now();
+  DateTime _selectedDate = DateTime.now();
+  final ValueNotifier<DateTime> selectedDateListenable = ValueNotifier(DateTime.now());
+  final ValueNotifier<bool> isLoadingListenable = ValueNotifier(false);
+  final ValueNotifier<bool> dataReadyListenable = ValueNotifier(false);
   double mainRevenue = 0.0;
   double secondaryRevenue = 0.0;
   double otherRevenue = 0.0;
-  double fixedExpense = 0.0;
+  final ValueNotifier<double> mainRevenueListenable = ValueNotifier(0.0);
+  final ValueNotifier<double> secondaryRevenueListenable = ValueNotifier(0.0);
+  final ValueNotifier<double> otherRevenueListenable = ValueNotifier(0.0);
+  final ValueNotifier<double> totalRevenueListenable = ValueNotifier(0.0);
+  final ValueNotifier<double> profitListenable = ValueNotifier(0.0);
+  final ValueNotifier<double> profitMarginListenable = ValueNotifier(0.0);
+  double _fixedExpense = 0.0;
   double variableExpense = 0.0;
+  final ValueNotifier<double> fixedExpenseListenable = ValueNotifier(0.0);
   final ValueNotifier<List<Map<String, dynamic>>> fixedExpenseList = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> variableExpenseList = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> mainRevenueTransactions = ValueNotifier([]);
@@ -28,14 +39,51 @@ class AppState extends ChangeNotifier {
   String _currentLanguage = 'vi';
   bool _isDarkMode = false;
   String _lastRecommendation = "Nhấn vào nút để nhận khuyến nghị từ A.I";
+  bool _isLoading = false;
+  bool _isLoadingRevenue = false;
+  String? _cachedDateKey;
+  Map<String, dynamic>? _cachedData;
+  bool _isFirebaseInitialized = false;
 
+  StreamSubscription<DocumentSnapshot>? _revenueSubscription;
+
+  double get fixedExpense => _fixedExpense;
   bool get notificationsEnabled => _notificationsEnabled;
   String get currentLanguage => _currentLanguage;
   bool get isDarkMode => _isDarkMode;
   String get lastRecommendation => _lastRecommendation;
+  DateTime get selectedDate => _selectedDate;
 
   AppState() {
-    loadExpenseValues();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      // Kiểm tra Firebase đã khởi tạo chưa
+      _isFirebaseInitialized = Firebase.apps.isNotEmpty;
+      if (!_isFirebaseInitialized) {
+        return;
+      }
+
+      // Mở Hive box
+      if (!Hive.isBoxOpen('revenueBox')) {
+        await Hive.openLazyBox('revenueBox');
+      }
+      if (!Hive.isBoxOpen('transactionsBox')) {
+        await Hive.openLazyBox('transactionsBox');
+      }
+      if (!Hive.isBoxOpen('settingsBox')) {
+        await Hive.openBox('settingsBox');
+      }
+
+      _loadSettings();
+      if (_isFirebaseInitialized) {
+        await _loadInitialData();
+      }
+    } catch (e) {
+      _isFirebaseInitialized = false;
+    }
   }
 
   void setSelectedScreenIndex(int index) {
@@ -44,11 +92,14 @@ class AppState extends ChangeNotifier {
   }
 
   void _loadSettings() {
-    var settingsBox = Hive.box('settingsBox');
-    _notificationsEnabled = settingsBox.get(getKey('notificationsEnabled'), defaultValue: true);
-    _isDarkMode = settingsBox.get(getKey('isDarkMode'), defaultValue: false);
-    _lastRecommendation = settingsBox.get(getKey('lastRecommendation'), defaultValue: "Nhấn vào nút để nhận khuyến nghị từ A.I");
-    print('Tải cài đặt: key=${getKey('lastRecommendation')}, lastRecommendation=$_lastRecommendation');
+    try {
+      var settingsBox = Hive.box('settingsBox');
+      _notificationsEnabled = settingsBox.get(getKey('notificationsEnabled'), defaultValue: true);
+      _isDarkMode = settingsBox.get(getKey('isDarkMode'), defaultValue: false);
+      _lastRecommendation = settingsBox.get(getKey('lastRecommendation'), defaultValue: "Nhấn vào nút để nhận khuyến nghị từ A.I");
+    } catch (e) {
+      print('Lỗi khi tải cài đặt: $e');
+    }
   }
 
   void _saveSettings() {
@@ -57,7 +108,6 @@ class AppState extends ChangeNotifier {
       settingsBox.put(getKey('notificationsEnabled'), _notificationsEnabled);
       settingsBox.put(getKey('isDarkMode'), _isDarkMode);
       settingsBox.put(getKey('lastRecommendation'), _lastRecommendation);
-      print('Đã lưu cài đặt: lastRecommendation=${_lastRecommendation}');
     } catch (e) {
       print('Lỗi khi lưu cài đặt: $e');
     }
@@ -94,15 +144,24 @@ class AppState extends ChangeNotifier {
     mainRevenue = 0.0;
     secondaryRevenue = 0.0;
     otherRevenue = 0.0;
-    fixedExpense = 0.0;
+    mainRevenueListenable.value = 0.0;
+    secondaryRevenueListenable.value = 0.0;
+    otherRevenueListenable.value = 0.0;
+    totalRevenueListenable.value = 0.0;
+    profitListenable.value = 0.0;
+    profitMarginListenable.value = 0.0;
+    _fixedExpense = 0.0;
+    fixedExpenseListenable.value = 0.0;
     variableExpense = 0.0;
     mainRevenueTransactions.value = [];
     secondaryRevenueTransactions.value = [];
     otherRevenueTransactions.value = [];
     fixedExpenseList.value = [];
     variableExpenseList.value = [];
-    //_lastRecommendation = "Nhấn vào nút để nhận khuyến nghị từ A.I";
+    _cancelRevenueSubscription();
     _saveSettings();
+    _cachedDateKey = null;
+    _cachedData = null;
     notifyListeners();
   }
 
@@ -111,17 +170,77 @@ class AppState extends ChangeNotifier {
   }
 
   void setSelectedDate(DateTime date) {
-    if (selectedDate != date) {
-      selectedDate = date;
+    if (_selectedDate.year != date.year || _selectedDate.month != date.month || _selectedDate.day != date.day) {
+      _selectedDate = date;
+      selectedDateListenable.value = date;
       _loadInitialData();
     }
   }
 
   Future<void> _loadInitialData() async {
-    if (userId == null) return;
-    await loadRevenueValues();
-    await loadExpenseValues();
+    if (userId == null || _isLoading || !_isFirebaseInitialized) {
+      return;
+    }
+    _isLoading = true;
+    isLoadingListenable.value = true;
+    dataReadyListenable.value = false;
+    try {
+      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      if (_cachedDateKey == dateKey && _cachedData != null) {
+        _applyCachedData(_cachedData!);
+        return;
+      }
+
+      await Future.wait([
+        loadRevenueValues(),
+        loadExpenseValues(),
+      ]);
+      totalRevenueListenable.value = getTotalRevenue();
+      profitListenable.value = getProfit();
+      profitMarginListenable.value = getProfitMargin();
+      _cachedDateKey = dateKey;
+      _cachedData = {
+        'mainRevenue': mainRevenue,
+        'secondaryRevenue': secondaryRevenue,
+        'otherRevenue': otherRevenue,
+        'mainRevenueTransactions': mainRevenueTransactions.value,
+        'secondaryRevenueTransactions': secondaryRevenueTransactions.value,
+        'otherRevenueTransactions': otherRevenueTransactions.value,
+        'fixedExpense': _fixedExpense,
+        'variableExpense': variableExpense,
+        'fixedExpenseList': fixedExpenseList.value,
+        'variableExpenseList': variableExpenseList.value,
+      };
+      notifyListeners();
+      dataReadyListenable.value = true;
+    } catch (e) {
+      print('Error in _loadInitialData: $e');
+    } finally {
+      _isLoading = false;
+      isLoadingListenable.value = false;
+    }
+  }
+
+  void _applyCachedData(Map<String, dynamic> data) {
+    mainRevenue = data['mainRevenue'] as double;
+    secondaryRevenue = data['secondaryRevenue'] as double;
+    otherRevenue = data['otherRevenue'] as double;
+    mainRevenueListenable.value = mainRevenue;
+    secondaryRevenueListenable.value = secondaryRevenue;
+    otherRevenueListenable.value = otherRevenue;
+    mainRevenueTransactions.value = List<Map<String, dynamic>>.from(data['mainRevenueTransactions']);
+    secondaryRevenueTransactions.value = List<Map<String, dynamic>>.from(data['secondaryRevenueTransactions']);
+    otherRevenueTransactions.value = List<Map<String, dynamic>>.from(data['otherRevenueTransactions']);
+    _fixedExpense = data['fixedExpense'] as double;
+    variableExpense = data['variableExpense'] as double;
+    fixedExpenseListenable.value = _fixedExpense;
+    fixedExpenseList.value = List<Map<String, dynamic>>.from(data['fixedExpenseList']);
+    variableExpenseList.value = List<Map<String, dynamic>>.from(data['variableExpenseList']);
+    totalRevenueListenable.value = getTotalRevenue();
+    profitListenable.value = getProfit();
+    profitMarginListenable.value = getProfitMargin();
     notifyListeners();
+    dataReadyListenable.value = true;
   }
 
   void notifyProductsUpdated() {
@@ -129,131 +248,216 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _cancelRevenueSubscription() {
+    _revenueSubscription?.cancel();
+    _revenueSubscription = null;
+  }
+
+  Future<bool> _isFirestoreSynced(String hiveKey, String firestorePath) async {
+    if (!_isFirebaseInitialized) return false;
+    try {
+      var revenueBox = Hive.box('revenueBox');
+      var hiveData = revenueBox.get(getKey('sync_timestamps')) as Map<dynamic, dynamic>?;
+      DateTime? hiveTimestamp = hiveData != null && hiveData[hiveKey] != null
+          ? DateTime.parse(hiveData[hiveKey] as String)
+          : null;
+
+      final firestore = FirebaseFirestore.instance;
+      final doc = await firestore.doc(firestorePath).get();
+      Timestamp? firestoreTimestamp = doc.exists ? doc['updatedAt'] as Timestamp? : null;
+
+      if (hiveTimestamp == null || firestoreTimestamp == null) {
+        return hiveTimestamp == null && firestoreTimestamp == null;
+      }
+
+      return hiveTimestamp.isAtSameMomentAs(firestoreTimestamp.toDate()) ||
+          hiveTimestamp.isAfter(firestoreTimestamp.toDate());
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> _updateSyncTimestamp(String hiveKey) async {
+    try {
+      var revenueBox = Hive.box('revenueBox');
+      var syncTimestamps = (revenueBox.get(getKey('sync_timestamps')) as Map<dynamic, dynamic>?) ?? {};
+      syncTimestamps[hiveKey] = DateTime.now().toIso8601String();
+      await revenueBox.put(getKey('sync_timestamps'), syncTimestamps);
+    } catch (e) {
+      print('Lỗi khi cập nhật timestamp đồng bộ: $e');
+    }
+  }
+
+  Future<bool> _isOnline() async {
+    if (!_isFirebaseInitialized) return false;
+    try {
+      return await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get()
+          .timeout(Duration(seconds: 10), onTimeout: () => throw TimeoutException('Network timeout'))
+          .then((_) => true);
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<void> loadRevenueValues() async {
+    if (_isLoadingRevenue || !_isFirebaseInitialized) {
+      return;
+    }
+    _isLoadingRevenue = true;
+    final startTime = DateTime.now();
     try {
       if (userId == null) {
-        print('User ID không tồn tại');
-        mainRevenue = 0.0;
-        secondaryRevenue = 0.0;
-        otherRevenue = 0.0;
-        mainRevenueTransactions.value = [];
-        secondaryRevenueTransactions.value = [];
-        otherRevenueTransactions.value = [];
-        notifyListeners();
+        _resetRevenueValues();
         return;
       }
 
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-      String revenueKey = getKey(dateKey);
-      String mainTransKey = getKey('${dateKey}_mainRevenueTransactions');
-      String secondaryTransKey = getKey('${dateKey}_secondaryRevenueTransactions');
-      String otherTransKey = getKey('${dateKey}_otherRevenueTransactions');
-
-      if (!Hive.isBoxOpen('revenueBox')) await Hive.openBox('revenueBox');
-      if (!Hive.isBoxOpen('transactionsBox')) await Hive.openBox('transactionsBox');
+      if (!Hive.isBoxOpen('revenueBox')) await Hive.openLazyBox('revenueBox');
+      if (!Hive.isBoxOpen('transactionsBox')) await Hive.openLazyBox('transactionsBox');
       var revenueBox = Hive.box('revenueBox');
       var transactionsBox = Hive.box('transactionsBox');
 
-      print('Hive transactionsBox keys: ${transactionsBox.keys}');
-
-      if (revenueBox.containsKey(revenueKey) &&
-          transactionsBox.containsKey(mainTransKey) &&
-          transactionsBox.containsKey(secondaryTransKey) &&
-          transactionsBox.containsKey(otherTransKey)) {
-        var revenueData = revenueBox.get(revenueKey) as Map<dynamic, dynamic>;
-        mainRevenue = revenueData['mainRevenue']?.toDouble() ?? 0.0;
-        secondaryRevenue = revenueData['secondaryRevenue']?.toDouble() ?? 0.0;
-        otherRevenue = revenueData['otherRevenue']?.toDouble() ?? 0.0;
-
-        var mainData = transactionsBox.get(mainTransKey);
-        mainRevenueTransactions.value = mainData != null
-            ? (mainData as List<dynamic>).map((item) {
-          var map = item as Map<dynamic, dynamic>;
-          return map.map((key, value) => MapEntry(key.toString(), value));
-        }).cast<Map<String, dynamic>>().toList()
-            : [];
-
-        var secondaryData = transactionsBox.get(secondaryTransKey);
-        secondaryRevenueTransactions.value = secondaryData != null
-            ? (secondaryData as List<dynamic>).map((item) {
-          var map = item as Map<dynamic, dynamic>;
-          return map.map((key, value) => MapEntry(key.toString(), value));
-        }).cast<Map<String, dynamic>>().toList()
-            : [];
-
-        var otherData = transactionsBox.get(otherTransKey);
-        otherRevenueTransactions.value = otherData != null
-            ? (otherData as List<dynamic>).map((item) {
-          var map = item as Map<dynamic, dynamic>;
-          return map.map((key, value) => MapEntry(key.toString(), value));
-        }).cast<Map<String, dynamic>>().toList()
-            : [];
-
-        print('Tải giao dịch từ Hive: main=$mainRevenueTransactions, secondary=$secondaryRevenueTransactions');
-      } else {
-        DocumentSnapshot doc = await firestore
-            .collection('users')
-            .doc(userId)
-            .collection('daily_data')
-            .doc(getKey(dateKey))
-            .get();
-
-        if (doc.exists) {
-          mainRevenue = doc['mainRevenue']?.toDouble() ?? 0.0;
-          secondaryRevenue = doc['secondaryRevenue']?.toDouble() ?? 0.0;
-          otherRevenue = doc['otherRevenue']?.toDouble() ?? 0.0;
-          mainRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['mainRevenueTransactions'] ?? []);
-          secondaryRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['secondaryRevenueTransactions'] ?? []);
-          otherRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['otherRevenueTransactions'] ?? []);
-          print('Tải giao dịch từ Firestore: main=$mainRevenueTransactions, secondary=$secondaryRevenueTransactions');
-        } else {
-          mainRevenue = 0.0;
-          secondaryRevenue = 0.0;
-          otherRevenue = 0.0;
-          mainRevenueTransactions.value = [];
-          secondaryRevenueTransactions.value = [];
-          otherRevenueTransactions.value = [];
-        }
-
-        await revenueBox.put(revenueKey, {
-          'mainRevenue': mainRevenue,
-          'secondaryRevenue': secondaryRevenue,
-          'otherRevenue': otherRevenue,
-          'lastUpdated': DateTime.now().toIso8601String(),
-        });
-        await transactionsBox.put(mainTransKey, mainRevenueTransactions.value);
-        await transactionsBox.put(secondaryTransKey, secondaryRevenueTransactions.value);
-        await transactionsBox.put(otherTransKey, otherRevenueTransactions.value);
-      }
-    } catch (e) {
-      print('Lỗi khi tải doanh thu: $e');
-      mainRevenue = 0.0;
-      secondaryRevenue = 0.0;
-      otherRevenue = 0.0;
-      mainRevenueTransactions.value = [];
-      secondaryRevenueTransactions.value = [];
-      otherRevenueTransactions.value = [];
-    }
-    notifyListeners();
-  }
-
-  Future<void> setRevenue(double main, double secondary, double other) async {
-    try {
-      if (userId == null) throw Exception('User ID không tồn tại');
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
       String revenueKey = getKey(dateKey);
       String mainTransKey = getKey('${dateKey}_mainRevenueTransactions');
       String secondaryTransKey = getKey('${dateKey}_secondaryRevenueTransactions');
-      String otherTransKey = getKey('${dateKey}_otherRevenueTransactions');
+      String otherTransKey = getKey('${dateKey}_otherTransKey');
+      String firestorePath = 'users/$userId/daily_data/$revenueKey';
 
-      mainRevenue = main;
-      secondaryRevenue = secondary;
-      otherRevenue = other;
+      bool useHive = false;
+      if (await _isOnline()) {
+        int retries = 3;
+        DocumentSnapshot? doc;
+        for (int i = 0; i < retries; i++) {
+          try {
+            doc = await FirebaseFirestore.instance
+                .doc(firestorePath)
+                .get()
+                .timeout(Duration(seconds: 15));
+            break;
+          } catch (e) {
+            if (i == retries - 1) {
+              useHive = true;
+              break;
+            }
+            await Future.delayed(Duration(seconds: 1));
+          }
+        }
 
-      double totalRevenue = main + secondary + other;
-      DocumentSnapshot fixedDoc = await firestore
+        if (!useHive && doc != null && doc.exists) {
+          mainRevenue = doc['mainRevenue']?.toDouble() ?? 0.0;
+          secondaryRevenue = doc['secondaryRevenue']?.toDouble() ?? 0.0;
+          otherRevenue = doc['otherRevenue']?.toDouble() ?? 0.0;
+          mainRevenueListenable.value = mainRevenue;
+          secondaryRevenueListenable.value = secondaryRevenue;
+          otherRevenueListenable.value = otherRevenue;
+          mainRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['mainRevenueTransactions'] ?? []);
+          secondaryRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['secondaryRevenueTransactions'] ?? []);
+          otherRevenueTransactions.value = List<Map<String, dynamic>>.from(doc['otherRevenueTransactions'] ?? []);
+
+
+          await revenueBox.put(revenueKey, {
+            'mainRevenue': mainRevenue,
+            'secondaryRevenue': secondaryRevenue,
+            'otherRevenue': otherRevenue,
+            'lastUpdated': DateTime.now().toIso8601String(),
+          });
+          await transactionsBox.put(mainTransKey, mainRevenueTransactions.value);
+          await transactionsBox.put(secondaryTransKey, secondaryRevenueTransactions.value);
+          await transactionsBox.put(otherTransKey, otherRevenueTransactions.value);
+          await _updateSyncTimestamp(mainTransKey);
+          await _updateSyncTimestamp(secondaryTransKey);
+          await _updateSyncTimestamp(otherTransKey);
+        } else {
+          _resetRevenueValues();
+        }
+      } else {
+        useHive = true;
+      }
+
+      if (useHive || revenueBox.containsKey(revenueKey)) {
+        var revenueData = await revenueBox.get(revenueKey) as Map<dynamic, dynamic>?;
+        if (revenueData != null) {
+          mainRevenue = revenueData['mainRevenue']?.toDouble() ?? 0.0;
+          secondaryRevenue = revenueData['secondaryRevenue']?.toDouble() ?? 0.0;
+          otherRevenue = revenueData['otherRevenue']?.toDouble() ?? 0.0;
+          mainRevenueListenable.value = mainRevenue;
+          secondaryRevenueListenable.value = secondaryRevenue;
+          otherRevenueListenable.value = otherRevenue;
+        }
+
+        var mainData = await transactionsBox.get(mainTransKey);
+        mainRevenueTransactions.value = mainData != null
+            ? (mainData as List<dynamic>)
+            .map((item) => (item as Map<dynamic, dynamic>).map((key, value) => MapEntry(key.toString(), value)))
+            .cast<Map<String, dynamic>>()
+            .toList()
+            : [];
+
+        var secondaryData = await transactionsBox.get(secondaryTransKey);
+        secondaryRevenueTransactions.value = secondaryData != null
+            ? (secondaryData as List<dynamic>)
+            .map((item) => (item as Map<dynamic, dynamic>).map((key, value) => MapEntry(key.toString(), value)))
+            .cast<Map<String, dynamic>>()
+            .toList()
+            : [];
+
+        var otherData = await transactionsBox.get(otherTransKey);
+        otherRevenueTransactions.value = otherData != null
+            ? (otherData as List<dynamic>)
+            .map((item) => (item as Map<dynamic, dynamic>).map((key, value) => MapEntry(key.toString(), value)))
+            .cast<Map<String, dynamic>>()
+            .toList()
+            : [];
+
+      }
+
+      if (!await _isFirestoreSynced(mainTransKey, firestorePath)) {
+        await RevenueManager.saveTransactionHistory(this, 'Doanh thu chính', mainRevenueTransactions.value);
+        await _updateSyncTimestamp(mainTransKey);
+      }
+      if (!await _isFirestoreSynced(secondaryTransKey, firestorePath)) {
+        await RevenueManager.saveTransactionHistory(this, 'Doanh thu phụ', secondaryRevenueTransactions.value);
+        await _updateSyncTimestamp(secondaryTransKey);
+      }
+      if (!await _isFirestoreSynced(otherTransKey, firestorePath)) {
+        await RevenueManager.saveOtherRevenueTransactions(this, otherRevenueTransactions.value);
+        await _updateSyncTimestamp(otherTransKey);
+      }
+    } catch (e) {
+      _resetRevenueValues();
+    } finally {
+      _isLoadingRevenue = false;
+    }
+  }
+
+  void _resetRevenueValues() {
+    mainRevenue = 0.0;
+    secondaryRevenue = 0.0;
+    otherRevenue = 0.0;
+    mainRevenueListenable.value = 0.0;
+    secondaryRevenueListenable.value = 0.0;
+    otherRevenueListenable.value = 0.0;
+    totalRevenueListenable.value = 0.0;
+    profitListenable.value = 0.0;
+    profitMarginListenable.value = 0.0;
+    mainRevenueTransactions.value = [];
+    secondaryRevenueTransactions.value = [];
+    otherRevenueTransactions.value = [];
+  }
+
+  Future<void> loadExpenseValues() async {
+    if (!_isFirebaseInitialized) {
+      return;
+    }
+    final startTime = DateTime.now();
+    try {
+      if (userId == null) throw Exception('User ID không tồn tại');
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final fixedDocFuture = firestore
           .collection('users')
           .doc(userId)
           .collection('expenses')
@@ -261,7 +465,7 @@ class AppState extends ChangeNotifier {
           .collection('daily')
           .doc(getKey('fixedExpenseList_$dateKey'))
           .get();
-      DocumentSnapshot variableDoc = await firestore
+      final variableDocFuture = firestore
           .collection('users')
           .doc(userId)
           .collection('expenses')
@@ -270,9 +474,67 @@ class AppState extends ChangeNotifier {
           .doc(getKey('variableTransactionHistory_$dateKey'))
           .get();
 
-      double fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      double variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      this.fixedExpense = fixedExpense;
+      final results = await Future.wait([fixedDocFuture, variableDocFuture]).timeout(Duration(seconds: 15));
+
+      DocumentSnapshot fixedDoc = results[0];
+      DocumentSnapshot variableDoc = results[1];
+      _fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
+      fixedExpenseListenable.value = _fixedExpense;
+      variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
+      fixedExpenseList.value = await ExpenseManager.loadFixedExpenses(this);
+      variableExpenseList.value = await ExpenseManager.loadVariableExpenses(this);
+    } catch (e) {
+      _fixedExpense = 0.0;
+      fixedExpenseListenable.value = 0.0;
+      variableExpense = 0.0;
+      fixedExpenseList.value = [];
+      variableExpenseList.value = [];
+    } finally {
+      print('loadExpenseValues took ${DateTime.now().difference(startTime).inMilliseconds}ms');
+    }
+  }
+
+  Future<void> setRevenue(double main, double secondary, double other) async {
+    if (!_isFirebaseInitialized) throw Exception('Firebase not initialized');
+    try {
+      if (userId == null) throw Exception('User ID không tồn tại');
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      String revenueKey = getKey(dateKey);
+      String mainTransKey = getKey('${dateKey}_mainRevenueTransactions');
+      String secondaryTransKey = getKey('${dateKey}_secondaryRevenueTransactions');
+      String otherTransKey = getKey('${dateKey}_otherRevenueTransactions');
+
+      mainRevenue = main;
+      secondaryRevenue = secondary;
+      otherRevenue = other;
+      mainRevenueListenable.value = main;
+      secondaryRevenueListenable.value = secondary;
+      otherRevenueListenable.value = other;
+
+      double totalRevenue = main + secondary + other;
+      final fixedDocFuture = firestore
+          .collection('users')
+          .doc(userId)
+          .collection('expenses')
+          .doc('fixed')
+          .collection('daily')
+          .doc(getKey('fixedExpenseList_$dateKey'))
+          .get();
+      final variableDocFuture = firestore
+          .collection('users')
+          .doc(userId)
+          .collection('expenses')
+          .doc('variable')
+          .collection('daily')
+          .doc(getKey('variableTransactionHistory_$dateKey'))
+          .get();
+
+      final results = await Future.wait([fixedDocFuture, variableDocFuture]);
+      double fixedExpense = results[0].exists ? results[0]['total']?.toDouble() ?? 0.0 : 0.0;
+      double variableExpense = results[1].exists ? results[1]['total']?.toDouble() ?? 0.0 : 0.0;
+      _fixedExpense = fixedExpense;
+      fixedExpenseListenable.value = fixedExpense;
       this.variableExpense = variableExpense;
 
       double totalExpense = fixedExpense + variableExpense;
@@ -330,10 +592,28 @@ class AppState extends ChangeNotifier {
       await transactionsBox.put(mainTransKey, standardizedMain);
       await transactionsBox.put(secondaryTransKey, standardizedSecondary);
       await transactionsBox.put(otherTransKey, standardizedOther);
+      await _updateSyncTimestamp(mainTransKey);
+      await _updateSyncTimestamp(secondaryTransKey);
+      await _updateSyncTimestamp(otherTransKey);
 
+      totalRevenueListenable.value = totalRevenue;
+      profitListenable.value = profit;
+      profitMarginListenable.value = profitMargin;
+      _cachedDateKey = dateKey;
+      _cachedData = {
+        'mainRevenue': main,
+        'secondaryRevenue': secondary,
+        'otherRevenue': other,
+        'mainRevenueTransactions': standardizedMain,
+        'secondaryRevenueTransactions': standardizedSecondary,
+        'otherRevenueTransactions': standardizedOther,
+        'fixedExpense': fixedExpense,
+        'variableExpense': variableExpense,
+        'fixedExpenseList': fixedExpenseList.value,
+        'variableExpenseList': variableExpenseList.value,
+      };
       notifyListeners();
     } catch (e) {
-      print('Lỗi khi lưu doanh thu: $e');
       throw Exception('Không thể lưu doanh thu: $e');
     }
   }
@@ -344,56 +624,23 @@ class AppState extends ChangeNotifier {
     'Doanh thu khác': [],
   };
 
-  Future<void> loadExpenseValues() async {
-    try {
-      if (userId == null) throw Exception('User ID không tồn tại');
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-      DocumentSnapshot fixedDoc = await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('expenses')
-          .doc('fixed')
-          .collection('daily')
-          .doc(getKey('fixedExpenseList_$dateKey'))
-          .get();
-      DocumentSnapshot variableDoc = await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('expenses')
-          .doc('variable')
-          .collection('daily')
-          .doc(getKey('variableTransactionHistory_$dateKey'))
-          .get();
-      fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      fixedExpenseList.value = await ExpenseManager.loadFixedExpenses(this);
-      variableExpenseList.value = await ExpenseManager.loadVariableExpenses(this);
-    } catch (e) {
-      print('Lỗi khi tải chi phí: $e');
-      fixedExpense = 0.0;
-      variableExpense = 0.0;
-      fixedExpenseList.value = [];
-      variableExpenseList.value = [];
-    }
-  }
-
   Future<List<Map<String, dynamic>>> loadVariableExpenseList() async {
     try {
-      if (userId == null) return [];
+      if (userId == null || !_isFirebaseInitialized) return [];
       return await ExpenseManager.loadAvailableVariableExpenses(this);
     } catch (e) {
-      print('Lỗi khi tải danh sách chi phí biến đổi: $e');
       return [];
     }
   }
 
   Future<void> setExpenses(double fixed, double variable) async {
+    if (!_isFirebaseInitialized) throw Exception('Firebase not initialized');
     try {
       if (userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-      fixedExpense = fixed;
+      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      _fixedExpense = fixed;
+      fixedExpenseListenable.value = fixed;
       variableExpense = variable;
       await firestore
           .collection('users')
@@ -426,14 +673,30 @@ class AppState extends ChangeNotifier {
         'totalRevenue': totalRevenue,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      totalRevenueListenable.value = totalRevenue;
+      profitListenable.value = profit;
+      profitMarginListenable.value = profitMargin;
+      _cachedDateKey = dateKey;
+      _cachedData = {
+        'mainRevenue': mainRevenue,
+        'secondaryRevenue': secondaryRevenue,
+        'otherRevenue': otherRevenue,
+        'mainRevenueTransactions': mainRevenueTransactions.value,
+        'secondaryRevenueTransactions': secondaryRevenueTransactions.value,
+        'otherRevenueTransactions': otherRevenueTransactions.value,
+        'fixedExpense': fixed,
+        'variableExpense': variable,
+        'fixedExpenseList': fixedExpenseList.value,
+        'variableExpenseList': variableExpenseList.value,
+      };
       notifyListeners();
     } catch (e) {
-      print('Lỗi khi lưu chi phí: $e');
       throw Exception('Không thể lưu chi phí: $e');
     }
   }
 
   Future<Map<String, double>> getRevenueForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return {'mainRevenue': 0.0, 'secondaryRevenue': 0.0, 'otherRevenue': 0.0, 'totalRevenue': 0.0};
     try {
       if (userId == null) return {'mainRevenue': 0.0, 'secondaryRevenue': 0.0, 'otherRevenue': 0.0, 'totalRevenue': 0.0};
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -474,12 +737,12 @@ class AppState extends ChangeNotifier {
         'totalRevenue': mainRevenueTotal + secondaryRevenueTotal + otherRevenueTotal,
       };
     } catch (e) {
-      print('Lỗi khi lấy doanh thu: $e');
       return {'mainRevenue': 0.0, 'secondaryRevenue': 0.0, 'otherRevenue': 0.0, 'totalRevenue': 0.0};
     }
   }
 
   Future<List<Map<String, double>>> getDailyRevenueForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return [];
     try {
       if (userId == null) return [];
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -517,12 +780,12 @@ class AppState extends ChangeNotifier {
 
       return dailyData;
     } catch (e) {
-      print('Lỗi khi lấy doanh thu hàng ngày: $e');
       return [];
     }
   }
 
   Future<Map<String, double>> getExpensesForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'totalExpense': 0.0};
     try {
       if (userId == null) return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'totalExpense': 0.0};
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -575,12 +838,12 @@ class AppState extends ChangeNotifier {
         'totalExpense': fixedExpenseTotal + variableExpenseTotal,
       };
     } catch (e) {
-      print('Lỗi khi lấy chi phí: $e');
       return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'totalExpense': 0.0};
     }
   }
 
   Future<Map<String, double>> getExpenseBreakdown(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return {};
     try {
       if (userId == null) return {};
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -648,12 +911,12 @@ class AppState extends ChangeNotifier {
 
       return finalBreakdown;
     } catch (e) {
-      print('Lỗi khi lấy phân bổ chi phí: $e');
       return {};
     }
   }
 
   Future<List<Map<String, double>>> getDailyExpensesForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return [];
     try {
       if (userId == null) return [];
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -706,12 +969,23 @@ class AppState extends ChangeNotifier {
 
       return dailyData;
     } catch (e) {
-      print('Lỗi khi lấy chi phí hàng ngày: $e');
       return [];
     }
   }
 
   Future<Map<String, double>> getOverviewForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) {
+      return {
+        'totalRevenue': 0.0,
+        'totalExpense': 0.0,
+        'profit': 0.0,
+        'averageProfitMargin': 0.0,
+        'avgRevenuePerDay': 0.0,
+        'avgExpensePerDay': 0.0,
+        'avgProfitPerDay': 0.0,
+        'expenseToRevenueRatio': 0.0,
+      };
+    }
     try {
       if (userId == null) {
         return {
@@ -725,7 +999,6 @@ class AppState extends ChangeNotifier {
           'expenseToRevenueRatio': 0.0,
         };
       }
-
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       double totalRevenue = 0.0;
       double totalExpense = 0.0;
@@ -801,7 +1074,6 @@ class AppState extends ChangeNotifier {
         'expenseToRevenueRatio': expenseToRevenueRatio,
       };
     } catch (e) {
-      print('Lỗi khi lấy tổng quan: $e');
       return {
         'totalRevenue': 0.0,
         'totalExpense': 0.0,
@@ -816,6 +1088,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, Map<String, double>>> getTopProductsByCategory(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) {
+      return {
+        'Doanh thu chính': {},
+        'Doanh thu phụ': {},
+        'Doanh thu khác': {},
+      };
+    }
     try {
       if (userId == null) {
         return {
@@ -858,7 +1137,6 @@ class AppState extends ChangeNotifier {
       }
       return topProducts;
     } catch (e) {
-      print('Lỗi khi lấy top sản phẩm: $e');
       return {
         'Doanh thu chính': {},
         'Doanh thu phụ': {},
@@ -868,6 +1146,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<List<Map<String, double>>> getDailyOverviewForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return [];
     try {
       if (userId == null) return [];
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -934,12 +1213,12 @@ class AppState extends ChangeNotifier {
 
       return dailyData;
     } catch (e) {
-      print('Lỗi khi lấy tổng quan hàng ngày: $e');
       return [];
     }
   }
 
   Future<Map<String, double>> getProductRevenueBreakdown(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return {};
     try {
       if (userId == null) return {};
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -975,12 +1254,12 @@ class AppState extends ChangeNotifier {
       }
       return breakdown;
     } catch (e) {
-      print('Lỗi khi lấy phân bổ doanh thu: $e');
       return {};
     }
   }
 
   Future<Map<String, double>> getProductRevenueTotals(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return {};
     try {
       if (userId == null) return {};
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -1008,12 +1287,12 @@ class AppState extends ChangeNotifier {
       }
       return productTotals;
     } catch (e) {
-      print('Lỗi khi lấy tổng doanh thu sản phẩm: $e');
       return {};
     }
   }
 
   Future<Map<String, Map<String, double>>> getProductRevenueDetails(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return {};
     try {
       if (userId == null) return {};
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -1055,7 +1334,6 @@ class AppState extends ChangeNotifier {
 
       return productDetails;
     } catch (e) {
-      print('Lỗi khi lấy chi tiết doanh thu sản phẩm: $e');
       return {};
     }
   }
@@ -1065,7 +1343,7 @@ class AppState extends ChangeNotifier {
   }
 
   double getTotalFixedAndVariableExpense() {
-    return fixedExpense + variableExpense;
+    return _fixedExpense + variableExpense;
   }
 
   double getProfit() {
@@ -1076,5 +1354,26 @@ class AppState extends ChangeNotifier {
     double revenue = getTotalRevenue();
     if (revenue == 0) return 0;
     return (getProfit() / revenue) * 100;
+  }
+
+  @override
+  void dispose() {
+    selectedDateListenable.dispose();
+    isLoadingListenable.dispose();
+    dataReadyListenable.dispose();
+    mainRevenueListenable.dispose();
+    secondaryRevenueListenable.dispose();
+    otherRevenueListenable.dispose();
+    totalRevenueListenable.dispose();
+    profitListenable.dispose();
+    profitMarginListenable.dispose();
+    fixedExpenseListenable.dispose();
+    fixedExpenseList.dispose();
+    variableExpenseList.dispose();
+    mainRevenueTransactions.dispose();
+    secondaryRevenueTransactions.dispose();
+    otherRevenueTransactions.dispose();
+    productsUpdated.dispose();
+    super.dispose();
   }
 }

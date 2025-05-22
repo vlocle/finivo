@@ -43,7 +43,6 @@ class _EditRevenueScreenState extends State<EditRevenueScreen> with SingleTicker
   }
 
   void _onProductsUpdated() {
-    // Làm mới Future khi danh sách sản phẩm thay đổi
     setState(() {
       final appState = Provider.of<AppState>(context, listen: false);
       _productsFuture = RevenueManager.loadProducts(appState, widget.category);
@@ -82,28 +81,32 @@ class _EditRevenueScreenState extends State<EditRevenueScreen> with SingleTicker
     TextEditingController editQuantityController = TextEditingController(text: transactions[index]['quantity'].toString());
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Chỉnh sửa số lượng"),
-        content: TextField(
-          keyboardType: TextInputType.number,
-          controller: editQuantityController,
-          decoration: const InputDecoration(labelText: "Nhập số lượng mới"),
-          maxLines: 1,
-          maxLength: 5, // Giới hạn số lượng tối đa
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
-          ElevatedButton(
-            onPressed: () {
-              int newQuantity = int.tryParse(editQuantityController.text) ?? transactions[index]['quantity'];
-              transactions[index]['quantity'] = newQuantity;
-              transactions[index]['total'] = transactions[index]['price'] * newQuantity;
-              RevenueManager.saveTransactionHistory(appState, widget.category, transactions);
-              Navigator.pop(context);
-            },
-            child: const Text("Lưu"),
+      builder: (context) => GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.opaque,
+        child: AlertDialog(
+          title: const Text("Chỉnh sửa số lượng"),
+          content: TextField(
+            keyboardType: TextInputType.number,
+            controller: editQuantityController,
+            decoration: const InputDecoration(labelText: "Nhập số lượng mới"),
+            maxLines: 1,
+            maxLength: 5,
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
+            ElevatedButton(
+              onPressed: () {
+                int newQuantity = int.tryParse(editQuantityController.text) ?? transactions[index]['quantity'];
+                transactions[index]['quantity'] = newQuantity;
+                transactions[index]['total'] = transactions[index]['price'] * newQuantity;
+                RevenueManager.saveTransactionHistory(appState, widget.category, transactions);
+                Navigator.pop(context);
+              },
+              child: const Text("Lưu"),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -114,78 +117,82 @@ class _EditRevenueScreenState extends State<EditRevenueScreen> with SingleTicker
     final screenWidth = MediaQuery.of(context).size.width;
     ValueNotifier<List<Map<String, dynamic>>> transactions = widget.category == "Doanh thu chính" ? appState.mainRevenueTransactions : appState.secondaryRevenueTransactions;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            height: MediaQuery.of(context).size.height * 0.25,
-            color: const Color(0xFF1976D2).withOpacity(0.9),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          "Chỉnh sửa ${widget.category}",
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.opaque,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Container(
+              height: MediaQuery.of(context).size.height * 0.25,
+              color: const Color(0xFF1976D2).withOpacity(0.9),
+            ),
+            SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            "Chỉnh sửa ${widget.category}",
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: FutureBuilder<List<Map<String, dynamic>>>(
-                      future: _productsFuture,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                        if (snapshot.hasError) return const Center(child: Text("Lỗi tải dữ liệu"));
-                        List<Map<String, dynamic>> productList = snapshot.data ?? [];
-                        return SlideTransition(
-                          position: _slideAnimation,
-                          child: FadeTransition(
-                            opacity: _fadeAnimation,
-                            child: Card(
-                              elevation: 10,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: ProductInputSection(
-                                  productList: productList,
-                                  quantityController: quantityController,
-                                  priceController: priceController,
-                                  onAddTransaction: (selectedProduct, selectedPrice, isFlexiblePrice) {
-                                    addTransaction(appState, transactions.value, selectedProduct, selectedPrice, isFlexiblePrice);
-                                  },
-                                  transactions: transactions,
-                                  onEditTransaction: editTransaction,
-                                  onRemoveTransaction: removeTransaction,
-                                  appState: appState,
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: FutureBuilder<List<Map<String, dynamic>>>(
+                        future: _productsFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                          if (snapshot.hasError) return const Center(child: Text("Lỗi tải dữ liệu"));
+                          List<Map<String, dynamic>> productList = snapshot.data ?? [];
+                          return SlideTransition(
+                            position: _slideAnimation,
+                            child: FadeTransition(
+                              opacity: _fadeAnimation,
+                              child: Card(
+                                elevation: 10,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: ProductInputSection(
+                                    productList: productList,
+                                    quantityController: quantityController,
+                                    priceController: priceController,
+                                    onAddTransaction: (selectedProduct, selectedPrice, isFlexiblePrice) {
+                                      addTransaction(appState, transactions.value, selectedProduct, selectedPrice, isFlexiblePrice);
+                                    },
+                                    transactions: transactions,
+                                    onEditTransaction: editTransaction,
+                                    onRemoveTransaction: removeTransaction,
+                                    appState: appState,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -304,7 +311,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
           controller: widget.priceController,
           enabled: isFlexiblePrice,
           maxLines: 1,
-          maxLength: 15, // Giới hạn số ký tự
+          maxLength: 15,
         ),
         const SizedBox(height: 20),
         Row(
@@ -324,7 +331,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                 ),
                 controller: widget.quantityController,
                 maxLines: 1,
-                maxLength: 5, // Giới hạn số ký tự
+                maxLength: 5,
               ),
             ),
           ],
@@ -341,7 +348,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF42A5F5),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            minimumSize: Size(screenWidth - 32, 50), // Full-width trừ padding
+            minimumSize: Size(screenWidth - 32, 50),
           ),
           onPressed: () => widget.onAddTransaction(selectedProduct, selectedPrice, isFlexiblePrice),
           child: const Text(
@@ -369,7 +376,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                     child: ListTile(
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       title: Text(
-                        "${transaction['name']} - ${transaction['quantity']} x ${transaction['price']} VNĐ",
+                        "${transaction['name']} - ${transaction['quantity']}",
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),

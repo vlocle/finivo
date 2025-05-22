@@ -53,14 +53,17 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    final appState = Provider.of<AppState>(context, listen: false);
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: Provider.of<AppState>(context, listen: false).selectedDate,
+      initialDate: appState.selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
     );
     if (picked != null) {
-      Provider.of<AppState>(context, listen: false).setSelectedDate(picked);
+      appState.setSelectedDate(picked);
+      _controller.reset();
+      _controller.forward();
     }
   }
 
@@ -95,7 +98,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setStateDialog) => FutureBuilder<Map<String, dynamic>>(
           future: Future.wait([
-            ExpenseManager.loadFixedExpenseList(appState),
+            ExpenseManager.loadFixedExpenseList(appState, _selectedMonth),
             ExpenseManager.loadMonthlyFixedAmounts(appState, _selectedMonth),
           ]).then((results) => {
             'fixedExpenses': results[0],
@@ -147,7 +150,6 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Date range picker
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -203,7 +205,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                               if (_newExpenseController.text.isNotEmpty) {
                                 fixedExpenses.add({'name': _newExpenseController.text});
                                 monthlyControllers.add(TextEditingController());
-                                await ExpenseManager.saveFixedExpenseList(appState, fixedExpenses);
+                                await ExpenseManager.saveFixedExpenseList(appState, fixedExpenses, _selectedMonth);
                                 _newExpenseController.clear();
                                 setStateDialog(() {});
                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã thêm khoản chi phí")));
@@ -226,205 +228,223 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8.0),
                               child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Expanded(child: Text(name, style: const TextStyle(fontSize: 16))),
-                                  savedAmount == 0
-                                      ? Row(
-                                    children: [
-                                      SizedBox(
-                                        width: 120,
-                                        child: TextField(
-                                          controller: monthlyControllers[index],
-                                          keyboardType: TextInputType.number,
-                                          decoration: InputDecoration(
-                                            labelText: "Số tiền (VNĐ)",
-                                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                            focusedBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                              borderSide: const BorderSide(color: Color(0xFF1976D2)),
-                                            ),
-                                          ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          name,
+                                          style: const TextStyle(fontSize: 16),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.done, color: Colors.green, size: 20),
-                                        onPressed: () async {
-                                          final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
-                                          if (amount > 0) {
-                                            if (selectedRange == null) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text("Vui lòng chọn khoảng thời gian")),
-                                              );
-                                              return;
-                                            }
-                                            showDialog(
-                                              context: context,
-                                              barrierDismissible: false,
-                                              builder: (context) => AlertDialog(
-                                                content: SizedBox(
-                                                  height: 120,
-                                                  child: Column(
-                                                    mainAxisAlignment: MainAxisAlignment.center,
-                                                    children: const [
-                                                      CircularProgressIndicator(),
-                                                      SizedBox(height: 16),
-                                                      Text("Đang lưu...", style: TextStyle(fontSize: 16)),
-                                                    ],
+                                        const SizedBox(height: 4),
+                                        savedAmount == 0
+                                            ? Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 120,
+                                              child: TextField(
+                                                controller: monthlyControllers[index],
+                                                keyboardType: TextInputType.number,
+                                                decoration: InputDecoration(
+                                                  labelText: "Số tiền (VNĐ)",
+                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                                  focusedBorder: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    borderSide: const BorderSide(color: Color(0xFF1976D2)),
                                                   ),
                                                 ),
                                               ),
-                                            );
-                                            try {
-                                              await ExpenseManager.saveMonthlyFixedAmount(
-                                                appState,
-                                                name,
-                                                amount,
-                                                _selectedMonth,
-                                                dateRange: selectedRange,
-                                              );
-                                              Navigator.pop(context);
-                                              setStateDialog(() => monthlyControllers[index].clear());
-                                              await appState.loadExpenseValues();
-                                              setState(() {});
-                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã lưu số tiền")));
-                                            } catch (e) {
-                                              Navigator.pop(context);
-                                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
-                                            }
-                                          }
-                                        },
-                                      ),
-                                    ],
-                                  )
-                                      : Row(
-                                    children: [
-                                      Text(
-                                        currencyFormat.format(savedAmount),
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: const Icon(Icons.edit, color: Color(0xFF1976D2), size: 20),
-                                        onPressed: () {
-                                          setStateDialog(() => monthlyControllers[index].text = savedAmount.toString());
-                                          showDialog(
-                                            context: context,
-                                            builder: (context) => AlertDialog(
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                              title: Text("Chỉnh sửa số tiền - $name"),
-                                              content: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  TextField(
-                                                    controller: monthlyControllers[index],
-                                                    keyboardType: TextInputType.number,
-                                                    decoration: InputDecoration(
-                                                      labelText: "Nhập số tiền",
-                                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.done, color: Colors.green, size: 20),
+                                              onPressed: () async {
+                                                final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
+                                                if (amount > 0) {
+                                                  if (selectedRange == null) {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      const SnackBar(content: Text("Vui lòng chọn khoảng thời gian")),
+                                                    );
+                                                    return;
+                                                  }
+                                                  showDialog(
+                                                    context: context,
+                                                    barrierDismissible: false,
+                                                    builder: (context) => AlertDialog(
+                                                      content: SizedBox(
+                                                        height: 120,
+                                                        child: Column(
+                                                          mainAxisAlignment: MainAxisAlignment.center,
+                                                          children: const [
+                                                            CircularProgressIndicator(),
+                                                            SizedBox(height: 16),
+                                                            Text("Đang lưu...", style: TextStyle(fontSize: 16)),
+                                                          ],
+                                                        ),
+                                                      ),
                                                     ),
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      Text(
-                                                        selectedRange == null
-                                                            ? "Chọn khoảng thời gian"
-                                                            : "${DateFormat('dd/MM/yy').format(selectedRange!.start)} - ${DateFormat('dd/MM/yy').format(selectedRange!.end)}",
-                                                        style: const TextStyle(fontSize: 14),
+                                                  );
+                                                  try {
+                                                    await ExpenseManager.saveMonthlyFixedAmount(
+                                                      appState,
+                                                      name,
+                                                      amount,
+                                                      _selectedMonth,
+                                                      dateRange: selectedRange,
+                                                    );
+                                                    Navigator.pop(context);
+                                                    setStateDialog(() => monthlyControllers[index].clear());
+                                                    await appState.loadExpenseValues();
+                                                    setState(() {});
+                                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã lưu số tiền")));
+                                                  } catch (e) {
+                                                    Navigator.pop(context);
+                                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+                                                  }
+                                                }
+                                              },
+                                            ),
+                                          ],
+                                        )
+                                            : SizedBox(
+                                          width: 120,
+                                          child: Text(
+                                            currencyFormat.format(savedAmount),
+                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (savedAmount != 0)
+                                        IconButton(
+                                          icon: const Icon(Icons.edit, color: Color(0xFF1976D2), size: 20),
+                                          onPressed: () {
+                                            setStateDialog(() => monthlyControllers[index].text = savedAmount.toString());
+                                            showDialog(
+                                              context: context,
+                                              builder: (context) => AlertDialog(
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                                title: Text("Chỉnh sửa số tiền - $name"),
+                                                content: Column(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    TextField(
+                                                      controller: monthlyControllers[index],
+                                                      keyboardType: TextInputType.number,
+                                                      decoration: InputDecoration(
+                                                        labelText: "Nhập số tiền",
+                                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                                       ),
-                                                      IconButton(
-                                                        icon: const Icon(Icons.date_range, color: Color(0xFF1976D2)),
-                                                        onPressed: () async {
-                                                          final DateTimeRange? picked = await showDateRangePicker(
-                                                            context: context,
-                                                            initialDateRange: selectedRange ??
-                                                                DateTimeRange(
-                                                                  start: _selectedMonth,
-                                                                  end: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    Row(
+                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                      children: [
+                                                        Text(
+                                                          selectedRange == null
+                                                              ? "Chọn khoảng thời gian"
+                                                              : "${DateFormat('dd/MM/yy').format(selectedRange!.start)} - ${DateFormat('dd/MM/yy').format(selectedRange!.end)}",
+                                                          style: const TextStyle(fontSize: 14),
+                                                        ),
+                                                        IconButton(
+                                                          icon: const Icon(Icons.date_range, color: Color(0xFF1976D2)),
+                                                          onPressed: () async {
+                                                            final DateTimeRange? picked = await showDateRangePicker(
+                                                              context: context,
+                                                              initialDateRange: selectedRange ??
+                                                                  DateTimeRange(
+                                                                    start: _selectedMonth,
+                                                                    end: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
+                                                                  ),
+                                                              firstDate: DateTime(_selectedMonth.year, _selectedMonth.month, 1),
+                                                              lastDate: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
+                                                              builder: (context, child) => Theme(
+                                                                data: ThemeData.light().copyWith(
+                                                                  primaryColor: const Color(0xFF1976D2),
+                                                                  colorScheme: const ColorScheme.light(primary: Color(0xFF1976D2)),
+                                                                  buttonTheme: const ButtonThemeData(textTheme: ButtonTextTheme.primary),
                                                                 ),
-                                                            firstDate: DateTime(_selectedMonth.year, _selectedMonth.month, 1),
-                                                            lastDate: DateTime(_selectedMonth.year, _selectedMonth.month, daysInMonth),
-                                                            builder: (context, child) => Theme(
-                                                              data: ThemeData.light().copyWith(
-                                                                primaryColor: const Color(0xFF1976D2),
-                                                                colorScheme: const ColorScheme.light(primary: Color(0xFF1976D2)),
-                                                                buttonTheme: const ButtonThemeData(textTheme: ButtonTextTheme.primary),
+                                                                child: child!,
                                                               ),
-                                                              child: child!,
-                                                            ),
+                                                            );
+                                                            if (picked != null) {
+                                                              setStateDialog(() => selectedRange = picked);
+                                                            }
+                                                          },
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () => Navigator.pop(context),
+                                                    child: const Text("Hủy", style: TextStyle(color: Colors.grey)),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed: () async {
+                                                      final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
+                                                      if (amount > 0) {
+                                                        if (selectedRange == null) {
+                                                          ScaffoldMessenger.of(context).showSnackBar(
+                                                            const SnackBar(content: Text("Vui lòng chọn khoảng thời gian")),
                                                           );
-                                                          if (picked != null) {
-                                                            setStateDialog(() => selectedRange = picked);
-                                                          }
-                                                        },
-                                                      ),
-                                                    ],
+                                                          return;
+                                                        }
+                                                        showDialog(
+                                                          context: context,
+                                                          barrierDismissible: false,
+                                                          builder: (context) => AlertDialog(
+                                                            content: SizedBox(
+                                                              height: 120,
+                                                              child: Column(
+                                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                                children: const [
+                                                                  CircularProgressIndicator(),
+                                                                  SizedBox(height: 16),
+                                                                  Text("Đang lưu...", style: TextStyle(fontSize: 16)),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        );
+                                                        try {
+                                                          await ExpenseManager.saveMonthlyFixedAmount(
+                                                            appState,
+                                                            name,
+                                                            amount,
+                                                            _selectedMonth,
+                                                            dateRange: selectedRange,
+                                                          );
+                                                          Navigator.pop(context);
+                                                          Navigator.pop(context);
+                                                          setStateDialog(() {});
+                                                          await appState.loadExpenseValues();
+                                                          setState(() {});
+                                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã cập nhật số tiền")));
+                                                        } catch (e) {
+                                                          Navigator.pop(context);
+                                                          Navigator.pop(context);
+                                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+                                                        }
+                                                      } else {
+                                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Số tiền không hợp lệ")));
+                                                      }
+                                                    },
+                                                    child: const Text("Lưu", style: TextStyle(color: Color(0xFF1976D2))),
                                                   ),
                                                 ],
                                               ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () => Navigator.pop(context),
-                                                  child: const Text("Hủy", style: TextStyle(color: Colors.grey)),
-                                                ),
-                                                TextButton(
-                                                  onPressed: () async {
-                                                    final amount = double.tryParse(monthlyControllers[index].text) ?? 0.0;
-                                                    if (amount > 0) {
-                                                      if (selectedRange == null) {
-                                                        ScaffoldMessenger.of(context).showSnackBar(
-                                                          const SnackBar(content: Text("Vui lòng chọn khoảng thời gian")),
-                                                        );
-                                                        return;
-                                                      }
-                                                      showDialog(
-                                                        context: context,
-                                                        barrierDismissible: false,
-                                                        builder: (context) => AlertDialog(
-                                                          content: SizedBox(
-                                                            height: 120,
-                                                            child: Column(
-                                                              mainAxisAlignment: MainAxisAlignment.center,
-                                                              children: const [
-                                                                CircularProgressIndicator(),
-                                                                SizedBox(height: 16),
-                                                                Text("Đang lưu...", style: TextStyle(fontSize: 16)),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      );
-                                                      try {
-                                                        await ExpenseManager.saveMonthlyFixedAmount(
-                                                          appState,
-                                                          name,
-                                                          amount,
-                                                          _selectedMonth,
-                                                          dateRange: selectedRange,
-                                                        );
-                                                        Navigator.pop(context);
-                                                        Navigator.pop(context);
-                                                        setStateDialog(() {});
-                                                        await appState.loadExpenseValues();
-                                                        setState(() {});
-                                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã cập nhật số tiền")));
-                                                      } catch (e) {
-                                                        Navigator.pop(context);
-                                                        Navigator.pop(context);
-                                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
-                                                      }
-                                                    } else {
-                                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Số tiền không hợp lệ")));
-                                                    }
-                                                  },
-                                                  child: const Text("Lưu", style: TextStyle(color: Color(0xFF1976D2))),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        },
-                                      ),
+                                            );
+                                          },
+                                        ),
                                       IconButton(
                                         icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                         onPressed: () async {
@@ -464,10 +484,17 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                               ),
                                             );
                                             try {
-                                              await ExpenseManager.deleteMonthlyFixedExpense(appState, name, _selectedMonth, dateRange: selectedRange);
+                                              final updatedExpenses = await ExpenseManager.deleteMonthlyFixedExpense(
+                                                appState,
+                                                name,
+                                                _selectedMonth,
+                                                dateRange: selectedRange,
+                                              );
                                               fixedExpenses.removeAt(index);
                                               monthlyControllers.removeAt(index);
-                                              await ExpenseManager.saveFixedExpenseList(appState, fixedExpenses);
+                                              appState.fixedExpenseList.value = updatedExpenses;
+                                              await ExpenseManager.saveFixedExpenseList(appState, updatedExpenses, _selectedMonth);
+                                              await appState.loadExpenseValues();
                                               Navigator.pop(context);
                                               setStateDialog(() {});
                                               setState(() {});
@@ -516,64 +543,64 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
     final user = FirebaseAuth.instance.currentUser;
-    double totalExpense = appState.getTotalFixedAndVariableExpense();
     final screenWidth = MediaQuery.of(context).size.width;
-    return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            height: MediaQuery.of(context).size.height * 0.25,
-            color: const Color(0xFF1976D2).withOpacity(0.9),
-          ),
-          SafeArea(
-            child: SingleChildScrollView( // Thêm SingleChildScrollView để tránh overflow
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Flexible(
-                          child: Row(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (context) => UserSettingsScreen()),
-                                  );
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: CircleAvatar(
-                                    radius: screenWidth < 360 ? 20 : 24,
-                                    backgroundColor: Colors.white,
-                                    backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-                                    child: user?.photoURL == null
-                                        ? Icon(
-                                      Icons.person,
-                                      size: screenWidth < 360 ? 24 : 30,
-                                      color: const Color(0xFF1976D2),
-                                    )
-                                        : null,
-                                  ),
+
+    return Stack(
+      children: [
+        Container(
+          height: MediaQuery.of(context).size.height * 0.25,
+          color: const Color(0xFF1976D2).withOpacity(0.9),
+        ),
+        SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(
+                        child: Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => UserSettingsScreen()),
+                                );
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.2),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: CircleAvatar(
+                                  radius: screenWidth < 360 ? 20 : 24,
+                                  backgroundColor: Colors.white,
+                                  backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                                  child: user?.photoURL == null
+                                      ? Icon(
+                                    Icons.person,
+                                    size: screenWidth < 360 ? 24 : 30,
+                                    color: const Color(0xFF1976D2),
+                                  )
+                                      : null,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Column(
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Consumer<AppState>(
+                                builder: (context, appState, child) => Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
@@ -602,32 +629,34 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.calendar_today, color: Colors.white),
-                          onPressed: () => _selectDate(context),
-                          splashRadius: 20,
-                        ),
-                      ],
-                    ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.calendar_today, color: Colors.white),
+                        onPressed: () => _selectDate(context),
+                        splashRadius: 20,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Column(
-                      children: [
-                        SlideTransition(
-                          position: _slideAnimation,
-                          child: FadeTransition(
-                            opacity: _fadeAnimation,
-                            child: Card(
-                              elevation: 10,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Column(
+                    children: [
+                      SlideTransition(
+                        position: _slideAnimation,
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: Card(
+                            elevation: 10,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+                              child: Consumer<AppState>(
+                                builder: (context, appState, child) => Column(
                                   children: [
                                     ExpenseCategoryItem(
                                       title: "Chi phí cố định",
@@ -644,20 +673,34 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                                     ),
                                     const Divider(height: 1, color: Colors.grey),
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 12.0),
+                                      padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
                                       child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          const Text(
-                                            'Tổng chi phí',
-                                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                          ),
-                                          Text(
-                                            currencyFormat.format(totalExpense),
-                                            style: const TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF1976D2),
+                                          const Icon(Icons.account_balance, size: 24, color: Color(0xFF1976D2)),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                  'Tổng chi phí',
+                                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                ValueListenableBuilder<double>(
+                                                  valueListenable: appState.fixedExpenseListenable,
+                                                  builder: (context, fixedExpense, _) => Text(
+                                                    currencyFormat.format(fixedExpense + appState.variableExpense),
+                                                    style: const TextStyle(
+                                                      fontSize: 20,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF1976D2),
+                                                    ),
+                                                    textAlign: TextAlign.left,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
@@ -669,8 +712,10 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        FadeTransition(
+                      ),
+                      const SizedBox(height: 16),
+                      Consumer<AppState>(
+                        builder: (context, appState, child) => FadeTransition(
                           opacity: _fadeAnimation,
                           child: Card(
                             elevation: 6,
@@ -723,79 +768,79 @@ class _ExpenseScreenState extends State<ExpenseScreen> with SingleTickerProvider
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16.0),
-                          child: ScaleTransition(
-                            scale: _buttonScaleAnimation,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF42A5F5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                minimumSize: Size(screenWidth - 32, 50),
-                                padding: const EdgeInsets.symmetric(horizontal: 16), // Thêm padding để tránh tràn
-                              ),
-                              onPressed: () {
-                                _controller.reset();
-                                _controller.forward();
-                                _showMonthlyFixedExpenseDialog(appState);
-                              },
-                              child: FittedBox( // Sử dụng FittedBox để tự động điều chỉnh kích thước văn bản
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  "Quản lý chi phí cố định",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: screenWidth < 360 ? 14 : 16, // Giảm fontSize trên màn hình nhỏ
-                                  ),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: ScaleTransition(
+                          scale: _buttonScaleAnimation,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF42A5F5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              minimumSize: Size(screenWidth - 32, 50),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                            ),
+                            onPressed: () {
+                              _controller.reset();
+                              _controller.forward();
+                              _showMonthlyFixedExpenseDialog(appState);
+                            },
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                "Quản lý chi phí cố định",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: screenWidth < 360 ? 14 : 16,
                                 ),
                               ),
                             ),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16.0),
-                          child: ScaleTransition(
-                            scale: _buttonScaleAnimation,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF42A5F5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                minimumSize: Size(screenWidth - 32, 50),
-                                padding: const EdgeInsets.symmetric(horizontal: 16), // Thêm padding để tránh tràn
-                              ),
-                              onPressed: () {
-                                _controller.reset();
-                                _controller.forward();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => UpdateExpenseListScreen(category: "Chi phí biến đổi"),
-                                  ),
-                                );
-                              },
-                              child: FittedBox( // Sử dụng FittedBox để tự động điều chỉnh kích thước văn bản
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  "Quản lý chi phí biến đổi",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: screenWidth < 360 ? 14 : 16, // Giảm fontSize trên màn hình nhỏ
-                                  ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: ScaleTransition(
+                          scale: _buttonScaleAnimation,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF42A5F5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              minimumSize: Size(screenWidth - 32, 50),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                            ),
+                            onPressed: () {
+                              _controller.reset();
+                              _controller.forward();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => UpdateExpenseListScreen(category: "Chi phí biến đổi"),
+                                ),
+                              );
+                            },
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                "Quản lý chi phí biến đổi",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: screenWidth < 360 ? 14 : 16,
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -811,10 +856,11 @@ class ExpenseCategoryItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context, listen: false);
     return GestureDetector(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12.0),
+        padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -822,19 +868,39 @@ class ExpenseCategoryItem extends StatelessWidget {
               children: [
                 Icon(icon, size: 24, color: const Color(0xFF1976D2)),
                 const SizedBox(width: 12),
-                Text(title, style: const TextStyle(fontSize: 16)),
-              ],
-            ),
-            Row(
-              children: [
-                Text(
-                  currencyFormat.format(amount),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 4),
+                    title == "Chi phí cố định"
+                        ? ValueListenableBuilder<double>(
+                      valueListenable: appState.fixedExpenseListenable,
+                      builder: (context, fixedExpense, _) => Text(
+                        currencyFormat.format(fixedExpense),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1976D2),
+                        ),
+                      ),
+                    )
+                        : Text(
+                      currencyFormat.format(amount),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1976D2),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
               ],
             ),
+            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
           ],
         ),
       ),

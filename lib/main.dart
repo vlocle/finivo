@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; // Thêm import này
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
@@ -13,21 +13,36 @@ import 'screens/login_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await Firebase.initializeApp();
+    // Thử khởi tạo Firebase với retry
+    int retries = 3;
+    for (int i = 0; i < retries; i++) {
+      try {
+        await Firebase.initializeApp();
+        break;
+      } catch (e) {
+        if (i == retries - 1) throw e;
+        await Future.delayed(Duration(seconds: 1));
+      }
+    }
+
     FirebaseFirestore.instance.settings = const Settings(
       persistenceEnabled: true,
       cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
+
+    // Khởi tạo Hive
     await Hive.initFlutter();
     await Future.wait([
-      Hive.openBox('productsBox'),
-      //Hive.openBox('expenseBox'),
-      Hive.openBox('transactionsBox'),
-      Hive.openBox('revenueBox'),
-      Hive.openBox('settingsBox'),
+      Hive.openBox('productsBox').then((box) => print('Opened productsBox')),
+      Hive.openBox('transactionsBox').then((box) => print('Opened transactionsBox')),
+      Hive.openBox('revenueBox').then((box) => print('Opened revenueBox')),
+      Hive.openBox('settingsBox').then((box) => print('Opened settingsBox')),
     ]);
+
+    // Khởi tạo định dạng ngày
     await initializeDateFormatting('vi', null);
   } catch (e) {
+    print('Lỗi khởi tạo ứng dụng: $e');
     runApp(MaterialApp(
       home: Scaffold(
         body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')),
@@ -35,6 +50,7 @@ void main() async {
     ));
     return;
   }
+
   runApp(
     ChangeNotifierProvider(
       create: (context) => AppState(),
@@ -61,17 +77,16 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.dark,
       ),
       themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      // Thêm các delegate và locale để hỗ trợ MaterialLocalizations
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [
-        Locale('vi', 'VN'), // Hỗ trợ tiếng Việt
-        Locale('en', 'US'), // Hỗ trợ tiếng Anh (tùy chọn)
+        Locale('vi', 'VN'),
+        Locale('en', 'US'),
       ],
-      locale: const Locale('vi', 'VN'), // Đặt ngôn ngữ mặc định là tiếng Việt
+      locale: const Locale('vi', 'VN'),
       home: AuthWrapper(),
     );
   }

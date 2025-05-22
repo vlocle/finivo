@@ -49,6 +49,7 @@ class UserSettingsScreen extends StatelessWidget {
   }
 
   // Hàm xóa toàn bộ dữ liệu
+  // Trong user_setting_screen.dart, thay hàm _clearAllData bằng đoạn code sau:
   Future<void> _clearAllData(BuildContext context) async {
     final appState = Provider.of<AppState>(context, listen: false);
     String? userId = appState.userId;
@@ -96,7 +97,7 @@ class UserSettingsScreen extends StatelessWidget {
           }
         }
 
-        // Xóa các subcollections của expenses (fixed, variable, fixedList, v.v.)
+        // Xóa các subcollections của expenses
         final expenseSubcollections = ['fixed/daily', 'variable/daily', 'fixedList', 'variableList/monthly', 'monthlyFixed/monthly'];
         for (var sub in expenseSubcollections) {
           var parts = sub.split('/');
@@ -115,11 +116,10 @@ class UserSettingsScreen extends StatelessWidget {
         await batch.commit();
 
         // Đặt lại trạng thái AppState
+        appState.setExpenses(0.0, 0.0); // Cập nhật fixedExpense và variableExpense
         appState.mainRevenue = 0.0;
         appState.secondaryRevenue = 0.0;
         appState.otherRevenue = 0.0;
-        appState.fixedExpense = 0.0;
-        appState.variableExpense = 0.0;
         appState.mainRevenueTransactions.value = [];
         appState.secondaryRevenueTransactions.value = [];
         appState.otherRevenueTransactions.value = [];

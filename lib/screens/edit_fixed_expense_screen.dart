@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:marquee/marquee.dart';
 import '../state/app_state.dart';
 import '/screens/expense_manager.dart';
 
@@ -63,7 +64,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen> with Si
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
           maxLines: 1,
-          maxLength: 15, // Giới hạn số ký tự
+          maxLength: 15,
         ),
         actions: [
           TextButton(
@@ -74,12 +75,18 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen> with Si
             onPressed: () async {
               double newAmount = double.tryParse(amountController.text) ?? 0.0;
               if (newAmount >= 0) {
-                appState.fixedExpenseList.value[index]['amount'] = newAmount;
-                await ExpenseManager.saveFixedExpenses(appState, appState.fixedExpenseList.value);
-                double total = await ExpenseManager.updateTotalFixedExpense(appState, appState.fixedExpenseList.value);
-                appState.setExpenses(total, appState.variableExpense);
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã cập nhật số tiền")));
+                try {
+                  final updatedExpenses = List<Map<String, dynamic>>.from(appState.fixedExpenseList.value);
+                  updatedExpenses[index]['amount'] = newAmount;
+                  appState.fixedExpenseList.value = updatedExpenses;
+                  await ExpenseManager.saveFixedExpenses(appState, updatedExpenses);
+                  await appState.loadExpenseValues(); // Làm mới tổng chi phí
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã cập nhật số tiền")));
+                } catch (e) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+                }
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Số tiền không thể âm")));
               }
@@ -114,17 +121,22 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen> with Si
       ),
     );
     if (confirm == true) {
-      appState.fixedExpenseList.value.removeAt(index);
-      await ExpenseManager.saveFixedExpenses(appState, appState.fixedExpenseList.value);
-      double total = await ExpenseManager.updateTotalFixedExpense(appState, appState.fixedExpenseList.value);
-      appState.setExpenses(total, appState.variableExpense);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã xóa khoản chi phí")));
+      try {
+        final updatedExpenses = List<Map<String, dynamic>>.from(appState.fixedExpenseList.value);
+        updatedExpenses.removeAt(index);
+        appState.fixedExpenseList.value = updatedExpenses;
+        await ExpenseManager.saveFixedExpenses(appState, updatedExpenses);
+        await appState.loadExpenseValues(); // Làm mới tổng chi phí
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Đã xóa khoản chi phí")));
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
+    final appState = Provider.of<AppState>(context, listen: false);
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
@@ -188,131 +200,136 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen> with Si
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: FutureBuilder<List<Map<String, dynamic>>>(
-                      future: ExpenseManager.loadFixedExpenses(appState),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
+                    child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+                      valueListenable: appState.fixedExpenseList,
+                      builder: (context, fixedExpenses, _) {
+                        if (fixedExpenses.isEmpty && appState.fixedExpenseListenable.value == 0.0) {
+                          return const Center(
+                            child: Text(
+                              "Chưa có chi phí cố định",
+                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                            ),
+                          );
                         }
-                        if (snapshot.hasData) {
-                          appState.fixedExpenseList.value = snapshot.data!;
-                          return Column(
-                            children: [
-                              FadeTransition(
-                                opacity: _totalFadeAnimation,
-                                child: Card(
-                                  elevation: 6,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16.0),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        const Text(
-                                          'Tổng chi phí cố định',
-                                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                          overflow: TextOverflow.ellipsis,
+                        return Column(
+                          children: [
+                            FadeTransition(
+                              opacity: _totalFadeAnimation,
+                              child: Card(
+                                elevation: 6,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Tổng chi phí cố định',
+                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Flexible(
+                                        child: ValueListenableBuilder<double>(
+                                          valueListenable: appState.fixedExpenseListenable,
+                                          builder: (context, fixedExpense, _) {
+                                            return SizedBox(
+                                              height: 30,
+                                              child: Marquee(
+                                                text: currencyFormat.format(fixedExpense),
+                                                style: const TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Color(0xFF1976D2),
+                                                ),
+                                                scrollAxis: Axis.horizontal,
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                blankSpace: 20.0,
+                                                velocity: 50.0,
+                                                pauseAfterRound: const Duration(seconds: 1),
+                                                startPadding: 10.0,
+                                                accelerationDuration: const Duration(seconds: 1),
+                                                accelerationCurve: Curves.linear,
+                                                decelerationDuration: const Duration(milliseconds: 500),
+                                                decelerationCurve: Curves.easeOut,
+                                              ),
+                                            );
+                                          },
                                         ),
-                                        Flexible(
-                                          child: Text(
-                                            currencyFormat.format(appState.fixedExpense),
-                                            style: const TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF1976D2),
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              Expanded(
-                                child: SlideTransition(
-                                  position: _slideAnimation,
-                                  child: FadeTransition(
-                                    opacity: _fadeAnimation,
-                                    child: ValueListenableBuilder(
-                                      valueListenable: appState.fixedExpenseList,
-                                      builder: (context, List<Map<String, dynamic>> expenses, _) {
-                                        return Card(
-                                          elevation: 10,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                          child: expenses.isEmpty
-                                              ? const Center(
-                                            child: Text(
-                                              "Chưa có chi phí cố định",
-                                              style: TextStyle(fontSize: 16, color: Colors.grey),
-                                            ),
-                                          )
-                                              : ListView.builder(
-                                            itemCount: expenses.length,
-                                            itemBuilder: (context, index) {
-                                              double amount = expenses[index]['amount'] ?? 0.0;
-                                              return Padding(
-                                                padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-                                                child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Flexible(
-                                                      child: Row(
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.attach_money,
-                                                            size: 24,
-                                                            color: Color(0xFF1976D2),
-                                                          ),
-                                                          const SizedBox(width: 12),
-                                                          Flexible(
-                                                            child: Text(
-                                                              expenses[index]['name'],
-                                                              style: const TextStyle(fontSize: 16),
-                                                              overflow: TextOverflow.ellipsis,
-                                                              maxLines: 1,
-                                                            ),
-                                                          ),
-                                                        ],
+                            ),
+                            const SizedBox(height: 16),
+                            Expanded(
+                              child: SlideTransition(
+                                position: _slideAnimation,
+                                child: FadeTransition(
+                                  opacity: _fadeAnimation,
+                                  child: Card(
+                                    elevation: 10,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                    child: ListView.builder(
+                                      itemCount: fixedExpenses.length,
+                                      itemBuilder: (context, index) {
+                                        double amount = fixedExpenses[index]['amount'] ?? 0.0;
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.attach_money,
+                                                    size: 24,
+                                                    color: Color(0xFF1976D2),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        fixedExpenses[index]['name'],
+                                                        style: const TextStyle(fontSize: 16),
+                                                        overflow: TextOverflow.ellipsis,
+                                                        maxLines: 1,
                                                       ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        currencyFormat.format(amount),
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                        overflow: TextOverflow.ellipsis,
+                                                        maxLines: 1,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  ScaleTransition(
+                                                    scale: _buttonScaleAnimation,
+                                                    child: IconButton(
+                                                      icon: const Icon(Icons.edit, color: Color(0xFF1976D2), size: 18),
+                                                      onPressed: () => showEditAmountDialog(index, appState),
                                                     ),
-                                                    Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Flexible(
-                                                          child: Text(
-                                                            currencyFormat.format(amount),
-                                                            style: const TextStyle(
-                                                              fontSize: 16,
-                                                              fontWeight: FontWeight.bold,
-                                                            ),
-                                                            overflow: TextOverflow.ellipsis,
-                                                            maxLines: 1,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        ScaleTransition(
-                                                          scale: _buttonScaleAnimation,
-                                                          child: IconButton(
-                                                            icon: const Icon(Icons.edit, color: Color(0xFF1976D2), size: 18),
-                                                            onPressed: () => showEditAmountDialog(index, appState),
-                                                          ),
-                                                        ),
-                                                        ScaleTransition(
-                                                          scale: _buttonScaleAnimation,
-                                                          child: IconButton(
-                                                            icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                                                            onPressed: () => deleteExpenseItem(index, appState),
-                                                          ),
-                                                        ),
-                                                      ],
+                                                  ),
+                                                  ScaleTransition(
+                                                    scale: _buttonScaleAnimation,
+                                                    child: IconButton(
+                                                      icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                                                      onPressed: () => deleteExpenseItem(index, appState),
                                                     ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
                                           ),
                                         );
                                       },
@@ -320,10 +337,9 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen> with Si
                                   ),
                                 ),
                               ),
-                            ],
-                          );
-                        }
-                        return const Center(child: Text("Không có dữ liệu"));
+                            ),
+                          ],
+                        );
                       },
                     ),
                   ),

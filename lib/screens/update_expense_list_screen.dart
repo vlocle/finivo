@@ -16,7 +16,8 @@ class UpdateExpenseListScreen extends StatefulWidget {
 }
 
 class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen> with SingleTickerProviderStateMixin {
-  final ValueNotifier<List<TextEditingController>> controllers = ValueNotifier([]);
+  List<TextEditingController> controllers = [];
+  List<FocusNode> focusNodes = [];
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
@@ -43,15 +44,51 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen> with 
       TweenSequenceItem(tween: Tween<double>(begin: 0.95, end: 1.0), weight: 50),
     ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     _controller.forward();
+
+    // Khởi tạo controllers và focusNodes
+    final appState = Provider.of<AppState>(context, listen: false);
+    ExpenseManager.loadAvailableVariableExpenses(appState).then((data) {
+      setState(() {
+        controllers = data.map((item) => TextEditingController(text: item['name'])).toList();
+        focusNodes = data.map((_) => FocusNode()).toList();
+        if (controllers.isEmpty) {
+          controllers.add(TextEditingController());
+          focusNodes.add(FocusNode());
+        }
+      });
+    });
   }
 
   @override
   void dispose() {
-    for (var controller in controllers.value) {
+    for (var controller in controllers) {
       controller.dispose();
+    }
+    for (var focusNode in focusNodes) {
+      focusNode.dispose();
     }
     _controller.dispose();
     super.dispose();
+  }
+
+  void addController() {
+    setState(() {
+      _controller.reset();
+      _controller.forward();
+      controllers.add(TextEditingController());
+      focusNodes.add(FocusNode());
+    });
+  }
+
+  void removeController(int index) {
+    setState(() {
+      _controller.reset();
+      _controller.forward();
+      controllers[index].dispose();
+      focusNodes[index].dispose();
+      controllers.removeAt(index);
+      focusNodes.removeAt(index);
+    });
   }
 
   void saveUpdatedList(AppState appState) async {
@@ -60,9 +97,11 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen> with 
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
       String key = appState.getKey('variableExpenseList_$monthKey');
-      List<Map<String, dynamic>> updatedList = controllers.value
-          .where((controller) => controller.text.isNotEmpty)
-          .map((controller) => {'name': controller.text, 'amount': 0.0})
+      List<Map<String, dynamic>> updatedList = controllers
+          .asMap()
+          .entries
+          .where((entry) => entry.value.text.isNotEmpty)
+          .map((entry) => {'name': entry.value.text, 'amount': 0.0})
           .toList();
       await firestore
           .collection('users')
@@ -92,201 +131,176 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen> with 
     final appState = Provider.of<AppState>(context);
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            height: MediaQuery.of(context).size.height * 0.25,
-            color: const Color(0xFF1976D2).withOpacity(0.9),
-          ),
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back, color: Colors.white),
-                              onPressed: () => Navigator.pop(context),
-                              splashRadius: 20,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.opaque,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Container(
+              height: MediaQuery.of(context).size.height * 0.25,
+              color: const Color(0xFF1976D2).withOpacity(0.9),
+            ),
+            SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                  onPressed: () => Navigator.pop(context),
+                                  splashRadius: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        "Chi phí biến đổi",
+                                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          "Tháng ${DateFormat('MMMM y', 'vi').format(appState.selectedDate)}",
+                                          style: const TextStyle(fontSize: 12, color: Colors.white),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    "Chi phí biến đổi",
-                                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      "Tháng ${DateFormat('MMMM y', 'vi').format(appState.selectedDate)}",
-                                      style: const TextStyle(fontSize: 12, color: Colors.white),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add, color: Colors.white, size: 18),
+                            onPressed: addController,
+                            splashRadius: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: SlideTransition(
+                        position: _slideAnimation,
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: Card(
+                            elevation: 10,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: controllers.isEmpty
+                                ? const Center(
+                              child: Text(
+                                "Chưa có mục chi phí biến đổi",
+                                style: TextStyle(fontSize: 16, color: Colors.grey),
                               ),
+                            )
+                                : ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                              itemCount: controllers.length,
+                              itemBuilder: (context, index) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Flexible(
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.list,
+                                              size: 24,
+                                              color: Color(0xFF1976D2),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: controllers[index],
+                                                focusNode: focusNodes[index],
+                                                decoration: InputDecoration(
+                                                  labelText: "Chi phí biến đổi ${index + 1}",
+                                                  border: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  focusedBorder: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    borderSide: const BorderSide(color: Color(0xFF1976D2)),
+                                                  ),
+                                                ),
+                                                maxLines: 1,
+                                                maxLength: 50,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ScaleTransition(
+                                        scale: _buttonScaleAnimation,
+                                        child: IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                                          onPressed: () => removeController(index),
+                                          splashRadius: 20,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.add, color: Colors.white, size: 18),
-                        onPressed: () {
-                          _controller.reset();
-                          _controller.forward();
-                          controllers.value.add(TextEditingController());
-                          controllers.notifyListeners();
-                        },
-                        splashRadius: 20,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: FutureBuilder<List<Map<String, dynamic>>>(
-                      future: ExpenseManager.loadAvailableVariableExpenses(appState),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-                        if (snapshot.hasData) {
-                          controllers.value = snapshot.data!.map((item) => TextEditingController(text: item['name'])).toList();
-                          if (controllers.value.isEmpty) controllers.value.add(TextEditingController());
-                          return Column(
-                            children: [
-                              Expanded(
-                                child: SlideTransition(
-                                  position: _slideAnimation,
-                                  child: FadeTransition(
-                                    opacity: _fadeAnimation,
-                                    child: ValueListenableBuilder(
-                                      valueListenable: controllers,
-                                      builder: (context, List<TextEditingController> controllerList, _) {
-                                        return Card(
-                                          elevation: 10,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                          child: controllerList.isEmpty
-                                              ? const Center(
-                                            child: Text(
-                                              "Chưa có mục chi phí biến đổi",
-                                              style: TextStyle(fontSize: 16, color: Colors.grey),
-                                            ),
-                                          )
-                                              : ListView.builder(
-                                            itemCount: controllerList.length,
-                                            itemBuilder: (context, index) {
-                                              return Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                                                child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Flexible(
-                                                      child: Row(
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.list,
-                                                            size: 24,
-                                                            color: Color(0xFF1976D2),
-                                                          ),
-                                                          const SizedBox(width: 12),
-                                                          Expanded(
-                                                            child: TextField(
-                                                              controller: controllerList[index],
-                                                              decoration: InputDecoration(
-                                                                labelText: "Chi phí biến đổi ${index + 1}",
-                                                                border: OutlineInputBorder(
-                                                                  borderRadius: BorderRadius.circular(8),
-                                                                ),
-                                                                focusedBorder: OutlineInputBorder(
-                                                                  borderRadius: BorderRadius.circular(8),
-                                                                  borderSide: const BorderSide(color: Color(0xFF1976D2)),
-                                                                ),
-                                                              ),
-                                                              maxLines: 1,
-                                                              maxLength: 50, // Giới hạn số ký tự
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    ScaleTransition(
-                                                      scale: _buttonScaleAnimation,
-                                                      child: IconButton(
-                                                        icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                                                        onPressed: () {
-                                                          _controller.reset();
-                                                          _controller.forward();
-                                                          controllerList[index].dispose();
-                                                          controllerList.removeAt(index);
-                                                          controllers.notifyListeners();
-                                                        },
-                                                        splashRadius: 20,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 16.0),
-                                child: ScaleTransition(
-                                  scale: _buttonScaleAnimation,
-                                  child: ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF42A5F5),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      minimumSize: Size(screenWidth - 32, 50), // Full-width trừ padding
-                                    ),
-                                    onPressed: () => saveUpdatedList(appState),
-                                    child: const Text(
-                                      "Lưu danh sách",
-                                      style: TextStyle(color: Colors.white, fontSize: 16),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        }
-                        return const Center(child: Text("Không có dữ liệu"));
-                      },
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: ScaleTransition(
+                          scale: _buttonScaleAnimation,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF42A5F5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              minimumSize: Size(screenWidth - 32, 50),
+                            ),
+                            onPressed: () => saveUpdatedList(appState),
+                            child: const Text(
+                              "Lưu danh sách",
+                              style: TextStyle(color: Colors.white, fontSize: 16),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

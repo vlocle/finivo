@@ -152,17 +152,20 @@ class ExpenseManager {
   }
 
   // Load fixed expense list
-  static Future<List<Map<String, dynamic>>> loadFixedExpenseList(AppState appState) async {
+  static Future<List<Map<String, dynamic>>> loadFixedExpenseList(AppState appState, DateTime selectedMonth) async {
     try {
       if (appState.userId == null) return [];
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String key = appState.getKey('fixedExpenseList');
+      final monthKey = DateFormat('yyyy_MM').format(selectedMonth);
+      final key = appState.getKey('fixedExpenseList_$monthKey');
 
       DocumentSnapshot doc = await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('expenses')
           .doc('fixedList')
+          .collection(monthKey)
+          .doc('list')
           .get();
 
       if (doc.exists && doc['products'] != null) {
@@ -176,17 +179,20 @@ class ExpenseManager {
   }
 
   // Save fixed expense list
-  static Future<void> saveFixedExpenseList(AppState appState, List<Map<String, dynamic>> expenses) async {
+  static Future<void> saveFixedExpenseList(AppState appState, List<Map<String, dynamic>> expenses, DateTime selectedMonth) async {
     try {
       if (appState.userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String key = appState.getKey('fixedExpenseList');
+      final monthKey = DateFormat('yyyy_MM').format(selectedMonth);
+      final key = appState.getKey('fixedExpenseList_$monthKey');
 
       await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('expenses')
           .doc('fixedList')
+          .collection(monthKey)
+          .doc('list')
           .set({
         'products': expenses,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -346,12 +352,43 @@ class ExpenseManager {
   }
 
   // Delete monthly fixed expense
-  static Future<void> deleteMonthlyFixedExpense(AppState appState, String name, DateTime month, {DateTimeRange? dateRange}) async {
+  static Future<List<Map<String, dynamic>>> deleteMonthlyFixedExpense(
+      AppState appState, String name, DateTime month, {DateTimeRange? dateRange}) async {
     try {
       if (appState.userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      final monthKey = DateFormat('yyyy_MM').format(month);
+      final key = appState.getKey('fixedExpenseList_$monthKey');
 
-      // Determine days to delete based on dateRange or full month
+      // Cập nhật danh sách chi phí cố định hàng tháng
+      DocumentSnapshot doc = await firestore
+          .collection('users')
+          .doc(appState.userId)
+          .collection('expenses')
+          .doc('fixedList')
+          .collection(monthKey)
+          .doc('list')
+          .get();
+
+      List<Map<String, dynamic>> expenseList = [];
+      if (doc.exists && doc['products'] != null) {
+        expenseList = List<Map<String, dynamic>>.from(doc['products']);
+      }
+      expenseList.removeWhere((item) => item['name'] == name);
+
+      await firestore
+          .collection('users')
+          .doc(appState.userId)
+          .collection('expenses')
+          .doc('fixedList')
+          .collection(monthKey)
+          .doc('list')
+          .set({
+        'products': expenseList,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Xác định các ngày cần xóa
       List<DateTime> distributionDays = [];
       if (dateRange != null) {
         int days = dateRange.end.difference(dateRange.start).inDays + 1;
@@ -367,30 +404,29 @@ class ExpenseManager {
 
       DateTime originalDate = appState.selectedDate;
 
-      // Delete expense from each day
+      // Xóa khoản chi phí khỏi từng ngày
       for (DateTime currentDate in distributionDays) {
         String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
-        String key = appState.getKey('fixedExpenseList_$dateKey');
+        String dailyKey = appState.getKey('fixedExpenseList_$dateKey');
 
-        DocumentSnapshot doc = await firestore
+        DocumentSnapshot dailyDoc = await firestore
             .collection('users')
             .doc(appState.userId)
             .collection('expenses')
             .doc('fixed')
             .collection('daily')
-            .doc(key)
+            .doc(dailyKey)
             .get();
 
-        List<Map<String, dynamic>> expenseList = [];
-        if (doc.exists && doc['products'] != null) {
-          expenseList = List<Map<String, dynamic>>.from(doc['products']);
+        List<Map<String, dynamic>> dailyExpenseList = [];
+        if (dailyDoc.exists && dailyDoc['products'] != null) {
+          dailyExpenseList = List<Map<String, dynamic>>.from(dailyDoc['products']);
         }
-
-        expenseList.removeWhere((item) => item['name'] == name && item['isFixedMonthly'] == true);
-        await saveFixedExpenses(appState, expenseList, date: dateKey);
+        dailyExpenseList.removeWhere((item) => item['name'] == name && item['isFixedMonthly'] == true);
+        await saveFixedExpenses(appState, dailyExpenseList, date: dateKey);
       }
 
-      // Update monthly fixed amounts
+      // Cập nhật monthly fixed amounts
       String monthlyKey = appState.getKey('monthlyFixedAmounts_${month.year}_${month.month}');
       DocumentSnapshot monthlyDoc = await firestore
           .collection('users')
@@ -420,6 +456,7 @@ class ExpenseManager {
       });
 
       appState.setSelectedDate(originalDate);
+      return expenseList; // Trả về danh sách đã cập nhật
     } catch (e) {
       print("Error deleting monthly fixed expense: $e");
       throw Exception("Không thể xóa chi phí cố định hàng tháng: $e");

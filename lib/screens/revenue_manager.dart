@@ -212,9 +212,22 @@ class RevenueManager {
         transactions = List<Map<String, dynamic>>.from(doc['otherRevenueTransactions'] ?? []);
       }
 
+      // Chuẩn hóa dữ liệu trước khi lưu vào Hive
+      List<Map<String, dynamic>> standardizedTransactions = transactions.map((transaction) {
+        return {
+          'name': transaction['name']?.toString().trim().isNotEmpty == true
+              ? transaction['name'].toString()
+              : transaction['description']?.toString().trim().isNotEmpty == true
+              ? transaction['description'].toString()
+              : 'Không xác định',
+          'total': (transaction['total'] as num?)?.toDouble() ?? (transaction['amount'] as num?)?.toDouble() ?? 0.0,
+          'quantity': (transaction['quantity'] as num?)?.toDouble() ?? 1.0,
+        };
+      }).toList();
+
       // Lưu vào Hive
-      await transactionsBox.put(hiveKey, transactions);
-      return transactions;
+      await transactionsBox.put(hiveKey, standardizedTransactions);
+      return standardizedTransactions;
     } catch (e) {
       print('Lỗi khi tải giao dịch Doanh thu khác từ Firestore: $e');
       return [];
@@ -230,6 +243,19 @@ class RevenueManager {
       String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
       String hiveKey = appState.getKey('${dateKey}_otherRevenueTransactions');
 
+      // Chuẩn hóa giao dịch trước khi lưu
+      List<Map<String, dynamic>> standardizedTransactions = transactions.map((transaction) {
+        return {
+          'name': transaction['name']?.toString().trim().isNotEmpty == true
+              ? transaction['name'].toString()
+              : transaction['description']?.toString().trim().isNotEmpty == true
+              ? transaction['description'].toString()
+              : 'Không xác định',
+          'total': (transaction['total'] as num?)?.toDouble() ?? (transaction['amount'] as num?)?.toDouble() ?? 0.0,
+          'quantity': (transaction['quantity'] as num?)?.toDouble() ?? 1.0,
+        };
+      }).toList();
+
       // Lưu vào Firestore
       await firestore
           .collection('users')
@@ -237,15 +263,15 @@ class RevenueManager {
           .collection('daily_data')
           .doc(appState.getKey(dateKey))
           .set({
-        'otherRevenueTransactions': transactions,
+        'otherRevenueTransactions': standardizedTransactions,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       // Lưu vào Hive
       var transactionsBox = Hive.box('transactionsBox');
-      await transactionsBox.put(hiveKey, transactions);
+      await transactionsBox.put(hiveKey, standardizedTransactions);
 
-      await updateTotalRevenue(appState, 'Doanh thu khác', transactions);
+      await updateTotalRevenue(appState, 'Doanh thu khác', standardizedTransactions);
     } catch (e) {
       print('Lỗi khi lưu giao dịch Doanh thu khác vào Firestore: $e');
       throw Exception('Không thể lưu giao dịch: $e');
