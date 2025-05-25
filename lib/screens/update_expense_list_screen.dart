@@ -1,63 +1,113 @@
-import 'dart:convert';
+import 'dart:convert'; // Not directly used in this file's current logic, but often seen with Firestore
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+import 'package:flutter/services.dart'; // For input formatters if needed
+import 'package:hive/hive.dart'; // Used in _loadProducts
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../state/app_state.dart';
-import '/screens/expense_manager.dart';
+import '/screens/expense_manager.dart'; // Ensure this path is correct
+import 'package:google_fonts/google_fonts.dart';
 
 class UpdateExpenseListScreen extends StatefulWidget {
   final String category;
-  const UpdateExpenseListScreen({Key? key, required this.category}) : super(key: key);
+  const UpdateExpenseListScreen({Key? key, required this.category})
+      : super(key: key);
 
   @override
-  _UpdateExpenseListScreenState createState() => _UpdateExpenseListScreenState();
+  _UpdateExpenseListScreenState createState() =>
+      _UpdateExpenseListScreenState();
 }
 
-class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen> with SingleTickerProviderStateMixin {
+class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
+    with SingleTickerProviderStateMixin {
   List<TextEditingController> controllers = [];
   List<FocusNode> focusNodes = [];
-  late AnimationController _controller;
+  late AnimationController _animationController;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
   late Animation<double> _buttonScaleAnimation;
+  bool _isLoading = true;
+  bool hasError = false; // Ensure this declaration exists
+
+  // Consistent color palette (themed for expenses)
+  static const Color _appBarColor = Color(0xFFE53935); // Red for Expense header area
+  static const Color _accentColor = Color(0xFFD32F2F); // Deep Red for delete/emphasis
+  static const Color _secondaryColor = Color(0xFFF1F5F9); // Light background
+  static const Color _textColorPrimary = Color(0xFF1D2D3A);
+  static const Color _textColorSecondary = Color(0xFF6E7A8A);
+  static const Color _cardBackgroundColor = Colors.white; // For input field backgrounds
 
   @override
   void initState() {
     super.initState();
     if (widget.category != "Chi phí biến đổi") {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Danh sách chi phí cố định được quản lý trong 'Thêm cố định tháng'")),
-        );
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    "Danh sách chi phí cố định được quản lý trong 'Thêm cố định tháng'",
+                    style: GoogleFonts.poppins())),
+          );
+        }
       });
+      _isLoading = false;
     }
-    _controller = AnimationController(duration: const Duration(milliseconds: 700), vsync: this);
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
+
+    _animationController = AnimationController(
+        duration: const Duration(milliseconds: 700), vsync: this);
+    _slideAnimation = Tween<Offset>(
+        begin: const Offset(0, 0.5), end: Offset.zero)
+        .animate(CurvedAnimation(
+        parent: _animationController, curve: Curves.easeOut));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(parent: _animationController, curve: Curves.easeIn));
     _buttonScaleAnimation = TweenSequence([
       TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 0.95), weight: 50),
       TweenSequenceItem(tween: Tween<double>(begin: 0.95, end: 1.0), weight: 50),
-    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-    _controller.forward();
+    ]).animate(CurvedAnimation(
+        parent: _animationController, curve: Curves.easeInOut));
 
-    // Khởi tạo controllers và focusNodes
-    final appState = Provider.of<AppState>(context, listen: false);
-    ExpenseManager.loadAvailableVariableExpenses(appState).then((data) {
-      setState(() {
-        controllers = data.map((item) => TextEditingController(text: item['name'])).toList();
-        focusNodes = data.map((_) => FocusNode()).toList();
-        if (controllers.isEmpty) {
-          controllers.add(TextEditingController());
-          focusNodes.add(FocusNode());
-        }
-      });
-    });
+    if (widget.category == "Chi phí biến đổi") {
+      _loadInitialExpenseNames();
+    }
   }
+
+  Future<void> _loadInitialExpenseNames() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      hasError = false; // Explicitly reset hasError at the start of loading
+    });
+    try {
+      final appState = Provider.of<AppState>(context, listen: false);
+      final data = await ExpenseManager.loadAvailableVariableExpenses(appState);
+      if (mounted) {
+        setState(() {
+          controllers = data.map((item) => TextEditingController(text: item['name']?.toString() ?? '')).toList();
+          focusNodes = data.map((_) => FocusNode()).toList();
+          if (controllers.isEmpty) {
+            _addControllerInternal();
+          }
+          _isLoading = false;
+          // hasError remains false if successful
+          _animationController.forward();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          hasError = true;
+        });
+      }
+      print("Error in _loadInitialExpenseNames: $e");
+      _showStyledSnackBar("Lỗi tải danh sách chi phí: $e", isError: true);
+    }
+  }
+
 
   @override
   void dispose() {
@@ -67,236 +117,320 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen> with 
     for (var focusNode in focusNodes) {
       focusNode.dispose();
     }
-    _controller.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
+  void _addControllerInternal() {
+    controllers.add(TextEditingController());
+    focusNodes.add(FocusNode());
+  }
+
   void addController() {
+    if (!mounted) return;
     setState(() {
-      _controller.reset();
-      _controller.forward();
+      _animationController.reset();
+      _animationController.forward();
       controllers.add(TextEditingController());
       focusNodes.add(FocusNode());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (focusNodes.isNotEmpty && mounted) {
+        FocusScope.of(context).requestFocus(focusNodes.last);
+      }
     });
   }
 
   void removeController(int index) {
+    if (!mounted || index < 0 || index >= controllers.length) return;
     setState(() {
-      _controller.reset();
-      _controller.forward();
       controllers[index].dispose();
       focusNodes[index].dispose();
       controllers.removeAt(index);
       focusNodes.removeAt(index);
+      if (controllers.isEmpty) {
+        addController();
+      }
     });
   }
 
+  void _showStyledSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: isError ? _accentColor : _appBarColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(10),
+      ),
+    );
+  }
+
   void saveUpdatedList(AppState appState) async {
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+
+    List<Map<String, dynamic>> updatedList = controllers
+        .asMap()
+        .entries
+        .where((entry) => entry.value.text.trim().isNotEmpty)
+        .map((entry) => {'name': entry.value.text.trim(), 'amount': 0.0})
+        .toList();
+
+    final Set<String> names = {};
+    for (final item in updatedList) {
+      if (!names.add(item['name'].toString().toLowerCase())) {
+        _showStyledSnackBar("Tên khoản chi '${item['name']}' bị trùng lặp. Vui lòng sửa lại.", isError: true);
+        return;
+      }
+    }
+
+    if (updatedList.isEmpty && controllers.any((c) => c.text.trim().isNotEmpty)) {
+      _showStyledSnackBar("Vui lòng nhập ít nhất một tên chi phí hợp lệ.", isError: true);
+      return;
+    }
+    if (updatedList.isEmpty && controllers.every((c) => c.text.trim().isEmpty)) {
+      _showStyledSnackBar("Danh sách trống, không có gì để lưu.", isError: false);
+      return;
+    }
+
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: _appBarColor),
+            const SizedBox(width: 20),
+            Text("Đang lưu...", style: GoogleFonts.poppins(color: _textColorSecondary)),
+          ],
+        ),
+      ),
+    );
+
     try {
       if (appState.userId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
-      String key = appState.getKey('variableExpenseList_$monthKey');
-      List<Map<String, dynamic>> updatedList = controllers
-          .asMap()
-          .entries
-          .where((entry) => entry.value.text.isNotEmpty)
-          .map((entry) => {'name': entry.value.text, 'amount': 0.0})
-          .toList();
+      String firestoreDocKey = appState.getKey('variableExpenseList_$monthKey');
+
       await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('expenses')
           .doc('variableList')
           .collection('monthly')
-          .doc(key)
+          .doc(firestoreDocKey)
           .set({
         'products': updatedList,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Đã lưu danh sách chi phí biến đổi cho tháng")),
-      );
+
+      Navigator.pop(context);
+      _showStyledSnackBar("Đã lưu danh sách chi phí biến đổi cho tháng");
       Navigator.pop(context, updatedList);
     } catch (e) {
+      Navigator.pop(context);
       print("Error saving variable expense list: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Lỗi khi lưu dữ liệu: $e")),
-      );
+      _showStyledSnackBar("Lỗi khi lưu dữ liệu: $e", isError: true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
+    final appState = Provider.of<AppState>(context, listen: false);
     final screenWidth = MediaQuery.of(context).size.width;
+
+    if (widget.category != "Chi phí biến đổi") {
+      return Scaffold(
+        body: Center(child: Text("Loại chi phí không hợp lệ cho màn hình này.", style: GoogleFonts.poppins())),
+      );
+    }
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
       child: Scaffold(
+        backgroundColor: _secondaryColor,
         body: Stack(
           children: [
             Container(
-              height: MediaQuery.of(context).size.height * 0.25,
-              color: const Color(0xFF1976D2).withOpacity(0.9),
+              height: MediaQuery.of(context).size.height * 0.22,
+              color: _appBarColor.withOpacity(0.95),
             ),
             SafeArea(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Flexible(
-                            child: Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                                  onPressed: () => Navigator.pop(context),
-                                  splashRadius: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        "Chi phí biến đổi",
-                                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Colors.white),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_new,
+                                    color: Colors.white),
+                                onPressed: () => Navigator.pop(context),
+                                splashRadius: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "DS Chi phí biến đổi",
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.25),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        "Tháng ${DateFormat('MMMM y', 'vi').format(appState.selectedDate)}",
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w500),
                                         overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.2),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          "Tháng ${DateFormat('MMMM y', 'vi').format(appState.selectedDate)}",
-                                          style: const TextStyle(fontSize: 12, color: Colors.white),
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 1,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.add, color: Colors.white, size: 18),
+                        ),
+                        ScaleTransition(
+                          scale: _buttonScaleAnimation,
+                          child: IconButton(
+                            icon: const Icon(Icons.add_circle_outline,
+                                color: Colors.white, size: 28),
                             onPressed: addController,
-                            splashRadius: 20,
+                            tooltip: "Thêm mục chi phí",
+                            splashRadius: 22,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    Padding(
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: SlideTransition(
+                      child: _isLoading
+                          ? Center(child: CircularProgressIndicator(color: _appBarColor))
+                          : hasError // Check hasError here
+                          ? Center(child: Text("Không thể tải danh sách.", style: GoogleFonts.poppins(color: _textColorSecondary)))
+                          : controllers.isEmpty && !_isLoading
+                          ? Center(
+                        child: Text(
+                          "Nhấn (+) để thêm mục chi phí biến đổi.",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(fontSize: 16, color: _textColorSecondary),
+                        ),
+                      )
+                          : SlideTransition(
                         position: _slideAnimation,
                         child: FadeTransition(
                           opacity: _fadeAnimation,
-                          child: Card(
-                            elevation: 10,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            child: controllers.isEmpty
-                                ? const Center(
-                              child: Text(
-                                "Chưa có mục chi phí biến đổi",
-                                style: TextStyle(fontSize: 16, color: Colors.grey),
-                              ),
-                            )
-                                : ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                              itemCount: controllers.length,
-                              itemBuilder: (context, index) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Flexible(
-                                        child: Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.list,
-                                              size: 24,
-                                              color: Color(0xFF1976D2),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: TextField(
-                                                controller: controllers[index],
-                                                focusNode: focusNodes[index],
-                                                decoration: InputDecoration(
-                                                  labelText: "Chi phí biến đổi ${index + 1}",
-                                                  border: OutlineInputBorder(
-                                                    borderRadius: BorderRadius.circular(8),
-                                                  ),
-                                                  focusedBorder: OutlineInputBorder(
-                                                    borderRadius: BorderRadius.circular(8),
-                                                    borderSide: const BorderSide(color: Color(0xFF1976D2)),
-                                                  ),
-                                                ),
-                                                maxLines: 1,
-                                                maxLength: 50,
-                                              ),
-                                            ),
-                                          ],
+                          child: ListView.builder(
+                            padding: const EdgeInsets.only(top: 8, bottom: 16),
+                            shrinkWrap: true,
+                            itemCount: controllers.length,
+                            itemBuilder: (context, index) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 6.0),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: controllers[index],
+                                        focusNode: focusNodes[index],
+                                        style: GoogleFonts.poppins(color: _textColorPrimary, fontWeight: FontWeight.w500),
+                                        decoration: InputDecoration(
+                                          hintText: "Tên khoản chi ${index + 1}",
+                                          hintStyle: GoogleFonts.poppins(color: _textColorSecondary.withOpacity(0.7)),
+                                          prefixIcon: Icon(Icons.edit_note_outlined, color: _appBarColor.withOpacity(0.8), size: 22),
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            borderSide: BorderSide(color: Colors.grey.shade300),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            borderSide: BorderSide(color: Colors.grey.shade300),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                            borderSide: BorderSide(color: _appBarColor, width: 1.5),
+                                          ),
+                                          filled: true,
+                                          fillColor: _cardBackgroundColor,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                          counterText: "",
                                         ),
+                                        maxLines: 1,
+                                        maxLength: 50,
                                       ),
-                                      const SizedBox(width: 8),
-                                      ScaleTransition(
-                                        scale: _buttonScaleAnimation,
-                                        child: IconButton(
-                                          icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                                          onPressed: () => removeController(index),
-                                          splashRadius: 20,
-                                        ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ScaleTransition(
+                                      scale: _buttonScaleAnimation,
+                                      child: IconButton(
+                                        icon: Icon(Icons.remove_circle_outline, color: _accentColor, size: 26),
+                                        onPressed: () => removeController(index),
+                                        tooltip: "Xóa mục này",
+                                        splashRadius: 20,
                                       ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
-                        child: ScaleTransition(
-                          scale: _buttonScaleAnimation,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF42A5F5),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              minimumSize: Size(screenWidth - 32, 50),
-                            ),
-                            onPressed: () => saveUpdatedList(appState),
-                            child: const Text(
-                              "Lưu danh sách",
-                              style: TextStyle(color: Colors.white, fontSize: 16),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                  ),
+                  if (!_isLoading)
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: ScaleTransition(
+                        scale: _buttonScaleAnimation,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _appBarColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            minimumSize: Size(screenWidth, 52),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            elevation: 2,
+                          ),
+                          onPressed: () => saveUpdatedList(appState),
+                          icon: Icon(Icons.save_alt_outlined, size: 20),
+                          label: Text(
+                            "Lưu danh sách",
+                            style: GoogleFonts.poppins(
+                                fontSize: 16.5, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
           ],

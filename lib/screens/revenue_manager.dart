@@ -29,9 +29,15 @@ class RevenueManager {
       if (doc.exists && doc['products'] != null) {
         products = (doc['products'] as List<dynamic>).map((item) {
           var map = item as Map<dynamic, dynamic>;
-          return map.map((key, value) {
+          var standardizedMap = map.map((key, value) {
             return MapEntry(key.toString(), value);
           });
+          // Đảm bảo trường price tồn tại và là số hợp lệ
+          if (standardizedMap['price'] == null || (standardizedMap['price'] is num && standardizedMap['price'] <= 0)) {
+            standardizedMap['price'] = 0.0; // Hoặc báo lỗi tùy theo yêu cầu
+            print('Cảnh báo: Sản phẩm ${standardizedMap['name']} có giá không hợp lệ: ${standardizedMap['price']}');
+          }
+          return standardizedMap;
         }).cast<Map<String, dynamic>>().toList();
       }
 
@@ -45,10 +51,9 @@ class RevenueManager {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> loadTransactionHistory(AppState appState, String category) async {
+  static Future<List<Map<String, dynamic>>> loadTransactions(AppState appState, String category) async {
     try {
       if (appState.userId == null) return [];
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
       String field = category == 'Doanh thu chính'
           ? 'mainRevenueTransactions'
@@ -61,27 +66,15 @@ class RevenueManager {
         await Hive.openBox('transactionsBox');
       }
       var transactionsBox = Hive.box('transactionsBox');
-      print('Hive transactionsBox keys: ${transactionsBox.keys}'); // Debug
 
-      // Kiểm tra dữ liệu trong Hive
-      if (transactionsBox.containsKey(hiveKey)) {
-        var rawData = transactionsBox.get(hiveKey);
-        print('Raw transaction data from Hive: $rawData'); // Debug
-        List<Map<String, dynamic>> loadedTransactions = [];
-        if (rawData != null) {
-          loadedTransactions = (rawData as List<dynamic>).map((item) {
-            var map = item as Map<dynamic, dynamic>;
-            return map.map((key, value) {
-              return MapEntry(key.toString(), value);
-            });
-          }).cast<Map<String, dynamic>>().toList();
-        }
-        print('Tải giao dịch từ Hive: $loadedTransactions');
-        return loadedTransactions;
+      // Thử tải từ Hive trước
+      List<dynamic>? cachedTransactions = transactionsBox.get(hiveKey);
+      if (cachedTransactions != null) {
+        return cachedTransactions.cast<Map<String, dynamic>>();
       }
 
-      // Tải từ Firestore
-      DocumentSnapshot doc = await firestore
+      // Nếu không có trong Hive, tải từ Firestore
+      DocumentSnapshot doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(appState.userId)
           .collection('daily_data')
@@ -90,12 +83,14 @@ class RevenueManager {
 
       List<Map<String, dynamic>> transactions = [];
       if (doc.exists && doc[field] != null) {
-        transactions = List<Map<String, dynamic>>.from(doc[field] ?? []);
+        transactions = (doc[field] as List<dynamic>).map((item) {
+          var map = item as Map<dynamic, dynamic>;
+          return map.map((key, value) => MapEntry(key.toString(), value));
+        }).cast<Map<String, dynamic>>().toList();
       }
 
       // Lưu vào Hive
       await transactionsBox.put(hiveKey, transactions);
-      print('Tải giao dịch từ Firestore và lưu vào Hive: $transactions');
       return transactions;
     } catch (e) {
       print('Lỗi khi tải giao dịch: $e');
@@ -117,10 +112,16 @@ class RevenueManager {
 
       // Chuẩn hóa transactions trước khi lưu
       List<Map<String, dynamic>> standardizedTransactions = transactions.map((transaction) {
+        double price = (transaction['price'] as num?)?.toDouble() ?? 0.0;
+        if (price <= 0.0) {
+          print('Cảnh báo: Giao dịch ${transaction['name']} có giá không hợp lệ: $price');
+        }
         return {
           'name': transaction['name'].toString(),
-          'total': transaction['total'] as num? ?? transaction['amount'] as num? ?? 0.0,
-          'quantity': transaction['quantity'] as num? ?? 1.0,
+          'price': price,
+          'total': (transaction['total'] as num?)?.toDouble() ?? (transaction['amount'] as num?)?.toDouble() ?? 0.0,
+          'quantity': (transaction['quantity'] as num?)?.toDouble() ?? 1.0,
+          'date': transaction['date']?.toString() ?? DateTime.now().toIso8601String(),
         };
       }).toList();
 
@@ -135,7 +136,7 @@ class RevenueManager {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // Đảm bảo box đã mở và lưu vào Hive
+      // Lưu vào Hive
       if (!Hive.isBoxOpen('transactionsBox')) {
         await Hive.openBox('transactionsBox');
       }
@@ -145,6 +146,7 @@ class RevenueManager {
         throw Exception('Không thể lưu vào Hive: $e');
       });
 
+      // Cập nhật tổng doanh thu
       await updateTotalRevenue(appState, category, standardizedTransactions);
     } catch (e) {
       print('Lỗi khi lưu giao dịch: $e');
@@ -253,6 +255,7 @@ class RevenueManager {
               : 'Không xác định',
           'total': (transaction['total'] as num?)?.toDouble() ?? (transaction['amount'] as num?)?.toDouble() ?? 0.0,
           'quantity': (transaction['quantity'] as num?)?.toDouble() ?? 1.0,
+          'date': transaction['date']?.toString() ?? DateTime.now().toIso8601String(),
         };
       }).toList();
 

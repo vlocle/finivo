@@ -134,6 +134,8 @@ class AppState extends ChangeNotifier {
   void setUserId(String id) {
     if (userId != id) {
       userId = id;
+      _cachedDateKey = null;
+      _cachedData = null; // Xóa cache
       _loadSettings();
       _loadInitialData();
     }
@@ -162,6 +164,10 @@ class AppState extends ChangeNotifier {
     _saveSettings();
     _cachedDateKey = null;
     _cachedData = null;
+    // Xóa dữ liệu Hive
+    Hive.box('productsBox').clear();
+    Hive.box('transactionsBox').clear();
+    Hive.box('revenueBox').clear();
     notifyListeners();
   }
 
@@ -186,11 +192,11 @@ class AppState extends ChangeNotifier {
     dataReadyListenable.value = false;
     try {
       String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      if (_cachedDateKey == dateKey && _cachedData != null) {
+      // Chỉ sử dụng cache nếu phù hợp với userId hiện tại
+      if (_cachedDateKey == dateKey && _cachedData != null && _cachedData!['userId'] == userId) {
         _applyCachedData(_cachedData!);
         return;
       }
-
       await Future.wait([
         loadRevenueValues(),
         loadExpenseValues(),
@@ -200,6 +206,7 @@ class AppState extends ChangeNotifier {
       profitMarginListenable.value = getProfitMargin();
       _cachedDateKey = dateKey;
       _cachedData = {
+        'userId': userId, // Lưu userId vào cache
         'mainRevenue': mainRevenue,
         'secondaryRevenue': secondaryRevenue,
         'otherRevenue': otherRevenue,
@@ -541,25 +548,32 @@ class AppState extends ChangeNotifier {
       double profit = totalRevenue - totalExpense;
       double profitMargin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
 
+      // Chuẩn hóa giữ nguyên date
       List<Map<String, dynamic>> standardizedMain = mainRevenueTransactions.value.map((t) {
         return {
           'name': t['name'].toString(),
+          'price': t['price'] as num? ?? 0.0,
           'total': t['total'] as num? ?? 0.0,
           'quantity': t['quantity'] as num? ?? 1.0,
+          'date': t['date']?.toString() ?? DateTime.now().toIso8601String(),
         };
       }).toList();
       List<Map<String, dynamic>> standardizedSecondary = secondaryRevenueTransactions.value.map((t) {
         return {
           'name': t['name'].toString(),
+          'price': t['price'] as num? ?? 0.0,
           'total': t['total'] as num? ?? 0.0,
           'quantity': t['quantity'] as num? ?? 1.0,
+          'date': t['date']?.toString() ?? DateTime.now().toIso8601String(),
         };
       }).toList();
       List<Map<String, dynamic>> standardizedOther = otherRevenueTransactions.value.map((t) {
         return {
           'name': t['name'].toString(),
+          'price': t['price'] as num? ?? 0.0,
           'total': t['total'] as num? ?? 0.0,
           'quantity': t['quantity'] as num? ?? 1.0,
+          'date': t['date']?.toString() ?? DateTime.now().toIso8601String(),
         };
       }).toList();
 

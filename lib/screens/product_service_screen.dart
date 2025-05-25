@@ -1,247 +1,392 @@
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class ProductServiceScreen extends StatefulWidget {
+  const ProductServiceScreen({Key? key}) : super(key: key);
+
   @override
   _ProductServiceScreenState createState() => _ProductServiceScreenState();
 }
 
-class _ProductServiceScreenState extends State<ProductServiceScreen> with SingleTickerProviderStateMixin {
+class _ProductServiceScreenState extends State<ProductServiceScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController priceController = TextEditingController();
-  final NumberFormat currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'VND');
-  List<Map<String, dynamic>> productList = [];
+  final NumberFormat currencyFormat =
+  NumberFormat.currency(locale: 'vi_VN', symbol: 'VNĐ');
+  // Default to "Sản phẩm/Dịch vụ chính" as per original logic
   String selectedCategory = "Sản phẩm/Dịch vụ chính";
-  late AnimationController _controller;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _fadeAnimation;
+  late AnimationController _animationController; // Renamed
+  late Animation<double> _scaleAnimation;
+  int _selectedTab = 0; // 0 for Add Product, 1 for Product List
+  late Future<List<Map<String, dynamic>>> _productsFuture;
+
+  // Consistent color palette
+  static const Color _primaryColor = Color(0xFF2F81D7);
+  static const Color _secondaryColor = Color(0xFFF1F5F9);
+  static const Color _textColorPrimary = Color(0xFF1D2D3A);
+  static const Color _textColorSecondary = Color(0xFF6E7A8A);
+  static const Color _cardBackgroundColor = Colors.white;
+  static const Color _accentColor = Colors.redAccent; // For errors or delete
+
+  final NumberFormat _inputPriceFormatter = NumberFormat("#,##0", "vi_VN");
+
 
   @override
   void initState() {
     super.initState();
-    loadProducts();
-    _controller = AnimationController(duration: const Duration(milliseconds: 700), vsync: this);
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
-    _controller.forward();
+    _animationController = AnimationController(
+        duration: const Duration(milliseconds: 300), vsync: this);
+    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
+        CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack));
+    _animationController.forward();
+
+    final appState = Provider.of<AppState>(context, listen: false);
+    _productsFuture = _loadProducts(appState);
+    appState.productsUpdated.addListener(_onProductsUpdated);
   }
 
   @override
   void dispose() {
     nameController.dispose();
     priceController.dispose();
-    _controller.dispose();
+    _animationController.dispose();
+    final appState = Provider.of<AppState>(context, listen: false);
+    appState.productsUpdated.removeListener(_onProductsUpdated);
     super.dispose();
   }
 
-  Future<void> saveProducts(AppState appState) async {
+  void _onProductsUpdated() {
+    if (mounted) {
+      setState(() {
+        final appState = Provider.of<AppState>(context, listen: false);
+        _productsFuture = _loadProducts(appState);
+      });
+    }
+  }
+
+  void _showStyledSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: isError ? _accentColor : _primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(10),
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadProducts(AppState appState) async {
+    // This logic is from the original file and seems complex with Hive & Firestore.
+    // It's preserved as requested.
+    try {
+      if (appState.userId == null) {
+        _showStyledSnackBar("Vui lòng đăng nhập để tải sản phẩm.", isError: true);
+        return [];
+      }
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính"
+          ? 'mainProductList'
+          : 'extraProductList';
+      String firestoreDocKey = appState.getKey(baseKey); // Key for Firestore document
+      String hiveStorageKey = appState.getKey('${selectedCategory}_productList'); // Key for Hive
+
+      if (!Hive.isBoxOpen('productsBox')) {
+        await Hive.openBox('productsBox');
+      }
+      var productsBox = Hive.box('productsBox');
+
+      // Try loading from Hive first
+      if (productsBox.containsKey(hiveStorageKey)) {
+        var rawData = productsBox.get(hiveStorageKey);
+        if (rawData != null) {
+          return (rawData as List<dynamic>)
+              .map((item) => (item as Map<dynamic, dynamic>)
+              .map((key, value) => MapEntry(key.toString(), value)))
+              .cast<Map<String, dynamic>>()
+              .toList();
+        }
+      }
+
+      // If not in Hive or Hive data is null, load from Firestore
+      DocumentSnapshot doc = await firestore
+          .collection('users')
+          .doc(appState.userId)
+          .collection('products')
+          .doc(firestoreDocKey) // Use the correct key for Firestore document
+          .get();
+
+      List<Map<String, dynamic>> productList = [];
+      if (doc.exists && doc.data() != null) {
+        var data = doc.data() as Map<String, dynamic>;
+        if (data['products'] != null) {
+          productList = List<Map<String, dynamic>>.from(data['products']);
+        }
+      }
+
+      await productsBox.put(hiveStorageKey, productList); // Cache to Hive
+      return productList;
+    } catch (e) {
+      _showStyledSnackBar('Lỗi khi tải sản phẩm: $e', isError: true);
+      return [];
+    }
+  }
+
+  Future<void> _saveProducts(
+      AppState appState, List<Map<String, dynamic>> productList) async {
+    // This logic is from the original file.
     try {
       if (appState.userId == null) {
         throw Exception('User ID không tồn tại');
       }
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
-      String key = appState.getKey(baseKey);
-      String hiveKey = appState.getKey('${selectedCategory}_productList');
+      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính"
+          ? 'mainProductList'
+          : 'extraProductList';
+      String firestoreDocKey = appState.getKey(baseKey);
+      String hiveStorageKey = appState.getKey('${selectedCategory}_productList');
 
-      // Chuẩn hóa productList trước khi lưu
-      List<Map<String, dynamic>> standardizedProductList = productList.map((product) {
-        return {
-          'name': product['name'].toString(),
-          'price': product['price'] as num? ?? 0.0,
-        };
-      }).toList();
+      // Standardize before saving
+      List<Map<String, dynamic>> standardizedProductList = productList
+          .map((product) => {
+        'name': product['name'].toString(),
+        'price': (product['price'] as num? ?? 0.0).toDouble(), // Ensure price is double
+      })
+          .toList();
 
-      // Lưu vào Firestore
       await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('products')
-          .doc(key)
+          .doc(firestoreDocKey)
           .set({
         'products': standardizedProductList,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Đảm bảo box đã mở và lưu vào Hive
       if (!Hive.isBoxOpen('productsBox')) {
         await Hive.openBox('productsBox');
       }
       var productsBox = Hive.box('productsBox');
-      await productsBox.put(hiveKey, standardizedProductList).catchError((e) {
-        print('Lỗi khi lưu vào Hive: $e');
-        throw Exception('Không thể lưu vào Hive: $e');
-      });
-
-      appState.notifyProductsUpdated();
-      print('Lưu sản phẩm thành công cho danh mục: $selectedCategory');
+      await productsBox.put(hiveStorageKey, standardizedProductList);
+      appState.notifyProductsUpdated(); // Notify AppState to trigger listeners
+      _showStyledSnackBar("Đã lưu danh sách sản phẩm!");
     } catch (e) {
-      print('Lỗi khi lưu dữ liệu: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi khi lưu dữ liệu: $e')),
-      );
+      _showStyledSnackBar('Lỗi khi lưu sản phẩm: $e', isError: true);
     }
   }
 
-  Future<void> loadProducts() async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    try {
-      if (appState.userId == null) {
-        print('User ID không tồn tại');
-        setState(() {
-          productList = [];
-        });
-        return;
-      }
-
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính" ? 'mainProductList' : 'extraProductList';
-      String key = appState.getKey(baseKey);
-      String hiveKey = appState.getKey('${selectedCategory}_productList');
-
-      if (!Hive.isBoxOpen('productsBox')) {
-        await Hive.openBox('productsBox');
-      }
-      var productsBox = Hive.box('productsBox');
-      print('Hive productsBox keys: ${productsBox.keys}'); // Debug
-
-      // Kiểm tra dữ liệu trong Hive
-      if (productsBox.containsKey(hiveKey)) {
-        var rawData = productsBox.get(hiveKey);
-        print('Raw data from Hive: $rawData'); // Debug
-        List<Map<String, dynamic>> loadedProducts = [];
-        if (rawData != null) {
-          loadedProducts = (rawData as List<dynamic>).map((item) {
-            var map = item as Map<dynamic, dynamic>;
-            return map.map((key, value) {
-              return MapEntry(key.toString(), value);
-            });
-          }).cast<Map<String, dynamic>>().toList();
-        }
-        setState(() {
-          productList = loadedProducts;
-        });
-        print('Tải sản phẩm từ Hive: $productList');
-        return;
-      }
-
-      // Tải từ Firestore
-      DocumentSnapshot doc = await firestore
-          .collection('users')
-          .doc(appState.userId)
-          .collection('products')
-          .doc(key)
-          .get();
-
-      setState(() {
-        if (doc.exists && doc['products'] != null) {
-          productList = List<Map<String, dynamic>>.from(doc['products'] ?? []);
-        } else {
-          productList = [];
-        }
-      });
-
-      // Lưu vào Hive
-      await productsBox.put(hiveKey, productList);
-      print('Tải sản phẩm từ Firestore và lưu vào Hive: $productList');
-    } catch (e) {
-      print('Lỗi khi tải từ Firestore: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi khi tải dữ liệu: $e')),
-      );
-    }
-  }
-
-  void addProduct(AppState appState) {
+  void addProduct(
+      AppState appState, List<Map<String, dynamic>> productList) {
     String name = nameController.text.trim();
-    String priceText = priceController.text.trim();
-    if (name.isEmpty || priceText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Vui lòng nhập đầy đủ thông tin")));
+    String priceText = priceController.text.replaceAll(',', '').trim(); // Remove commas before parsing
+
+    if (name.isEmpty) {
+      _showStyledSnackBar("Vui lòng nhập tên sản phẩm/dịch vụ!", isError: true);
       return;
     }
+    if (priceText.isEmpty) {
+      _showStyledSnackBar("Vui lòng nhập giá sản phẩm/dịch vụ!", isError: true);
+      return;
+    }
+
     double? price = double.tryParse(priceText);
     if (price == null || price < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Giá sản phẩm không hợp lệ")));
+      _showStyledSnackBar("Giá sản phẩm không hợp lệ!", isError: true);
       return;
     }
-    if (productList.any((p) => p["name"].toLowerCase() == name.toLowerCase())) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tên sản phẩm/dịch vụ đã tồn tại")));
+
+    if (productList.any(
+            (p) => p["name"].toString().toLowerCase() == name.toLowerCase())) {
+      _showStyledSnackBar("Tên sản phẩm/dịch vụ đã tồn tại!", isError: true);
       return;
     }
-    setState(() {
-      productList.add({"name": name, "price": price});
-      nameController.clear();
-      priceController.clear();
-    });
-    saveProducts(appState);
+    List<Map<String,dynamic>> updatedProductList = List.from(productList);
+    updatedProductList.add({"name": name, "price": price});
+    _saveProducts(appState, updatedProductList);
+    nameController.clear();
+    priceController.clear();
+    FocusScope.of(context).unfocus();
   }
 
-  void deleteProduct(AppState appState, int index) {
-    setState(() => productList.removeAt(index));
-    saveProducts(appState);
+  void deleteProduct(
+      AppState appState, List<Map<String, dynamic>> productList, int index) {
+    if (index < 0 || index >= productList.length) return;
+    List<Map<String,dynamic>> updatedProductList = List.from(productList);
+    final removedProductName = updatedProductList[index]['name'];
+    updatedProductList.removeAt(index);
+    _saveProducts(appState, updatedProductList);
+    _showStyledSnackBar("Đã xóa: $removedProductName");
   }
 
-  void editProduct(AppState appState, int index) {
-    nameController.text = productList[index]["name"];
-    priceController.text = productList[index]["price"].toString();
+  void editProduct(
+      AppState appState, List<Map<String, dynamic>> productList, int index) {
+    if (index < 0 || index >= productList.length) return;
+    final productToEdit = productList[index];
+    nameController.text = productToEdit["name"]?.toString() ?? '';
+    priceController.text = _inputPriceFormatter.format(productToEdit["price"] ?? 0.0);
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Chỉnh sửa sản phẩm"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: "Tên sản phẩm/dịch vụ"),
-              maxLength: 50,
-              maxLines: 1,
+      builder: (dialogContext) => GestureDetector(
+        onTap: () => FocusScope.of(dialogContext).unfocus(),
+        behavior: HitTestBehavior.opaque,
+        child: AlertDialog(
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: Text("Chỉnh sửa sản phẩm",
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600, color: _textColorPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDialogTextField( // Using helper
+                controller: nameController,
+                labelText: "Tên sản phẩm/dịch vụ",
+                prefixIconData: Icons.label_important_outline,
+                maxLength: 50,
+              ),
+              const SizedBox(height: 16),
+              _buildDialogTextField( // Using helper
+                controller: priceController,
+                labelText: "Giá tiền",
+                prefixIconData: Icons.price_check_outlined,
+                keyboardType: TextInputType.numberWithOptions(decimal: false),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  TextInputFormatter.withFunction(
+                        (oldValue, newValue) {
+                      if (newValue.text.isEmpty) return newValue;
+                      final number = int.tryParse(newValue.text.replaceAll(',', ''));
+                      if (number == null) return oldValue;
+                      final formattedText = _inputPriceFormatter.format(number);
+                      return newValue.copyWith(
+                        text: formattedText,
+                        selection: TextSelection.collapsed(offset: formattedText.length),
+                      );
+                    },
+                  ),
+                ],
+                maxLength: 15,
+              ),
+            ],
+          ),
+          actionsPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // Clear controllers before closing if edit is cancelled
+                nameController.clear();
+                priceController.clear();
+                Navigator.pop(dialogContext);
+              },
+              child: Text("Hủy",
+                  style: GoogleFonts.poppins(
+                      color: _textColorSecondary,
+                      fontWeight: FontWeight.w500)),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: priceController,
-              decoration: const InputDecoration(labelText: "Giá tiền"),
-              keyboardType: TextInputType.number,
-              maxLength: 15,
-              maxLines: 1,
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+              onPressed: () {
+                String updatedName = nameController.text.trim();
+                String updatedPriceText = priceController.text.replaceAll(',', '').trim();
+
+                if (updatedName.isEmpty) {
+                  _showStyledSnackBar("Vui lòng nhập tên sản phẩm!", isError: true);
+                  return;
+                }
+                if (updatedPriceText.isEmpty) {
+                  _showStyledSnackBar("Vui lòng nhập giá sản phẩm!", isError: true);
+                  return;
+                }
+
+                double? updatedPrice = double.tryParse(updatedPriceText);
+                if (updatedPrice == null || updatedPrice < 0) {
+                  _showStyledSnackBar("Giá sản phẩm không hợp lệ!", isError: true);
+                  return;
+                }
+
+                // Check for duplicate name excluding the current item being edited
+                if (productList.asMap().entries.any((e) =>
+                e.key != index &&
+                    e.value["name"].toString().toLowerCase() ==
+                        updatedName.toLowerCase())) {
+                  _showStyledSnackBar("Tên sản phẩm/dịch vụ đã tồn tại!", isError: true);
+                  return;
+                }
+                List<Map<String,dynamic>> updatedProductList = List.from(productList);
+                updatedProductList[index] = {"name": updatedName, "price": updatedPrice};
+                _saveProducts(appState, updatedProductList);
+
+                nameController.clear(); // Clear after successful save
+                priceController.clear();
+                Navigator.pop(dialogContext);
+                _showStyledSnackBar("Đã cập nhật: $updatedName");
+
+              },
+              child: Text("Lưu", style: GoogleFonts.poppins()),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
-          ElevatedButton(
-            onPressed: () {
-              String updatedName = nameController.text.trim();
-              String updatedPriceText = priceController.text.trim();
-              if (updatedName.isEmpty || updatedPriceText.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Vui lòng nhập đầy đủ thông tin")));
-                return;
-              }
-              double? updatedPrice = double.tryParse(updatedPriceText);
-              if (updatedPrice == null || updatedPrice < 0) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Giá sản phẩm không hợp lệ")));
-                return;
-              }
-              if (productList.asMap().entries.any((e) => e.key != index && e.value["name"].toLowerCase() == updatedName.toLowerCase())) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tên sản phẩm/dịch vụ đã tồn tại")));
-                return;
-              }
-              setState(() {
-                productList[index] = {"name": updatedName, "price": updatedPrice};
-              });
-              saveProducts(appState);
-              Navigator.pop(context);
-            },
-            child: const Text("Lưu"),
+      ),
+    );
+  }
+
+  Widget _buildTab(String title, int tabIndex, bool isFirst, bool isLast) {
+    bool isSelected = _selectedTab == tabIndex;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          if (mounted) setState(() => _selectedTab = tabIndex);
+          _animationController.reset();
+          _animationController.forward();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: isSelected ? _cardBackgroundColor : _primaryColor,
+            borderRadius: BorderRadius.only(
+              topLeft: isFirst ? const Radius.circular(12) : Radius.zero,
+              bottomLeft: isFirst ? const Radius.circular(12) : Radius.zero,
+              topRight: isLast ? const Radius.circular(12) : Radius.zero,
+              bottomRight: isLast ? const Radius.circular(12) : Radius.zero,
+            ),
+            border: isSelected ? Border.all(color: _primaryColor, width:0.5) : null,
+            boxShadow: isSelected ? [
+              BoxShadow(
+                  color: Colors.blue.withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 5,
+                  offset: Offset(0,2)
+              )
+            ] : [],
           ),
-        ],
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 15.5,
+              color: isSelected ? _primaryColor : Colors.white.withOpacity(0.9),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -249,166 +394,463 @@ class _ProductServiceScreenState extends State<ProductServiceScreen> with Single
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    final screenWidth = MediaQuery.of(context).size.width;
-    return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            height: MediaQuery.of(context).size.height * 0.25,
-            color: const Color(0xFF1976D2).withOpacity(0.9),
+    // final screenWidth = MediaQuery.of(context).size.width; // Not directly used here
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.opaque,
+      child: Scaffold(
+        backgroundColor: _secondaryColor,
+        appBar: AppBar(
+          backgroundColor: _primaryColor,
+          elevation: 1,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
           ),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back, color: Colors.white),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                            const SizedBox(width: 12),
-                            Flexible(
-                              child: SegmentedButton<String>(
-                                segments: const [
-                                  ButtonSegment<String>(
-                                    value: "Sản phẩm/Dịch vụ chính",
-                                    label: Text("Chính", overflow: TextOverflow.ellipsis),
-                                  ),
-                                  ButtonSegment<String>(
-                                    value: "Sản phẩm/Dịch vụ phụ",
-                                    label: Text("Phụ", overflow: TextOverflow.ellipsis),
-                                  ),
-                                ],
-                                selected: {selectedCategory},
-                                onSelectionChanged: (newSelection) => setState(() {
-                                  selectedCategory = newSelection.first;
-                                  loadProducts();
-                                }),
-                                style: SegmentedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  selectedForegroundColor: Colors.white,
-                                  selectedBackgroundColor: const Color(0xFF42A5F5),
-                                  backgroundColor: Colors.transparent,
-                                  side: const BorderSide(color: Colors.white),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+          title: Text(
+            "Sản phẩm & Dịch vụ", // Updated title
+            style: GoogleFonts.poppins(
+                fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
+          ),
+          centerTitle: true,
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(50),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 5.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _primaryColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    _buildTab("Thêm mới", 0, true, false), // Shorter label
+                    _buildTab("Danh sách", 1, false, true),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        body: FutureBuilder<List<Map<String, dynamic>>>(
+          // Key the FutureBuilder to selectedCategory to refetch when category changes
+          key: ValueKey(selectedCategory),
+          future: _productsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(
+                  child: CircularProgressIndicator(color: _primaryColor));
+            }
+            if (snapshot.hasError) {
+              return Center(
+                  child: Text("Lỗi tải dữ liệu sản phẩm",
+                      style: GoogleFonts.poppins(color: _textColorSecondary)));
+            }
+            List<Map<String, dynamic>> productList = snapshot.data ?? [];
+
+            return ScaleTransition(
+              scale: _scaleAnimation,
+              child: IndexedStack(
+                index: _selectedTab,
+                children: [
+                  ProductInputSection(
+                    key: const ValueKey('productServiceInput'),
+                    nameController: nameController,
+                    priceController: priceController,
+                    selectedCategory: selectedCategory,
+                    onAddProduct: () => addProduct(appState, productList),
+                    onCategoryChanged: (newCategory) {
+                      if (mounted) {
+                        setState(() {
+                          selectedCategory = newCategory;
+                          // Reload products for the new category
+                          _productsFuture = _loadProducts(appState);
+                        });
+                      }
+                    },
+                    appState: appState,
+                    inputPriceFormatter: _inputPriceFormatter,
+                  ),
+                  ProductListSection(
+                    key: ValueKey('productList_${selectedCategory}'), // Ensure list rebuilds on category change
+                    productList: productList,
+                    onEditProduct: (index) =>
+                        editProduct(appState, productList, index),
+                    onDeleteProduct: (index) =>
+                        deleteProduct(appState, productList, index),
+                    appState: appState,
+                    currencyFormat: currencyFormat,
+                    primaryColor: _primaryColor,
+                    textColorPrimary: _textColorPrimary,
+                    textColorSecondary: _textColorSecondary,
+                    cardBackgroundColor: _cardBackgroundColor,
+                    accentColor: _accentColor,
+                    selectedCategoryText: selectedCategory, // Pass category text
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDialogTextField({ // Helper for dialog text fields
+    required TextEditingController controller,
+    required String labelText,
+    TextInputType keyboardType = TextInputType.text,
+    List<TextInputFormatter>? inputFormatters,
+    int? maxLength,
+    IconData? prefixIconData,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      maxLength: maxLength,
+      style: GoogleFonts.poppins(color: _textColorPrimary, fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        labelText: labelText,
+        labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
+        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: _primaryColor, size: 22) : null,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
+        filled: true,
+        fillColor: _secondaryColor, // Slightly different fill for dialogs
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        counterText: "",
+      ),
+      maxLines: 1,
+    );
+  }
+}
+
+class ProductInputSection extends StatelessWidget {
+  final TextEditingController nameController;
+  final TextEditingController priceController;
+  final String selectedCategory;
+  final VoidCallback onAddProduct;
+  final Function(String) onCategoryChanged;
+  final AppState appState; // Not strictly needed if only calling callbacks
+  final NumberFormat inputPriceFormatter;
+
+
+  const ProductInputSection({
+    required this.nameController,
+    required this.priceController,
+    required this.selectedCategory,
+    required this.onAddProduct,
+    required this.onCategoryChanged,
+    required this.appState,
+    required this.inputPriceFormatter,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    const Color primaryColor = _ProductServiceScreenState._primaryColor;
+    const Color secondaryColor = _ProductServiceScreenState._secondaryColor;
+    const Color textColorPrimary = _ProductServiceScreenState._textColorPrimary;
+    const Color textColorSecondary = _ProductServiceScreenState._textColorSecondary;
+    const Color cardBackgroundColor = _ProductServiceScreenState._cardBackgroundColor;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            elevation: 3,
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            color: cardBackgroundColor,
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Thêm Sản phẩm/Dịch vụ", // Title updated
+                    style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: primaryColor),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    "Chọn loại:",
+                    style: GoogleFonts.poppins(fontSize: 16, color: textColorSecondary, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment<String>(
+                        value: "Sản phẩm/Dịch vụ chính",
+                        label: Text("Doanh thu chính", overflow: TextOverflow.ellipsis),
+                        icon: Icon(Icons.star_border_purple500_outlined, size: 18),
+                      ),
+                      ButtonSegment<String>(
+                        value: "Sản phẩm/Dịch vụ phụ", // Value matches logic
+                        label: Text("Doanh thu phụ", overflow: TextOverflow.ellipsis),
+                        icon: Icon(Icons.star_half_outlined, size: 18),
                       ),
                     ],
+                    selected: {selectedCategory},
+                    onSelectionChanged: (newSelection) {
+                      if (newSelection.isNotEmpty) {
+                        onCategoryChanged(newSelection.first);
+                      }
+                    },
+                    style: SegmentedButton.styleFrom(
+                      foregroundColor: primaryColor,
+                      selectedForegroundColor: Colors.white,
+                      selectedBackgroundColor: primaryColor,
+                      backgroundColor: primaryColor.withOpacity(0.08),
+                      side: BorderSide(color: primaryColor.withOpacity(0.5)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 13.5),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    showSelectedIcon: false,
                   ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: SlideTransition(
-                      position: _slideAnimation,
-                      child: FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: Card(
-                          elevation: 10,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextField(
-                                  controller: nameController,
-                                  decoration: const InputDecoration(
-                                    labelText: "Tên sản phẩm/dịch vụ",
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  maxLines: 1,
-                                  maxLength: 50,
-                                ),
-                                const SizedBox(height: 10),
-                                TextField(
-                                  controller: priceController,
-                                  decoration: const InputDecoration(
-                                    labelText: "Giá tiền",
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                  maxLines: 1,
-                                  maxLength: 15,
-                                ),
-                                const SizedBox(height: 20),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF42A5F5),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    minimumSize: Size(screenWidth - 32, 50),
-                                  ),
-                                  onPressed: () => addProduct(appState),
-                                  child: const Text(
-                                    "Lưu",
-                                    style: TextStyle(color: Colors.white, fontSize: 16),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(height: 20),
-                                const Text(
-                                  "Danh sách sản phẩm/dịch vụ",
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 10),
-                                Expanded(
-                                  child: ListView.builder(
-                                    itemCount: productList.length,
-                                    itemBuilder: (context, index) {
-                                      final product = productList[index];
-                                      return Card(
-                                        child: ListTile(
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                          title: Text(
-                                            product["name"],
-                                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                          ),
-                                          subtitle: Text(
-                                            currencyFormat.format(product["price"]),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                          ),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.edit, color: Colors.blue, size: 18),
-                                                onPressed: () => editProduct(appState, index),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                                                onPressed: () => deleteProduct(appState, index),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                  const SizedBox(height: 20),
+                  _buildInputTextField(
+                    controller: nameController,
+                    labelText: 'Tên sản phẩm/dịch vụ',
+                    prefixIconData: Icons.label_outline,
+                    maxLength: 50,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildInputTextField(
+                    controller: priceController,
+                    labelText: 'Giá tiền',
+                    prefixIconData: Icons.attach_money_outlined,
+                    keyboardType: TextInputType.numberWithOptions(decimal: false),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      TextInputFormatter.withFunction(
+                            (oldValue, newValue) {
+                          if (newValue.text.isEmpty) return newValue;
+                          final number = int.tryParse(newValue.text.replaceAll(',', ''));
+                          if (number == null) return oldValue;
+                          final formattedText = inputPriceFormatter.format(number);
+                          return newValue.copyWith(
+                            text: formattedText,
+                            selection: TextSelection.collapsed(offset: formattedText.length),
+                          );
+                        },
                       ),
+                    ],
+                    maxLength: 15,
+                  ),
+                  const SizedBox(height: 28),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      minimumSize: Size(screenWidth, 52),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 2,
+                    ),
+                    onPressed: onAddProduct,
+                    child: Text(
+                      "Thêm sản phẩm",
+                      style: GoogleFonts.poppins(
+                          fontSize: 16.5, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputTextField({ // Helper for consistency
+    required TextEditingController controller,
+    required String labelText,
+    TextInputType keyboardType = TextInputType.text,
+    List<TextInputFormatter>? inputFormatters,
+    int? maxLength,
+    int maxLines = 1,
+    IconData? prefixIconData,
+  }) {
+    const Color primaryColor = _ProductServiceScreenState._primaryColor;
+    const Color textColorSecondary = _ProductServiceScreenState._textColorSecondary;
+    const Color cardBackgroundColor = _ProductServiceScreenState._cardBackgroundColor;
+    const Color secondaryColor = _ProductServiceScreenState._secondaryColor;
+
+
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      maxLength: maxLength,
+      maxLines: maxLines,
+      style: GoogleFonts.poppins(color: _ProductServiceScreenState._textColorPrimary, fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        labelText: labelText,
+        labelStyle: GoogleFonts.poppins(color: textColorSecondary),
+        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: primaryColor, size: 22) : null,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor, width: 1.5)),
+        filled: true,
+        fillColor: secondaryColor.withOpacity(0.5), // Use slightly off-white for input fields
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        counterText: "",
+      ),
+    );
+  }
+}
+
+class ProductListSection extends StatelessWidget {
+  final List<Map<String, dynamic>> productList;
+  final Function(int) onEditProduct;
+  final Function(int) onDeleteProduct;
+  final AppState appState; // Not strictly needed if only calling callbacks
+  final NumberFormat currencyFormat;
+  final Color primaryColor;
+  final Color textColorPrimary;
+  final Color textColorSecondary;
+  final Color cardBackgroundColor;
+  final Color accentColor;
+  final String selectedCategoryText;
+
+
+  const ProductListSection({
+    required this.productList,
+    required this.onEditProduct,
+    required this.onDeleteProduct,
+    required this.appState,
+    required this.currencyFormat,
+    required this.primaryColor,
+    required this.textColorPrimary,
+    required this.textColorSecondary,
+    required this.cardBackgroundColor,
+    required this.accentColor,
+    required this.selectedCategoryText,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 80.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: Text(
+              "Danh sách: ${selectedCategoryText.replaceFirst("Sản phẩm/Dịch vụ ", "")}", // Dynamic title
+              style: GoogleFonts.poppins(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: textColorPrimary),
+            ),
+          ),
+          productList.isEmpty
+              ? Center(
+            child: Padding(
+              padding: const EdgeInsets.all(30.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.inventory_2_outlined, size: 70, color: Colors.grey.shade400),
+                  SizedBox(height: 16),
+                  Text(
+                    "Chưa có sản phẩm/dịch vụ nào",
+                    style: GoogleFonts.poppins(fontSize: 17, color: textColorSecondary),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Thêm mới ở tab bên cạnh để quản lý.",
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ),
+          )
+              : ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: productList.length,
+            itemBuilder: (context, index) {
+              final product = productList[index];
+              return Dismissible(
+                key: Key(product['name'].toString() + index.toString()), // More robust key
+                background: Container(
+                  color: accentColor.withOpacity(0.8),
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20),
+                  child: const Icon(Icons.delete_sweep_outlined,
+                      color: Colors.white, size: 26),
+                ),
+                direction: DismissDirection.endToStart,
+                onDismissed: (direction) {
+                  onDeleteProduct(index);
+                },
+                child: Card(
+                  elevation: 1.5,
+                  margin: const EdgeInsets.symmetric(vertical: 5),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  color: cardBackgroundColor,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    visualDensity: VisualDensity.compact,
+                    leading: CircleAvatar(
+                      backgroundColor: primaryColor.withOpacity(0.15),
+                      child: Text(
+                        product['name'] != null && (product['name'] as String).isNotEmpty
+                            ? (product['name'] as String)[0].toUpperCase()
+                            : "?",
+                        style: GoogleFonts.poppins(
+                            color: primaryColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 18),
+                      ),
+                      radius: 20,
+                    ),
+                    title: Text(
+                      product['name']?.toString() ?? 'N/A',
+                      style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: textColorPrimary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      "Giá: ${currencyFormat.format(product['price'] ?? 0.0)}",
+                      style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          color: textColorSecondary,
+                          fontWeight: FontWeight.w500),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(Icons.edit_note_outlined,
+                          color: primaryColor.withOpacity(0.9), size: 22),
+                      onPressed: () => onEditProduct(index),
+                      splashRadius: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints(minWidth: 30, minHeight: 30),
                     ),
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ],
       ),
