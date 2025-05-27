@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../state/app_state.dart';
+import '../state/app_state.dart'; // Ensure this path is correct
 import '/screens/revenue_manager.dart'; // Ensure this path is correct
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart'; // For currency formatting in history
@@ -24,28 +24,29 @@ class _EditSecondaryRevenueScreenState
   late Future<List<Map<String, dynamic>>> _productsFuture;
   int _selectedTab = 0;
 
-  // Define a consistent color palette (same as EditMainRevenueScreen)
+  // NEW: GlobalKey to access ProductInputSection's state
+  final GlobalKey<_ProductInputSectionState> _productInputSectionKey =
+  GlobalKey<_ProductInputSectionState>();
+
   static const Color _primaryColor = Color(0xFF2F81D7);
   static const Color _secondaryColor = Color(0xFFF1F5F9);
   static const Color _textColorPrimary = Color(0xFF1D2D3A);
   static const Color _textColorSecondary = Color(0xFF6E7A8A);
   static const Color _cardBackgroundColor = Colors.white;
-  static const Color _accentColor = Colors.redAccent; // For errors
-
+  static const Color _accentColor = Colors.redAccent;
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'VNĐ');
 
   @override
   void initState() {
     super.initState();
-    quantityController.text = "1";
+    quantityController.text = "1"; // Initial value
     _animationController = AnimationController(
         duration: const Duration(milliseconds: 300), vsync: this);
     _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
         CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack));
     _animationController.forward();
-
     final appState = Provider.of<AppState>(context, listen: false);
-    _productsFuture = RevenueManager.loadProducts(appState, "Doanh thu phụ");
+    _productsFuture = RevenueManager.loadProducts(appState, "Doanh thu phụ"); // MODIFIED: Load "Doanh thu phụ"
     appState.productsUpdated.addListener(_onProductsUpdated);
   }
 
@@ -63,12 +64,13 @@ class _EditSecondaryRevenueScreenState
     if (mounted) {
       setState(() {
         final appState = Provider.of<AppState>(context, listen: false);
-        _productsFuture = RevenueManager.loadProducts(appState, "Doanh thu phụ");
+        _productsFuture = RevenueManager.loadProducts(appState, "Doanh thu phụ"); // MODIFIED: Load "Doanh thu phụ"
       });
     }
   }
 
   void _showStyledSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
@@ -80,6 +82,7 @@ class _EditSecondaryRevenueScreenState
     );
   }
 
+  // MODIFIED: addTransaction to reset fields
   void addTransaction(
       AppState appState,
       List<Map<String, dynamic>> transactions,
@@ -90,12 +93,11 @@ class _EditSecondaryRevenueScreenState
       _showStyledSnackBar("Vui lòng chọn sản phẩm/dịch vụ!", isError: true);
       return;
     }
-
     double priceToUse;
     if (isFlexiblePriceEnabled) {
-      // Corrected parsing: remove both '.' and ','
-      priceToUse =
-          double.tryParse(priceController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
+      priceToUse = double.tryParse(
+          priceController.text.replaceAll('.', '').replaceAll(',', '')) ??
+          0.0;
       if (priceToUse <= 0.0) {
         _showStyledSnackBar("Vui lòng nhập giá trị hợp lệ cho giá!",
             isError: true);
@@ -109,13 +111,11 @@ class _EditSecondaryRevenueScreenState
         return;
       }
     }
-
     int quantity = int.tryParse(quantityController.text) ?? 1;
     if (quantity <= 0) {
       _showStyledSnackBar("Số lượng phải lớn hơn 0!", isError: true);
       return;
     }
-
     double total = priceToUse * quantity;
     transactions.add({
       "name": selectedProduct,
@@ -125,33 +125,33 @@ class _EditSecondaryRevenueScreenState
       "date": DateTime.now().toIso8601String()
     });
     RevenueManager.saveTransactionHistory(
-        appState, "Doanh thu phụ", transactions);
+        appState, "Doanh thu phụ", transactions); // MODIFIED: Save to "Doanh thu phụ"
     _showStyledSnackBar("Đã thêm giao dịch: $selectedProduct");
 
     if (mounted) {
       setState(() {
         quantityController.text = "1";
       });
+      _productInputSectionKey.currentState?.resetForm();
     }
   }
 
-  void removeTransaction(
-      AppState appState, List<Map<String, dynamic>> transactions, int index) {
+  void removeTransaction(AppState appState,
+      List<Map<String, dynamic>> transactions, int index) {
     if (index < 0 || index >= transactions.length) return;
     final removedItemName = transactions[index]['name'];
     transactions.removeAt(index);
     RevenueManager.saveTransactionHistory(
-        appState, "Doanh thu phụ", transactions);
+        appState, "Doanh thu phụ", transactions); // MODIFIED: Save to "Doanh thu phụ"
     _showStyledSnackBar("Đã xóa: $removedItemName");
   }
 
-  void editTransaction(
-      AppState appState, List<Map<String, dynamic>> transactions, int index) {
+  void editTransaction(AppState appState,
+      List<Map<String, dynamic>> transactions, int index) {
     if (index < 0 || index >= transactions.length) return;
     TextEditingController editQuantityController =
     TextEditingController(text: transactions[index]['quantity'].toString());
     final transactionToEdit = transactions[index];
-
     showDialog(
       context: context,
       builder: (dialogContext) => GestureDetector(
@@ -169,14 +169,15 @@ class _EditSecondaryRevenueScreenState
             decoration: InputDecoration(
                 labelText: "Nhập số lượng mới",
                 labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
-                border:
-                OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 filled: true,
                 fillColor: _secondaryColor,
                 prefixIcon: Icon(Icons.production_quantity_limits_outlined,
                     color: _primaryColor)),
             maxLines: 1,
             maxLength: 5,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
           actionsPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -198,13 +199,14 @@ class _EditSecondaryRevenueScreenState
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               onPressed: () {
-                int newQuantity = int.tryParse(editQuantityController.text) ??
-                    transactionToEdit['quantity'];
+                int newQuantity =
+                    int.tryParse(editQuantityController.text) ??
+                        transactionToEdit['quantity'];
                 if (newQuantity <= 0) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
                         content: Text("Số lượng phải lớn hơn 0",
-                            style: GoogleFonts.poppins()),
+                            style: GoogleFonts.poppins(color: Colors.white)),
                         backgroundColor: _accentColor,
                         behavior: SnackBarBehavior.floating),
                   );
@@ -214,7 +216,7 @@ class _EditSecondaryRevenueScreenState
                 transactionToEdit['total'] =
                     (transactionToEdit['price'] as num? ?? 0.0) * newQuantity;
                 RevenueManager.saveTransactionHistory(
-                    appState, "Doanh thu phụ", transactions);
+                    appState, "Doanh thu phụ", transactions); // MODIFIED: Save to "Doanh thu phụ"
                 Navigator.pop(dialogContext);
                 _showStyledSnackBar("Đã cập nhật: ${transactionToEdit['name']}");
               },
@@ -245,7 +247,9 @@ class _EditSecondaryRevenueScreenState
               topRight: isLast ? const Radius.circular(12) : Radius.zero,
               bottomRight: isLast ? const Radius.circular(12) : Radius.zero,
             ),
-            border: isSelected ? Border.all(color: _primaryColor, width: 0.5) : null,
+            border: isSelected
+                ? Border.all(color: _primaryColor, width: 0.5)
+                : null,
             boxShadow: isSelected
                 ? [
               BoxShadow(
@@ -261,9 +265,7 @@ class _EditSecondaryRevenueScreenState
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 15.5,
-              color: isSelected
-                  ? _primaryColor
-                  : Colors.white.withOpacity(0.9),
+              color: isSelected ? _primaryColor : Colors.white.withOpacity(0.9),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -275,7 +277,6 @@ class _EditSecondaryRevenueScreenState
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
@@ -289,7 +290,7 @@ class _EditSecondaryRevenueScreenState
             onPressed: () => Navigator.pop(context),
           ),
           title: Text(
-            "Doanh thu phụ",
+            "Doanh thu phụ", // MODIFIED: Title
             style: GoogleFonts.poppins(
                 fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
           ),
@@ -327,44 +328,42 @@ class _EditSecondaryRevenueScreenState
                       style: GoogleFonts.poppins(color: _textColorSecondary)));
             }
             List<Map<String, dynamic>> productList = snapshot.data ?? [];
-
             return ScaleTransition(
-              scale: _scaleAnimation,
-              child: IndexedStack(
-                index: _selectedTab,
-                children: [
-                  ProductInputSection(
-                    key: const ValueKey('productInputSecondary'),
-                    productList: productList,
-                    quantityController: quantityController,
-                    priceController: priceController,
-                    onAddTransaction: (selectedProduct, selectedPrice,
-                        isFlexiblePrice) {
-                      addTransaction(
-                          appState,
-                          appState.secondaryRevenueTransactions.value,
-                          selectedProduct,
-                          selectedPrice,
-                          isFlexiblePrice);
-                    },
-                    appState: appState,
-                    currencyFormat: currencyFormat,
-                  ),
-                  TransactionHistorySection(
-                    key: const ValueKey('transactionHistorySecondary'),
-                    transactionsNotifier: appState.secondaryRevenueTransactions,
-                    onEditTransaction: editTransaction,
-                    onRemoveTransaction: removeTransaction,
-                    appState: appState,
-                    currencyFormat: currencyFormat,
-                    primaryColor: _primaryColor,
-                    textColorPrimary: _textColorPrimary,
-                    textColorSecondary: _textColorSecondary,
-                    cardBackgroundColor: _cardBackgroundColor,
-                  ),
-                ],
-              ),
-            );
+                scale: _scaleAnimation,
+                child: IndexedStack(
+                  index: _selectedTab,
+                  children: [
+                    ProductInputSection(
+                      key: _productInputSectionKey, // MODIFIED: Pass the key
+                      productList: productList,
+                      quantityController: quantityController,
+                      priceController: priceController,
+                      onAddTransaction: (selectedProduct, selectedPrice,
+                          isFlexiblePrice) {
+                        addTransaction(
+                            appState,
+                            appState.secondaryRevenueTransactions.value, // MODIFIED: Use secondaryRevenueTransactions
+                            selectedProduct,
+                            selectedPrice,
+                            isFlexiblePrice);
+                      },
+                      appState: appState,
+                      currencyFormat: currencyFormat,
+                    ),
+                    TransactionHistorySection(
+                      key: const ValueKey('transactionHistorySecondary'), // MODIFIED: Key for secondary
+                      transactionsNotifier: appState.secondaryRevenueTransactions, // MODIFIED: Use secondaryRevenueTransactions
+                      onEditTransaction: editTransaction,
+                      onRemoveTransaction: removeTransaction,
+                      appState: appState,
+                      currencyFormat: currencyFormat,
+                      primaryColor: _primaryColor,
+                      textColorPrimary: _textColorPrimary,
+                      textColorSecondary: _textColorSecondary,
+                      cardBackgroundColor: _cardBackgroundColor,
+                    ),
+                  ],
+                ));
           },
         ),
       ),
@@ -399,13 +398,12 @@ class _ProductInputSectionState extends State<ProductInputSection> {
   double selectedPriceFromDropdown = 0.0;
   bool isFlexiblePriceEnabled = false;
   final FocusNode _priceFocusNode = FocusNode();
-
   final NumberFormat _priceInputFormatter = NumberFormat("#,##0", "vi_VN");
 
   @override
   void initState() {
     super.initState();
-    _updatePriceControllerBasedOnSelection();
+    _resetPriceControllerToDefault();
     widget.priceController.addListener(_onPriceChanged);
   }
 
@@ -417,7 +415,13 @@ class _ProductInputSectionState extends State<ProductInputSection> {
   }
 
   void _onPriceChanged() {
-    // Optional: Could add live formatting or validation here if needed
+    if (mounted) {
+      // setState(() {}); // Removed to prevent potential issues, rely on explicit setState in onChanged for total
+    }
+  }
+
+  void _resetPriceControllerToDefault() {
+    widget.priceController.text = _priceInputFormatter.format(0);
   }
 
   void _updatePriceControllerBasedOnSelection() {
@@ -425,22 +429,45 @@ class _ProductInputSectionState extends State<ProductInputSection> {
       final product = widget.productList.firstWhere(
               (p) => p["name"] == selectedProduct,
           orElse: () => {"price": 0.0});
-      selectedPriceFromDropdown =
-          (product["price"] as num? ?? 0.0).toDouble();
+      selectedPriceFromDropdown = (product["price"] as num? ?? 0.0).toDouble();
       widget.priceController.text =
           _priceInputFormatter.format(selectedPriceFromDropdown);
     } else if (!isFlexiblePriceEnabled && selectedProduct == null) {
+      selectedPriceFromDropdown = 0.0;
       widget.priceController.text = _priceInputFormatter.format(0);
     }
+  }
+
+  void resetForm() {
+    setState(() {
+      selectedProduct = null;
+      isFlexiblePriceEnabled = false;
+      selectedPriceFromDropdown = 0.0;
+      widget.priceController.text = _priceInputFormatter.format(0);
+      if (_priceFocusNode.hasFocus) {
+        _priceFocusNode.unfocus();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
+    // Use static colors from parent state for consistency
     const Color primaryColor = _EditSecondaryRevenueScreenState._primaryColor;
     const Color secondaryColor = _EditSecondaryRevenueScreenState._secondaryColor;
     const Color textColorPrimary = _EditSecondaryRevenueScreenState._textColorPrimary;
     const Color textColorSecondary = _EditSecondaryRevenueScreenState._textColorSecondary;
+    const Color cardBackgroundColor = _EditSecondaryRevenueScreenState._cardBackgroundColor;
+
+    double currentPriceForTotal;
+    if (isFlexiblePriceEnabled) {
+      currentPriceForTotal = double.tryParse(widget.priceController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
+    } else {
+      currentPriceForTotal = selectedPriceFromDropdown;
+    }
+    final int currentQuantityForTotal = int.tryParse(widget.quantityController.text) ?? 1;
+    final double estimatedTotal = currentPriceForTotal * currentQuantityForTotal;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -451,7 +478,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
             elevation: 3,
             shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            color: _EditSecondaryRevenueScreenState._cardBackgroundColor,
+            color: cardBackgroundColor,
             child: Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
@@ -484,7 +511,8 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                       const DropdownMenuItem<String>(
                         value: null,
                         child: Text("Chưa có sản phẩm nào",
-                            style: TextStyle(fontStyle: FontStyle.italic)),
+                            style:
+                            TextStyle(fontStyle: FontStyle.italic, color: textColorSecondary)),
                       )
                     ]
                         : widget.productList
@@ -507,9 +535,8 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                           selectedPriceFromDropdown =
                               (productData["price"] as num? ?? 0.0).toDouble();
                           if (!isFlexiblePriceEnabled) {
-                            widget.priceController.text =
-                                _priceInputFormatter
-                                    .format(selectedPriceFromDropdown);
+                            widget.priceController.text = _priceInputFormatter
+                                .format(selectedPriceFromDropdown);
                           }
                         } else {
                           selectedPriceFromDropdown = 0.0;
@@ -520,10 +547,12 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                         }
                       });
                     },
-                    style: GoogleFonts.poppins(color: textColorPrimary, fontSize: 16),
+                    style:
+                    GoogleFonts.poppins(color: textColorPrimary, fontSize: 16),
                     icon: Icon(Icons.arrow_drop_down_circle_outlined,
                         color: primaryColor),
                     borderRadius: BorderRadius.circular(12),
+                    isExpanded: true,
                   ),
                   const SizedBox(height: 12),
                   SwitchListTile.adaptive(
@@ -547,13 +576,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                             FocusScope.of(context).unfocus();
                           }
                         } else {
-                          if (selectedProduct == null)
-                            widget.priceController.text =
-                                _priceInputFormatter.format(0);
-                          else
-                            widget.priceController.text =
-                                _priceInputFormatter
-                                    .format(selectedPriceFromDropdown);
+                          widget.priceController.text = _priceInputFormatter.format(selectedPriceFromDropdown);
                           _priceFocusNode.requestFocus();
                         }
                       });
@@ -567,43 +590,48 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                         size: 22),
                   ),
                   _buildModernTextField(
-                    labelText: "Giá sản phẩm/dịch vụ",
-                    prefixIconData: Icons.price_change_outlined,
-                    controller: widget.priceController,
-                    keyboardType:
-                    TextInputType.numberWithOptions(decimal: false),
-                    enabled: isFlexiblePriceEnabled,
-                    focusNode: _priceFocusNode,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      TextInputFormatter.withFunction(
-                            (oldValue, newValue) {
-                          if (newValue.text.isEmpty) return newValue;
-                          // Corrected parsing: remove both '.' and ','
-                          final String plainNumberText = newValue.text.replaceAll('.', '').replaceAll(',', '');
-                          final number = int.tryParse(plainNumberText);
-                          if (number == null) return oldValue;
-                          final formattedText =
-                          _priceInputFormatter.format(number);
-                          return newValue.copyWith(
-                            text: formattedText,
-                            selection: TextSelection.collapsed(
-                                offset: formattedText.length),
-                          );
-                        },
-                      ),
-                    ],
-                    maxLength: 15,
+                      labelText: "Giá sản phẩm/dịch vụ",
+                      prefixIconData: Icons.price_change_outlined,
+                      controller: widget.priceController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: false),
+                      enabled: isFlexiblePriceEnabled,
+                      focusNode: _priceFocusNode,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        TextInputFormatter.withFunction(
+                              (oldValue, newValue) {
+                            if (newValue.text.isEmpty) return newValue;
+                            final String plainNumberText = newValue.text
+                                .replaceAll('.', '')
+                                .replaceAll(',', '');
+                            final number = int.tryParse(plainNumberText);
+                            if (number == null) return oldValue;
+                            final formattedText =
+                            _priceInputFormatter.format(number);
+                            return newValue.copyWith(
+                              text: formattedText,
+                              selection: TextSelection.collapsed(
+                                  offset: formattedText.length),
+                            );
+                          },
+                        ),
+                      ],
+                      maxLength: 15,
+                      onChanged: (_) {
+                        if(mounted) setState(() {});
+                      }
                   ),
                   const SizedBox(height: 16),
                   _buildModernTextField(
-                    labelText: "Số lượng",
-                    prefixIconData: Icons.production_quantity_limits_rounded,
-                    controller: widget.quantityController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    maxLength: 5,
-                    onChanged: (_) => setState(() {}),
+                      labelText: "Số lượng",
+                      prefixIconData: Icons.production_quantity_limits_rounded,
+                      controller: widget.quantityController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      maxLength: 5,
+                      onChanged: (_) {
+                        if(mounted) setState(() {});
+                      }
                   ),
                   const SizedBox(height: 20),
                   Container(
@@ -627,14 +655,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          widget.currencyFormat.format((double.tryParse(widget
-                              .priceController.text
-                              .replaceAll('.', '').replaceAll(',', '')) ?? // Corrected parsing
-                              (isFlexiblePriceEnabled
-                                  ? 0.0
-                                  : selectedPriceFromDropdown)) *
-                              (int.tryParse(widget.quantityController.text) ??
-                                  1)),
+                          widget.currencyFormat.format(estimatedTotal),
                           style: GoogleFonts.poppins(
                               fontSize: 22,
                               fontWeight: FontWeight.w700,
@@ -682,10 +703,12 @@ class _ProductInputSectionState extends State<ProductInputSection> {
     FocusNode? focusNode,
     void Function(String)? onChanged,
   }) {
+    // Use static colors from parent state for consistency
     const Color primaryColor = _EditSecondaryRevenueScreenState._primaryColor;
     const Color secondaryColor = _EditSecondaryRevenueScreenState._secondaryColor;
+    const Color textColorPrimary = _EditSecondaryRevenueScreenState._textColorPrimary;
     const Color textColorSecondary = _EditSecondaryRevenueScreenState._textColorSecondary;
-    const Color cardBackgroundColorFromParent = _EditSecondaryRevenueScreenState._cardBackgroundColor;
+    // const Color cardBackgroundColor = _EditSecondaryRevenueScreenState._cardBackgroundColor; // Not directly used here for fill
 
     return TextField(
       controller: controller,
@@ -696,7 +719,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
       focusNode: focusNode,
       onChanged: onChanged,
       style: GoogleFonts.poppins(
-          color: _EditSecondaryRevenueScreenState._textColorPrimary,
+          color: textColorPrimary,
           fontWeight: FontWeight.w500,
           fontSize: 16),
       decoration: InputDecoration(
@@ -715,9 +738,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: primaryColor, width: 1.5)),
         filled: true,
-        fillColor: enabled
-            ? cardBackgroundColorFromParent
-            : secondaryColor.withOpacity(0.5),
+        fillColor: enabled ? secondaryColor.withOpacity(0.5) : Colors.grey.shade200, // Consistent with main screen
         contentPadding:
         const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
@@ -768,8 +789,8 @@ class TransactionHistorySection extends StatelessWidget {
                   SizedBox(height: 16),
                   Text(
                     "Chưa có giao dịch nào",
-                    style: GoogleFonts.poppins(
-                        fontSize: 17, color: textColorSecondary),
+                    style:
+                    GoogleFonts.poppins(fontSize: 17, color: textColorSecondary),
                   ),
                   SizedBox(height: 4),
                   Text(
@@ -783,6 +804,14 @@ class TransactionHistorySection extends StatelessWidget {
             ),
           );
         }
+
+        final sortedHistory = List<Map<String, dynamic>>.from(history);
+        sortedHistory.sort((a, b) {
+          DateTime dateA = DateTime.tryParse(a['date'] ?? '') ?? DateTime(1900);
+          DateTime dateB = DateTime.tryParse(b['date'] ?? '') ?? DateTime(1900);
+          return dateB.compareTo(dateA);
+        });
+
         return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 80.0),
           child: Column(
@@ -791,7 +820,7 @@ class TransactionHistorySection extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 12.0),
                 child: Text(
-                  "Lịch sử giao dịch ngày",
+                  "Lịch sử giao dịch",
                   style: GoogleFonts.poppins(
                       fontSize: 19,
                       fontWeight: FontWeight.w700,
@@ -801,17 +830,18 @@ class TransactionHistorySection extends StatelessWidget {
               ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: history.length,
+                itemCount: sortedHistory.length,
                 itemBuilder: (context, index) {
-                  final transaction = history[history.length - 1 - index];
+                  final transaction = sortedHistory[index];
+                  final originalIndex = history.indexOf(transaction);
 
                   return Dismissible(
                     key: Key(transaction['date'].toString() +
                         transaction['name'] +
                         index.toString()),
                     background: Container(
-                      color: _EditSecondaryRevenueScreenState._accentColor
-                          .withOpacity(0.8),
+                      color:
+                      _EditSecondaryRevenueScreenState._accentColor.withOpacity(0.8), // Use static color from parent
                       alignment: Alignment.centerRight,
                       padding: const EdgeInsets.only(right: 20),
                       child: const Icon(Icons.delete_sweep_outlined,
@@ -819,8 +849,9 @@ class TransactionHistorySection extends StatelessWidget {
                     ),
                     direction: DismissDirection.endToStart,
                     onDismissed: (direction) {
-                      onRemoveTransaction(appState,
-                          transactionsNotifier.value, history.length - 1 - index);
+                      if (originalIndex != -1) {
+                        onRemoveTransaction(appState, transactionsNotifier.value, originalIndex);
+                      }
                     },
                     child: Card(
                       elevation: 1.5,
@@ -834,6 +865,7 @@ class TransactionHistorySection extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                         leading: CircleAvatar(
                           backgroundColor: primaryColor.withOpacity(0.15),
+                          radius: 20,
                           child: Text(
                             transaction['name'] != null &&
                                 (transaction['name'] as String).isNotEmpty
@@ -845,7 +877,6 @@ class TransactionHistorySection extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                                 fontSize: 18),
                           ),
-                          radius: 20,
                         ),
                         title: Text(
                           transaction['name']?.toString() ?? 'N/A',
@@ -871,14 +902,28 @@ class TransactionHistorySection extends StatelessWidget {
                                   color: primaryColor,
                                   fontWeight: FontWeight.w500),
                             ),
+                            if (transaction['date'] != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2.0),
+                                child: Text(
+                                  DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(transaction['date'])),
+                                  style: GoogleFonts.poppins(fontSize: 11.0, color: textColorSecondary.withOpacity(0.8)),
+                                ),
+                              ),
                           ],
                         ),
                         trailing: IconButton(
-                          icon: Icon(Icons.edit_note_outlined, color: primaryColor.withOpacity(0.8), size: 22),
-                          onPressed: () => onEditTransaction(appState, transactionsNotifier.value, history.length - 1 - index),
+                          icon: Icon(Icons.edit_note_outlined,
+                              color: primaryColor.withOpacity(0.8), size: 22),
+                          onPressed: () {
+                            if (originalIndex != -1) {
+                              onEditTransaction(appState, transactionsNotifier.value, originalIndex);
+                            }
+                          },
                           splashRadius: 18,
                           padding: EdgeInsets.zero,
-                          constraints: BoxConstraints(minWidth: 30, minHeight: 30),
+                          constraints:
+                          BoxConstraints(minWidth: 30, minHeight: 30),
                         ),
                       ),
                     ),

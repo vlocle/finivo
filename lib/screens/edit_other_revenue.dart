@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../state/app_state.dart';
+import '../state/app_state.dart'; // Ensure this path is correct
 import '/screens/revenue_manager.dart'; // Ensure this path is correct
 import 'package:google_fonts/google_fonts.dart';
 
@@ -31,9 +31,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
   static const Color _textColorSecondary = Color(0xFF6E7A8A);
   static const Color _cardBackgroundColor = Colors.white;
   static const Color _accentColor = Colors.redAccent;
-
   final NumberFormat _inputPriceFormatter = NumberFormat("#,##0", "vi_VN");
-
 
   @override
   void initState() {
@@ -67,8 +65,9 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
   }
 
   void _addTransaction(AppState appState) {
-    // Corrected parsing: remove both '.' and ','
-    double total = double.tryParse(_totalController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
+    double total = double.tryParse(
+        _totalController.text.replaceAll('.', '').replaceAll(',', '')) ??
+        0.0;
     String name = _nameController.text.trim();
 
     if (name.isEmpty) {
@@ -85,25 +84,30 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
     updatedTransactions.add({
       'name': name,
       'total': total,
-      'quantity': 1.0,
+      'quantity': 1.0, // Default quantity for "other revenue"
       'date': DateTime.now().toIso8601String(),
     });
-    appState.otherRevenueTransactions.value = updatedTransactions;
 
+    appState.otherRevenueTransactions.value = updatedTransactions;
     RevenueManager.saveOtherRevenueTransactions(
         appState, appState.otherRevenueTransactions.value);
     _showStyledSnackBar('Đã thêm giao dịch: $name');
 
+    // Clear fields after adding - This fulfills the user's request
     _totalController.clear();
     _nameController.clear();
     FocusScope.of(context).unfocus();
-    widget.onUpdate();
+    widget.onUpdate(); // Callback to update parent widget if needed
   }
 
-  void _editTransaction(AppState appState, int index) {
-    final originalTransaction = appState.otherRevenueTransactions.value[index];
-    _totalController.text = _inputPriceFormatter.format(originalTransaction['total'] ?? 0.0);
-    _nameController.text = originalTransaction['name']?.toString() ?? '';
+  void _editTransaction(AppState appState, int originalIndexInValueNotifier) {
+    // Get the actual transaction from the ValueNotifier using the original index
+    final transactionToEdit = appState.otherRevenueTransactions.value[originalIndexInValueNotifier];
+
+    // Create temporary controllers for the dialog to avoid modifying main controllers directly
+    final TextEditingController editNameController = TextEditingController(text: transactionToEdit['name']?.toString() ?? '');
+    final TextEditingController editTotalController = TextEditingController(text: _inputPriceFormatter.format(transactionToEdit['total'] ?? 0.0));
+
 
     showDialog(
       context: context,
@@ -119,15 +123,15 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildModernTextField(
-                controller: _nameController,
+              _buildDialogTextField( // Using a helper for dialog fields
+                controller: editNameController,
                 labelText: 'Tên giao dịch',
                 prefixIconData: Icons.description_outlined,
                 maxLength: 100,
               ),
               const SizedBox(height: 16),
-              _buildModernTextField(
-                controller: _totalController,
+              _buildDialogTextField( // Using a helper for dialog fields
+                controller: editTotalController,
                 labelText: 'Số tiền',
                 prefixIconData: Icons.monetization_on_outlined,
                 keyboardType: TextInputType.numberWithOptions(decimal: false),
@@ -136,14 +140,17 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                   TextInputFormatter.withFunction(
                         (oldValue, newValue) {
                       if (newValue.text.isEmpty) return newValue;
-                      // Corrected parsing: remove both '.' and ','
-                      final String plainNumberText = newValue.text.replaceAll('.', '').replaceAll(',', '');
+                      final String plainNumberText = newValue.text
+                          .replaceAll('.', '')
+                          .replaceAll(',', '');
                       final number = int.tryParse(plainNumberText);
                       if (number == null) return oldValue;
-                      final formattedText = _inputPriceFormatter.format(number);
+                      final formattedText =
+                      _inputPriceFormatter.format(number);
                       return newValue.copyWith(
                         text: formattedText,
-                        selection: TextSelection.collapsed(offset: formattedText.length),
+                        selection: TextSelection.collapsed(
+                            offset: formattedText.length),
                       );
                     },
                   ),
@@ -157,10 +164,9 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
           actions: [
             TextButton(
               onPressed: () {
-                _totalController.clear();
-                _nameController.clear();
+                // No need to clear main controllers here, dialog controllers are local
                 Navigator.pop(dialogContext);
-              } ,
+              },
               child: Text('Hủy',
                   style: GoogleFonts.poppins(
                       color: _textColorSecondary,
@@ -176,13 +182,15 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               onPressed: () {
-                // Corrected parsing: remove both '.' and ','
-                double newTotal =
-                    double.tryParse(_totalController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
-                String newName = _nameController.text.trim();
+                double newTotal = double.tryParse(editTotalController.text
+                    .replaceAll('.', '')
+                    .replaceAll(',', '')) ??
+                    0.0;
+                String newName = editNameController.text.trim();
 
                 if (newName.isEmpty) {
-                  _showStyledSnackBar('Tên giao dịch không được để trống!', isError: true);
+                  _showStyledSnackBar('Tên giao dịch không được để trống!',
+                      isError: true); // Consider showing snackbar on dialogContext if possible
                   return;
                 }
                 if (newTotal <= 0) {
@@ -192,20 +200,20 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
 
                 List<Map<String, dynamic>> updatedTransactions =
                 List.from(appState.otherRevenueTransactions.value);
-                updatedTransactions[index] = {
+
+                updatedTransactions[originalIndexInValueNotifier] = {
+                  ...updatedTransactions[originalIndexInValueNotifier], // Preserve other fields like date
                   'name': newName,
                   'total': newTotal,
-                  'quantity': 1.0,
-                  'date': updatedTransactions[index]['date']?.toString() ??
-                      DateTime.now().toIso8601String(),
+                  // 'quantity' remains 1.0 as per _addTransaction
+                  // 'date' is preserved from original transaction
                 };
-                appState.otherRevenueTransactions.value = updatedTransactions;
 
+                appState.otherRevenueTransactions.value = updatedTransactions;
                 RevenueManager.saveOtherRevenueTransactions(
                     appState, appState.otherRevenueTransactions.value);
 
-                _totalController.clear();
-                _nameController.clear();
+                // No need to clear main controllers here after edit
                 Navigator.pop(dialogContext);
                 _showStyledSnackBar('Đã cập nhật giao dịch: $newName');
                 widget.onUpdate();
@@ -218,21 +226,19 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
     );
   }
 
-  void _deleteTransaction(AppState appState, int index) {
-    final transactionName = appState.otherRevenueTransactions.value[index]['name'];
-    List<Map<String, dynamic>> updatedTransactions = [];
-    for (int i = 0; i < appState.otherRevenueTransactions.value.length; i++) {
-      if (i != index) {
-        updatedTransactions.add(appState.otherRevenueTransactions.value[i]);
-      }
-    }
-    appState.otherRevenueTransactions.value = updatedTransactions;
+  void _deleteTransaction(AppState appState, int originalIndexInValueNotifier) {
+    final transactionName = appState.otherRevenueTransactions.value[originalIndexInValueNotifier]['name'];
+    List<Map<String, dynamic>> updatedTransactions =
+    List.from(appState.otherRevenueTransactions.value);
+    updatedTransactions.removeAt(originalIndexInValueNotifier);
 
+    appState.otherRevenueTransactions.value = updatedTransactions;
     RevenueManager.saveOtherRevenueTransactions(
         appState, appState.otherRevenueTransactions.value);
     _showStyledSnackBar('Đã xóa giao dịch: $transactionName');
     widget.onUpdate();
   }
+
 
   Widget _buildTab(String title, int tabIndex, bool isFirst, bool isLast) {
     bool isSelected = _selectedTab == tabIndex;
@@ -253,15 +259,18 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
               topRight: isLast ? const Radius.circular(12) : Radius.zero,
               bottomRight: isLast ? const Radius.circular(12) : Radius.zero,
             ),
-            border: isSelected ? Border.all(color: _primaryColor, width:0.5) : null,
-            boxShadow: isSelected ? [
+            border: isSelected
+                ? Border.all(color: _primaryColor, width: 0.5)
+                : null,
+            boxShadow: isSelected
+                ? [
               BoxShadow(
                   color: Colors.blue.withOpacity(0.1),
                   spreadRadius: 1,
                   blurRadius: 5,
-                  offset: Offset(0,2)
-              )
-            ] : [],
+                  offset: Offset(0, 2))
+            ]
+                : [],
           ),
           child: Text(
             title,
@@ -277,11 +286,9 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
@@ -303,7 +310,8 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(50),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 5.0),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12.0, vertical: 5.0),
               child: Container(
                 decoration: BoxDecoration(
                   color: _primaryColor,
@@ -329,15 +337,15 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                 totalController: _totalController,
                 nameController: _nameController,
                 onAddTransaction: () => _addTransaction(appState),
-                appState: appState,
+                appState: appState, // Not strictly needed if only calling callback
                 inputPriceFormatter: _inputPriceFormatter,
               ),
               TransactionHistorySection(
                 key: const ValueKey('otherRevenueHistory'),
-                transactions: appState.otherRevenueTransactions,
-                onEditTransaction: _editTransaction,
-                onDeleteTransaction: _deleteTransaction,
-                appState: appState,
+                transactionsNotifier: appState.otherRevenueTransactions, // MODIFIED: Pass ValueNotifier
+                onEditTransaction: (appStateFromHistory, originalIndex) => _editTransaction(appStateFromHistory, originalIndex), // MODIFIED: Adapt signature
+                onDeleteTransaction: (appStateFromHistory, originalIndex) => _deleteTransaction(appStateFromHistory, originalIndex), // MODIFIED: Adapt signature
+                appState: appState, // Pass appState if needed by callbacks directly
                 currencyFormat: currencyFormat,
                 primaryColor: _primaryColor,
                 textColorPrimary: _textColorPrimary,
@@ -352,19 +360,22 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
     );
   }
 
-  Widget _buildModernTextField({
+  // Helper method for TextFields in Dialogs to maintain consistency
+  Widget _buildDialogTextField({
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
     int? maxLength,
     IconData? prefixIconData,
+    int maxLines = 1,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       maxLength: maxLength,
+      maxLines: maxLines,
       style: GoogleFonts.poppins(color: _textColorPrimary, fontWeight: FontWeight.w500),
       decoration: InputDecoration(
         labelText: labelText,
@@ -374,11 +385,10 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
         filled: true,
-        fillColor: _cardBackgroundColor,
+        fillColor: _secondaryColor, // Dialog fields might have a slightly different background
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
-      maxLines: keyboardType == TextInputType.multiline ? null : 1,
     );
   }
 }
@@ -387,9 +397,8 @@ class TransactionInputSection extends StatelessWidget {
   final TextEditingController totalController;
   final TextEditingController nameController;
   final VoidCallback onAddTransaction;
-  final AppState appState;
+  final AppState appState; // Keep if needed for other reasons, though not for clearing
   final NumberFormat inputPriceFormatter;
-
 
   const TransactionInputSection({
     required this.totalController,
@@ -403,10 +412,8 @@ class TransactionInputSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
+    // Use static colors from parent state for consistency
     const Color primaryColor = _EditOtherRevenueScreenState._primaryColor;
-    // const Color secondaryColor = _EditOtherRevenueScreenState._secondaryColor; // Not used in this widget
-    // const Color textColorPrimary = _EditOtherRevenueScreenState._textColorPrimary; // Not used in this widget
-    // const Color textColorSecondary = _EditOtherRevenueScreenState._textColorSecondary; // Not used in this widget
     const Color cardBackgroundColor = _EditOtherRevenueScreenState._cardBackgroundColor;
 
 
@@ -433,15 +440,15 @@ class TransactionInputSection extends StatelessWidget {
                         color: primaryColor),
                   ),
                   const SizedBox(height: 24),
-                  _buildInputTextField(
+                  _buildInputTextField( // Uses local helper
                     controller: nameController,
                     labelText: 'Tên giao dịch',
                     prefixIconData: Icons.description_outlined,
                     maxLength: 100,
-                    maxLines: 2,
+                    maxLines: 2, // Allow multiple lines for name if desired
                   ),
                   const SizedBox(height: 16),
-                  _buildInputTextField(
+                  _buildInputTextField( // Uses local helper
                     controller: totalController,
                     labelText: 'Số tiền',
                     prefixIconData: Icons.monetization_on_outlined,
@@ -451,14 +458,17 @@ class TransactionInputSection extends StatelessWidget {
                       TextInputFormatter.withFunction(
                             (oldValue, newValue) {
                           if (newValue.text.isEmpty) return newValue;
-                          // Corrected parsing: remove both '.' and ','
-                          final String plainNumberText = newValue.text.replaceAll('.', '').replaceAll(',', '');
+                          final String plainNumberText = newValue.text
+                              .replaceAll('.', '')
+                              .replaceAll(',', '');
                           final number = int.tryParse(plainNumberText);
                           if (number == null) return oldValue;
-                          final formattedText = inputPriceFormatter.format(number);
+                          final formattedText =
+                          inputPriceFormatter.format(number);
                           return newValue.copyWith(
                             text: formattedText,
-                            selection: TextSelection.collapsed(offset: formattedText.length),
+                            selection: TextSelection.collapsed(
+                                offset: formattedText.length),
                           );
                         },
                       ),
@@ -492,6 +502,7 @@ class TransactionInputSection extends StatelessWidget {
     );
   }
 
+  // Helper for TextFields within TransactionInputSection for consistency
   Widget _buildInputTextField({
     required TextEditingController controller,
     required String labelText,
@@ -502,8 +513,9 @@ class TransactionInputSection extends StatelessWidget {
     IconData? prefixIconData,
   }) {
     const Color primaryColor = _EditOtherRevenueScreenState._primaryColor;
+    const Color textColorPrimary = _EditOtherRevenueScreenState._textColorPrimary;
     const Color textColorSecondary = _EditOtherRevenueScreenState._textColorSecondary;
-    const Color cardBackgroundColor = _EditOtherRevenueScreenState._cardBackgroundColor;
+    const Color secondaryColor = _EditOtherRevenueScreenState._secondaryColor; // For fill color
 
     return TextField(
       controller: controller,
@@ -511,7 +523,7 @@ class TransactionInputSection extends StatelessWidget {
       inputFormatters: inputFormatters,
       maxLength: maxLength,
       maxLines: maxLines,
-      style: GoogleFonts.poppins(color: _EditOtherRevenueScreenState._textColorPrimary, fontWeight: FontWeight.w500),
+      style: GoogleFonts.poppins(color: textColorPrimary, fontWeight: FontWeight.w500),
       decoration: InputDecoration(
         labelText: labelText,
         labelStyle: GoogleFonts.poppins(color: textColorSecondary),
@@ -520,7 +532,7 @@ class TransactionInputSection extends StatelessWidget {
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor, width: 1.5)),
         filled: true,
-        fillColor: cardBackgroundColor,
+        fillColor: secondaryColor.withOpacity(0.5), // Consistent fill color for inputs
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -529,10 +541,10 @@ class TransactionInputSection extends StatelessWidget {
 }
 
 class TransactionHistorySection extends StatelessWidget {
-  final ValueNotifier<List<Map<String, dynamic>>> transactions;
+  final ValueNotifier<List<Map<String, dynamic>>> transactionsNotifier; // MODIFIED: Changed name for clarity
   final Function(AppState, int) onEditTransaction;
   final Function(AppState, int) onDeleteTransaction;
-  final AppState appState;
+  final AppState appState; // Passed to be available for callbacks
   final NumberFormat currencyFormat;
   final Color primaryColor;
   final Color textColorPrimary;
@@ -540,9 +552,8 @@ class TransactionHistorySection extends StatelessWidget {
   final Color cardBackgroundColor;
   final Color accentColor;
 
-
   const TransactionHistorySection({
-    required this.transactions,
+    required this.transactionsNotifier, // MODIFIED
     required this.onEditTransaction,
     required this.onDeleteTransaction,
     required this.appState,
@@ -558,32 +569,45 @@ class TransactionHistorySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<List<Map<String, dynamic>>>(
-      valueListenable: transactions,
-      builder: (context, List<Map<String, dynamic>> history, _) {
-        if (history.isEmpty) {
+      valueListenable: transactionsNotifier, // MODIFIED
+      builder: (context, List<Map<String, dynamic>> currentHistory, _) { // MODIFIED: variable name
+        if (currentHistory.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(30.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.history_toggle_off_outlined, size: 70, color: Colors.grey.shade400),
-                  SizedBox(height: 16),
+                  Icon(Icons.history_toggle_off_outlined,
+                      size: 70, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
                   Text(
                     "Chưa có giao dịch nào",
-                    style: GoogleFonts.poppins(fontSize: 17, color: textColorSecondary),
+                    style:
+                    GoogleFonts.poppins(fontSize: 17, color: textColorSecondary),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     "Thêm giao dịch mới để xem lịch sử tại đây.",
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade500),
+                    style: GoogleFonts.poppins(
+                        fontSize: 14, color: Colors.grey.shade500),
                   ),
                 ],
               ),
             ),
           );
         }
+
+        // Sort history by date descending (newest first)
+        final sortedHistory = List<Map<String, dynamic>>.from(currentHistory);
+        sortedHistory.sort((a, b) {
+          DateTime dateA = DateTime.tryParse(a['date'] ?? '') ?? DateTime(1900);
+          DateTime dateB = DateTime.tryParse(b['date'] ?? '') ?? DateTime(1900);
+          return dateB.compareTo(dateA); // Sorts newest first
+        });
+
+
         return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 80.0),
           child: Column(
@@ -592,7 +616,7 @@ class TransactionHistorySection extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 12.0),
                 child: Text(
-                  "Lịch sử giao dịch",
+                  "Lịch sử giao dịch", // Simplified title
                   style: GoogleFonts.poppins(
                       fontSize: 19,
                       fontWeight: FontWeight.w700,
@@ -602,11 +626,14 @@ class TransactionHistorySection extends StatelessWidget {
               ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: history.length,
+                itemCount: sortedHistory.length,
                 itemBuilder: (context, index) {
-                  final transaction = history[history.length - 1 - index];
+                  final transaction = sortedHistory[index];
+                  // Find the original index in the ValueNotifier's list for editing/deleting
+                  final originalIndex = currentHistory.indexOf(transaction);
+
                   return Dismissible(
-                    key: Key(transaction['date'].toString() + transaction['name'] + index.toString()),
+                    key: Key(transaction['date'].toString() + (transaction['name'] ?? '') + index.toString()), // Ensure name is not null
                     background: Container(
                       color: accentColor.withOpacity(0.8),
                       alignment: Alignment.centerRight,
@@ -616,7 +643,9 @@ class TransactionHistorySection extends StatelessWidget {
                     ),
                     direction: DismissDirection.endToStart,
                     onDismissed: (direction) {
-                      onDeleteTransaction(appState, history.length - 1 - index);
+                      if (originalIndex != -1) { // Check if found
+                        onDeleteTransaction(appState, originalIndex);
+                      }
                     },
                     child: Card(
                       elevation: 1.5,
@@ -630,16 +659,18 @@ class TransactionHistorySection extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                         leading: CircleAvatar(
                           backgroundColor: primaryColor.withOpacity(0.15),
+                          radius: 20,
                           child: Text(
-                            transaction['name'] != null && (transaction['name'] as String).isNotEmpty
-                                ? (transaction['name'] as String)[0].toUpperCase()
+                            transaction['name'] != null &&
+                                (transaction['name'] as String).isNotEmpty
+                                ? (transaction['name'] as String)[0]
+                                .toUpperCase()
                                 : "?",
                             style: GoogleFonts.poppins(
                                 color: primaryColor,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 18),
                           ),
-                          radius: 20,
                         ),
                         title: Text(
                           transaction['name']?.toString() ?? 'N/A',
@@ -649,19 +680,39 @@ class TransactionHistorySection extends StatelessWidget {
                               color: textColorPrimary),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(
-                          "Tổng: ${currencyFormat.format(transaction['total'] ?? 0.0)}",
-                          style: GoogleFonts.poppins(
-                              fontSize: 13.0,
-                              color: primaryColor,
-                              fontWeight: FontWeight.w500),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text( // For "Other Revenue", only total is primary
+                              "Tổng: ${currencyFormat.format(transaction['total'] ?? 0.0)}",
+                              style: GoogleFonts.poppins(
+                                  fontSize: 13.0,
+                                  color: primaryColor, // Emphasize total
+                                  fontWeight: FontWeight.w500),
+                            ),
+                            if (transaction['date'] != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2.0),
+                                child: Text(
+                                  DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(transaction['date'])),
+                                  style: GoogleFonts.poppins(fontSize: 11.0, color: textColorSecondary.withOpacity(0.8)),
+                                ),
+                              ),
+                          ],
                         ),
                         trailing: IconButton(
-                          icon: Icon(Icons.edit_note_outlined, color: primaryColor.withOpacity(0.8), size: 22),
-                          onPressed: () => onEditTransaction(appState, history.length - 1 - index),
+                          icon: Icon(Icons.edit_note_outlined,
+                              color: primaryColor.withOpacity(0.8), size: 22),
+                          onPressed: () {
+                            if (originalIndex != -1) { // Check if found
+                              onEditTransaction(appState, originalIndex);
+                            }
+                          },
                           splashRadius: 18,
                           padding: EdgeInsets.zero,
-                          constraints: BoxConstraints(minWidth: 30, minHeight: 30),
+                          constraints:
+                          const BoxConstraints(minWidth: 30, minHeight: 30),
                         ),
                       ),
                     ),

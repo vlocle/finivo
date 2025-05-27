@@ -91,6 +91,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+
+  void _updateProfitAndRelatedListenables() {
+    mainRevenueListenable.value = mainRevenue;
+    secondaryRevenueListenable.value = secondaryRevenue;
+    otherRevenueListenable.value = otherRevenue;
+    totalRevenueListenable.value = getTotalRevenue();
+
+    fixedExpenseListenable.value = _fixedExpense;
+
+    profitListenable.value = getProfit();
+    profitMarginListenable.value = getProfitMargin();
+  }
+
+
   void _loadSettings() {
     try {
       var settingsBox = Hive.box('settingsBox');
@@ -433,10 +447,15 @@ class AppState extends ChangeNotifier {
         await RevenueManager.saveOtherRevenueTransactions(this, otherRevenueTransactions.value);
         await _updateSyncTimestamp(otherTransKey);
       }
+      _updateProfitAndRelatedListenables();
     } catch (e) {
-      _resetRevenueValues();
+      _resetRevenueValues(); // This already sets revenues to 0
+      _updateProfitAndRelatedListenables(); // Update profit accordingly
+      print('Lỗi khi tải giá trị doanh thu: $e'); // Added print
     } finally {
       _isLoadingRevenue = false;
+      // Consider if dataReadyListenable needs to be managed here or in _loadInitialData
+      print('loadRevenueValues took ${DateTime.now().difference(startTime).inMilliseconds}ms'); // Added print
     }
   }
 
@@ -481,21 +500,27 @@ class AppState extends ChangeNotifier {
           .doc(getKey('variableTransactionHistory_$dateKey'))
           .get();
 
-      final results = await Future.wait([fixedDocFuture, variableDocFuture]).timeout(Duration(seconds: 15));
-
+      final results = await Future.wait([fixedDocFuture, variableDocFuture])
+          .timeout(Duration(seconds: 15));
       DocumentSnapshot fixedDoc = results[0];
       DocumentSnapshot variableDoc = results[1];
-      _fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      fixedExpenseListenable.value = _fixedExpense;
-      variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0;
-      fixedExpenseList.value = await ExpenseManager.loadFixedExpenses(this);
-      variableExpenseList.value = await ExpenseManager.loadVariableExpenses(this);
+
+      _fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0; // [cite: 310]
+      variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0; // [cite: 310]
+
+      fixedExpenseList.value = await ExpenseManager.loadFixedExpenses(this); // [cite: 311]
+      variableExpenseList.value = await ExpenseManager.loadVariableExpenses(this); // [cite: 311]
+
+      _updateProfitAndRelatedListenables(); // Call the new method
+
     } catch (e) {
       _fixedExpense = 0.0;
       fixedExpenseListenable.value = 0.0;
       variableExpense = 0.0;
       fixedExpenseList.value = [];
       variableExpenseList.value = [];
+      _updateProfitAndRelatedListenables();
+      print('Lỗi khi tải giá trị chi phí: $e');
     } finally {
       print('loadExpenseValues took ${DateTime.now().difference(startTime).inMilliseconds}ms');
     }

@@ -574,48 +574,60 @@ class _RevenueScreenState extends State<RevenueScreen>
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _cardBackgroundColor,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.15),
-            spreadRadius: 2,
-            blurRadius: 10,
-            offset: Offset(0, 5),
+        color: _cardBackgroundColor, // [cite: 113]
+        borderRadius: BorderRadius.circular(20), // [cite: 113]
+        boxShadow: [ // [cite: 113]
+          BoxShadow( // [cite: 114]
+            color: Colors.grey.withOpacity(0.15), // [cite: 114]
+            spreadRadius: 2, // [cite: 114]
+            blurRadius: 10, // [cite: 114]
+            offset: Offset(0, 5), // [cite: 114]
           ),
         ],
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center, // [cite: 114]
+        crossAxisAlignment: CrossAxisAlignment.center, // [cite: 115]
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center, // [cite: 115]
             children: [
-              Icon(icon, color: isProfit ? _accentColor : _primaryColor, size: 22),
-              SizedBox(width: 8),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: _textColorSecondary,
+              Icon(icon, color: isProfit ? _accentColor : _primaryColor, size: 22), // [cite: 115]
+              SizedBox(width: 8), // [cite: 115]
+              Text( // [cite: 116]
+                title, // [cite: 116]
+                style: TextStyle( // [cite: 116]
+                  fontSize: 16, // [cite: 116]
+                  fontWeight: FontWeight.w600, // [cite: 116]
+                  color: _textColorSecondary, // [cite: 116]
                 ),
               ),
             ],
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 8), // [cite: 117]
           ValueListenableBuilder<double>(
-            valueListenable: valueListenable,
-            builder: (context, value, _) => Text(
-              currencyFormat.format(value),
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: isProfit ? _accentColor : _textColorPrimary,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            valueListenable: valueListenable, // [cite: 117]
+            builder: (context, value, _) {
+              Color valueColor;
+              if (isProfit) {
+                if (value < 0) {
+                  valueColor = Colors.red; // Màu đỏ cho số tiền âm
+                } else {
+                  valueColor = _accentColor; // Màu xanh lá cho số tiền dương [cite: 7, 119]
+                }
+              } else {
+                valueColor = _textColorPrimary; // [cite: 8, 119]
+              }
+              return Text(
+                currencyFormat.format(value), // [cite: 118]
+                style: TextStyle( // [cite: 118]
+                  fontSize: 26, // [cite: 118]
+                  fontWeight: FontWeight.bold, // [cite: 118]
+                  color: valueColor, //Sử dụng màu đã được xác định
+                ),
+                textAlign: TextAlign.center, // [cite: 119]
+              );
+            },
           ),
         ],
       ),

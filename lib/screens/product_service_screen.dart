@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../state/app_state.dart';
+import '../state/app_state.dart'; // Giả định đường dẫn này đúng
 import 'package:google_fonts/google_fonts.dart';
 
 class ProductServiceScreen extends StatefulWidget {
@@ -20,23 +20,20 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   final TextEditingController priceController = TextEditingController();
   final NumberFormat currencyFormat =
   NumberFormat.currency(locale: 'vi_VN', symbol: 'VNĐ');
-  // Default to "Sản phẩm/Dịch vụ chính" as per original logic
   String selectedCategory = "Sản phẩm/Dịch vụ chính";
-  late AnimationController _animationController; // Renamed
+  late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
-  int _selectedTab = 0; // 0 for Add Product, 1 for Product List
+  int _selectedTab = 0;
   late Future<List<Map<String, dynamic>>> _productsFuture;
 
-  // Consistent color palette
   static const Color _primaryColor = Color(0xFF2F81D7);
   static const Color _secondaryColor = Color(0xFFF1F5F9);
   static const Color _textColorPrimary = Color(0xFF1D2D3A);
   static const Color _textColorSecondary = Color(0xFF6E7A8A);
   static const Color _cardBackgroundColor = Colors.white;
-  static const Color _accentColor = Colors.redAccent; // For errors or delete
+  static const Color _accentColor = Colors.redAccent;
 
   final NumberFormat _inputPriceFormatter = NumberFormat("#,##0", "vi_VN");
-
 
   @override
   void initState() {
@@ -46,7 +43,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
     _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
         CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack));
     _animationController.forward();
-
     final appState = Provider.of<AppState>(context, listen: false);
     _productsFuture = _loadProducts(appState);
     appState.productsUpdated.addListener(_onProductsUpdated);
@@ -85,8 +81,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   }
 
   Future<List<Map<String, dynamic>>> _loadProducts(AppState appState) async {
-    // This logic is from the original file and seems complex with Hive & Firestore.
-    // It's preserved as requested.
     try {
       if (appState.userId == null) {
         _showStyledSnackBar("Vui lòng đăng nhập để tải sản phẩm.", isError: true);
@@ -96,15 +90,14 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
       String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính"
           ? 'mainProductList'
           : 'extraProductList';
-      String firestoreDocKey = appState.getKey(baseKey); // Key for Firestore document
-      String hiveStorageKey = appState.getKey('${selectedCategory}_productList'); // Key for Hive
+      String firestoreDocKey = appState.getKey(baseKey);
+      String hiveStorageKey = appState.getKey('${selectedCategory}_productList');
 
       if (!Hive.isBoxOpen('productsBox')) {
         await Hive.openBox('productsBox');
       }
       var productsBox = Hive.box('productsBox');
 
-      // Try loading from Hive first
       if (productsBox.containsKey(hiveStorageKey)) {
         var rawData = productsBox.get(hiveStorageKey);
         if (rawData != null) {
@@ -116,14 +109,12 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
         }
       }
 
-      // If not in Hive or Hive data is null, load from Firestore
       DocumentSnapshot doc = await firestore
           .collection('users')
           .doc(appState.userId)
           .collection('products')
-          .doc(firestoreDocKey) // Use the correct key for Firestore document
+          .doc(firestoreDocKey)
           .get();
-
       List<Map<String, dynamic>> productList = [];
       if (doc.exists && doc.data() != null) {
         var data = doc.data() as Map<String, dynamic>;
@@ -131,8 +122,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
           productList = List<Map<String, dynamic>>.from(data['products']);
         }
       }
-
-      await productsBox.put(hiveStorageKey, productList); // Cache to Hive
+      await productsBox.put(hiveStorageKey, productList);
       return productList;
     } catch (e) {
       _showStyledSnackBar('Lỗi khi tải sản phẩm: $e', isError: true);
@@ -142,7 +132,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
 
   Future<void> _saveProducts(
       AppState appState, List<Map<String, dynamic>> productList) async {
-    // This logic is from the original file.
     try {
       if (appState.userId == null) {
         throw Exception('User ID không tồn tại');
@@ -154,11 +143,10 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
       String firestoreDocKey = appState.getKey(baseKey);
       String hiveStorageKey = appState.getKey('${selectedCategory}_productList');
 
-      // Standardize before saving
       List<Map<String, dynamic>> standardizedProductList = productList
           .map((product) => {
         'name': product['name'].toString(),
-        'price': (product['price'] as num? ?? 0.0).toDouble(), // Ensure price is double
+        'price': (product['price'] as num? ?? 0.0).toDouble(),
       })
           .toList();
 
@@ -177,7 +165,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
       }
       var productsBox = Hive.box('productsBox');
       await productsBox.put(hiveStorageKey, standardizedProductList);
-      appState.notifyProductsUpdated(); // Notify AppState to trigger listeners
+      appState.notifyProductsUpdated();
       _showStyledSnackBar("Đã lưu danh sách sản phẩm!");
     } catch (e) {
       _showStyledSnackBar('Lỗi khi lưu sản phẩm: $e', isError: true);
@@ -187,18 +175,33 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   void addProduct(
       AppState appState, List<Map<String, dynamic>> productList) {
     String name = nameController.text.trim();
-    String priceText = priceController.text.replaceAll(',', '').trim(); // Remove commas before parsing
+    // String priceText = priceController.text.replaceAll(',', '').trim(); // OLD
+    String priceTextFromController = priceController.text.trim(); // NEW
 
     if (name.isEmpty) {
       _showStyledSnackBar("Vui lòng nhập tên sản phẩm/dịch vụ!", isError: true);
       return;
     }
-    if (priceText.isEmpty) {
+
+    // if (priceText.isEmpty) { // OLD
+    if (priceTextFromController.isEmpty) { // NEW
       _showStyledSnackBar("Vui lòng nhập giá sản phẩm/dịch vụ!", isError: true);
       return;
     }
 
-    double? price = double.tryParse(priceText);
+    // For vi_VN locale used by _inputPriceFormatter (NumberFormat("#,##0", "vi_VN")),
+    // the grouping separator is '.' (e.g., 30.000 for thirty thousand).
+    // double.tryParse expects '.' as a decimal separator and no grouping separators.
+    // So, we need to remove the '.' grouping separators before parsing.
+    String parsablePriceText = priceTextFromController.replaceAll('.', ''); // NEW
+    // Since FilteringTextInputFormatter.digitsOnly is used, there won't be a decimal separator (like ',') typed by the user.
+    // If there was a possibility of a decimal separator (e.g. ',') from the controller,
+    // it would also need to be converted to '.' for double.tryParse.
+    // parsablePriceText = parsablePriceText.replaceAll(',', '.'); // Not strictly needed here
+
+    // double? price = double.tryParse(priceText); // OLD
+    double? price = double.tryParse(parsablePriceText); // NEW
+
     if (price == null || price < 0) {
       _showStyledSnackBar("Giá sản phẩm không hợp lệ!", isError: true);
       return;
@@ -209,6 +212,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
       _showStyledSnackBar("Tên sản phẩm/dịch vụ đã tồn tại!", isError: true);
       return;
     }
+
     List<Map<String,dynamic>> updatedProductList = List.from(productList);
     updatedProductList.add({"name": name, "price": price});
     _saveProducts(appState, updatedProductList);
@@ -248,14 +252,14 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDialogTextField( // Using helper
+              _buildDialogTextField(
                 controller: nameController,
                 labelText: "Tên sản phẩm/dịch vụ",
                 prefixIconData: Icons.label_important_outline,
                 maxLength: 50,
               ),
               const SizedBox(height: 16),
-              _buildDialogTextField( // Using helper
+              _buildDialogTextField(
                 controller: priceController,
                 labelText: "Giá tiền",
                 prefixIconData: Icons.price_check_outlined,
@@ -265,7 +269,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                   TextInputFormatter.withFunction(
                         (oldValue, newValue) {
                       if (newValue.text.isEmpty) return newValue;
-                      final number = int.tryParse(newValue.text.replaceAll(',', ''));
+                      final number = int.tryParse(newValue.text.replaceAll(',', '').replaceAll('.', '')); // Ensure parsing raw digits
                       if (number == null) return oldValue;
                       final formattedText = _inputPriceFormatter.format(number);
                       return newValue.copyWith(
@@ -284,7 +288,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
           actions: [
             TextButton(
               onPressed: () {
-                // Clear controllers before closing if edit is cancelled
                 nameController.clear();
                 priceController.clear();
                 Navigator.pop(dialogContext);
@@ -305,24 +308,31 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
               ),
               onPressed: () {
                 String updatedName = nameController.text.trim();
-                String updatedPriceText = priceController.text.replaceAll(',', '').trim();
+                // String updatedPriceText = priceController.text.replaceAll(',', '').trim(); // OLD
+                String updatedPriceTextFromController = priceController.text.trim(); // NEW
 
                 if (updatedName.isEmpty) {
                   _showStyledSnackBar("Vui lòng nhập tên sản phẩm!", isError: true);
                   return;
                 }
-                if (updatedPriceText.isEmpty) {
+                // if (updatedPriceText.isEmpty) { // OLD
+                if (updatedPriceTextFromController.isEmpty) { // NEW
                   _showStyledSnackBar("Vui lòng nhập giá sản phẩm!", isError: true);
                   return;
                 }
 
-                double? updatedPrice = double.tryParse(updatedPriceText);
+                // Similar logic as in addProduct for parsing the price
+                String parsableUpdatedPriceText = updatedPriceTextFromController.replaceAll('.', ''); // NEW
+                // parsableUpdatedPriceText = parsableUpdatedPriceText.replaceAll(',', '.'); // Not strictly needed
+
+                // double? updatedPrice = double.tryParse(updatedPriceText); // OLD
+                double? updatedPrice = double.tryParse(parsableUpdatedPriceText); // NEW
+
                 if (updatedPrice == null || updatedPrice < 0) {
                   _showStyledSnackBar("Giá sản phẩm không hợp lệ!", isError: true);
                   return;
                 }
 
-                // Check for duplicate name excluding the current item being edited
                 if (productList.asMap().entries.any((e) =>
                 e.key != index &&
                     e.value["name"].toString().toLowerCase() ==
@@ -333,12 +343,10 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                 List<Map<String,dynamic>> updatedProductList = List.from(productList);
                 updatedProductList[index] = {"name": updatedName, "price": updatedPrice};
                 _saveProducts(appState, updatedProductList);
-
-                nameController.clear(); // Clear after successful save
+                nameController.clear();
                 priceController.clear();
                 Navigator.pop(dialogContext);
                 _showStyledSnackBar("Đã cập nhật: $updatedName");
-
               },
               child: Text("Lưu", style: GoogleFonts.poppins()),
             ),
@@ -394,8 +402,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    // final screenWidth = MediaQuery.of(context).size.width; // Not directly used here
-
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
@@ -409,7 +415,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
             onPressed: () => Navigator.pop(context),
           ),
           title: Text(
-            "Sản phẩm & Dịch vụ", // Updated title
+            "Sản phẩm & Dịch vụ",
             style: GoogleFonts.poppins(
                 fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
           ),
@@ -425,7 +431,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                 ),
                 child: Row(
                   children: [
-                    _buildTab("Thêm mới", 0, true, false), // Shorter label
+                    _buildTab("Thêm mới", 0, true, false),
                     _buildTab("Danh sách", 1, false, true),
                   ],
                 ),
@@ -434,7 +440,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
           ),
         ),
         body: FutureBuilder<List<Map<String, dynamic>>>(
-          // Key the FutureBuilder to selectedCategory to refetch when category changes
           key: ValueKey(selectedCategory),
           future: _productsFuture,
           builder: (context, snapshot) {
@@ -448,7 +453,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                       style: GoogleFonts.poppins(color: _textColorSecondary)));
             }
             List<Map<String, dynamic>> productList = snapshot.data ?? [];
-
             return ScaleTransition(
               scale: _scaleAnimation,
               child: IndexedStack(
@@ -464,7 +468,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                       if (mounted) {
                         setState(() {
                           selectedCategory = newCategory;
-                          // Reload products for the new category
                           _productsFuture = _loadProducts(appState);
                         });
                       }
@@ -473,7 +476,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                     inputPriceFormatter: _inputPriceFormatter,
                   ),
                   ProductListSection(
-                    key: ValueKey('productList_${selectedCategory}'), // Ensure list rebuilds on category change
+                    key: ValueKey('productList_${selectedCategory}'),
                     productList: productList,
                     onEditProduct: (index) =>
                         editProduct(appState, productList, index),
@@ -486,7 +489,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                     textColorSecondary: _textColorSecondary,
                     cardBackgroundColor: _cardBackgroundColor,
                     accentColor: _accentColor,
-                    selectedCategoryText: selectedCategory, // Pass category text
+                    selectedCategoryText: selectedCategory,
                   ),
                 ],
               ),
@@ -497,7 +500,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
     );
   }
 
-  Widget _buildDialogTextField({ // Helper for dialog text fields
+  Widget _buildDialogTextField({
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text,
@@ -519,7 +522,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
         filled: true,
-        fillColor: _secondaryColor, // Slightly different fill for dialogs
+        fillColor: _secondaryColor,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -534,9 +537,8 @@ class ProductInputSection extends StatelessWidget {
   final String selectedCategory;
   final VoidCallback onAddProduct;
   final Function(String) onCategoryChanged;
-  final AppState appState; // Not strictly needed if only calling callbacks
+  final AppState appState;
   final NumberFormat inputPriceFormatter;
-
 
   const ProductInputSection({
     required this.nameController,
@@ -574,7 +576,7 @@ class ProductInputSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Thêm Sản phẩm/Dịch vụ", // Title updated
+                    "Thêm Sản phẩm/Dịch vụ",
                     style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
@@ -594,7 +596,7 @@ class ProductInputSection extends StatelessWidget {
                         icon: Icon(Icons.star_border_purple500_outlined, size: 18),
                       ),
                       ButtonSegment<String>(
-                        value: "Sản phẩm/Dịch vụ phụ", // Value matches logic
+                        value: "Sản phẩm/Dịch vụ phụ",
                         label: Text("Doanh thu phụ", overflow: TextOverflow.ellipsis),
                         icon: Icon(Icons.star_half_outlined, size: 18),
                       ),
@@ -636,7 +638,8 @@ class ProductInputSection extends StatelessWidget {
                       TextInputFormatter.withFunction(
                             (oldValue, newValue) {
                           if (newValue.text.isEmpty) return newValue;
-                          final number = int.tryParse(newValue.text.replaceAll(',', ''));
+                          // Ensure parsing raw digits by removing any potential separators before int.tryParse
+                          final number = int.tryParse(newValue.text.replaceAll(',', '').replaceAll('.', ''));
                           if (number == null) return oldValue;
                           final formattedText = inputPriceFormatter.format(number);
                           return newValue.copyWith(
@@ -675,7 +678,7 @@ class ProductInputSection extends StatelessWidget {
     );
   }
 
-  Widget _buildInputTextField({ // Helper for consistency
+  Widget _buildInputTextField({
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text,
@@ -686,10 +689,8 @@ class ProductInputSection extends StatelessWidget {
   }) {
     const Color primaryColor = _ProductServiceScreenState._primaryColor;
     const Color textColorSecondary = _ProductServiceScreenState._textColorSecondary;
-    const Color cardBackgroundColor = _ProductServiceScreenState._cardBackgroundColor;
+    // const Color cardBackgroundColor = _ProductServiceScreenState._cardBackgroundColor; // Not used
     const Color secondaryColor = _ProductServiceScreenState._secondaryColor;
-
-
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
@@ -705,7 +706,7 @@ class ProductInputSection extends StatelessWidget {
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor, width: 1.5)),
         filled: true,
-        fillColor: secondaryColor.withOpacity(0.5), // Use slightly off-white for input fields
+        fillColor: secondaryColor.withOpacity(0.5),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -717,7 +718,7 @@ class ProductListSection extends StatelessWidget {
   final List<Map<String, dynamic>> productList;
   final Function(int) onEditProduct;
   final Function(int) onDeleteProduct;
-  final AppState appState; // Not strictly needed if only calling callbacks
+  final AppState appState;
   final NumberFormat currencyFormat;
   final Color primaryColor;
   final Color textColorPrimary;
@@ -725,7 +726,6 @@ class ProductListSection extends StatelessWidget {
   final Color cardBackgroundColor;
   final Color accentColor;
   final String selectedCategoryText;
-
 
   const ProductListSection({
     required this.productList,
@@ -752,7 +752,7 @@ class ProductListSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
             child: Text(
-              "Danh sách: ${selectedCategoryText.replaceFirst("Sản phẩm/Dịch vụ ", "")}", // Dynamic title
+              "Danh sách: ${selectedCategoryText.replaceFirst("Sản phẩm/Dịch vụ ", "")}",
               style: GoogleFonts.poppins(
                   fontSize: 19,
                   fontWeight: FontWeight.w700,
@@ -789,7 +789,7 @@ class ProductListSection extends StatelessWidget {
             itemBuilder: (context, index) {
               final product = productList[index];
               return Dismissible(
-                key: Key(product['name'].toString() + index.toString()), // More robust key
+                key: Key(product['name'].toString() + index.toString()),
                 background: Container(
                   color: accentColor.withOpacity(0.8),
                   alignment: Alignment.centerRight,
