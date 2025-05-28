@@ -79,7 +79,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
     if (!mounted) return;
     setState(() {
       _isLoading = true;
-      hasError = false; // Explicitly reset hasError at the start of loading
+      hasError = false;
     });
     try {
       final appState = Provider.of<AppState>(context, listen: false);
@@ -92,7 +92,6 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
             _addControllerInternal();
           }
           _isLoading = false;
-          // hasError remains false if successful
           _animationController.forward();
         });
       }
@@ -102,9 +101,31 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
           _isLoading = false;
           hasError = true;
         });
+        // Thử tải từ Hive
+        final appState = Provider.of<AppState>(context, listen: false);
+        final String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
+        final String hiveKey = '${appState.userId}-variableExpenseList-$monthKey';
+        final variableExpenseListBox = Hive.box('variableExpenseListBox');
+        final cachedData = variableExpenseListBox.get(hiveKey);
+        if (cachedData != null && mounted) {
+          setState(() {
+            controllers = List<Map<String, dynamic>>.from(cachedData)
+                .map((item) => TextEditingController(text: item['name']?.toString() ?? ''))
+                .toList();
+            focusNodes = List<Map<String, dynamic>>.from(cachedData).map((_) => FocusNode()).toList();
+            if (controllers.isEmpty) {
+              _addControllerInternal();
+            }
+            _isLoading = false;
+            hasError = false;
+            _animationController.forward();
+          });
+        }
       }
       print("Error in _loadInitialExpenseNames: $e");
-      _showStyledSnackBar("Lỗi tải danh sách chi phí: $e", isError: true);
+      if (hasError) {
+        _showStyledSnackBar("Lỗi tải danh sách chi phí: $e", isError: true);
+      }
     }
   }
 
@@ -169,32 +190,31 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
 
   void saveUpdatedList(AppState appState) async {
     if (!mounted) return;
-    FocusScope.of(context).unfocus();
+    FocusScope.of(context).unfocus(); // [cite: 42]
 
     List<Map<String, dynamic>> updatedList = controllers
         .asMap()
         .entries
         .where((entry) => entry.value.text.trim().isNotEmpty)
-        .map((entry) => {'name': entry.value.text.trim(), 'amount': 0.0})
-        .toList();
+        .map((entry) => {'name': entry.value.text.trim(), 'amount': 0.0}) // 'amount' có thể không cần thiết nếu Hive chỉ lưu 'name' cho danh sách này
+        .toList(); // [cite: 43]
 
     final Set<String> names = {};
     for (final item in updatedList) {
       if (!names.add(item['name'].toString().toLowerCase())) {
-        _showStyledSnackBar("Tên khoản chi '${item['name']}' bị trùng lặp. Vui lòng sửa lại.", isError: true);
-        return;
+        _showStyledSnackBar("Tên khoản chi '${item['name']}' bị trùng lặp. Vui lòng sửa lại.", isError: true); // [cite: 44]
+        return; // [cite: 45]
       }
     }
 
     if (updatedList.isEmpty && controllers.any((c) => c.text.trim().isNotEmpty)) {
-      _showStyledSnackBar("Vui lòng nhập ít nhất một tên chi phí hợp lệ.", isError: true);
-      return;
+      _showStyledSnackBar("Vui lòng nhập ít nhất một tên chi phí hợp lệ.", isError: true); // [cite: 45]
+      return; // [cite: 46]
     }
     if (updatedList.isEmpty && controllers.every((c) => c.text.trim().isEmpty)) {
-      _showStyledSnackBar("Danh sách trống, không có gì để lưu.", isError: false);
-      return;
+      _showStyledSnackBar("Danh sách trống, không có gì để lưu.", isError: false); // [cite: 46]
+      return; // [cite: 47]
     }
-
 
     showDialog(
       context: context,
@@ -203,19 +223,19 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         content: Row(
           children: [
-            CircularProgressIndicator(color: _appBarColor),
+            CircularProgressIndicator(color: _appBarColor), // [cite: 47]
             const SizedBox(width: 20),
-            Text("Đang lưu...", style: GoogleFonts.poppins(color: _textColorSecondary)),
+            Text("Đang lưu...", style: GoogleFonts.poppins(color: _textColorSecondary)), // [cite: 47, 48]
           ],
         ),
       ),
     );
 
     try {
-      if (appState.userId == null) throw Exception('User ID không tồn tại');
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
-      String firestoreDocKey = appState.getKey('variableExpenseList_$monthKey');
+      if (appState.userId == null) throw Exception('User ID không tồn tại'); // [cite: 49]
+      final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 50]
+      String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate); // [cite: 50]
+      String firestoreDocKey = appState.getKey('variableExpenseList_$monthKey'); // [cite: 50]
 
       await firestore
           .collection('users')
@@ -225,17 +245,25 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
           .collection('monthly')
           .doc(firestoreDocKey)
           .set({
-        'products': updatedList,
+        'products': updatedList, // Danh sách này chứa các Map {'name': ..., 'amount': 0.0}
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }); // [cite: 51]
 
-      Navigator.pop(context);
-      _showStyledSnackBar("Đã lưu danh sách chi phí biến đổi cho tháng");
-      Navigator.pop(context, updatedList);
+      // === BẮT ĐẦU THAY ĐỔI: CẬP NHẬT HIVE SAU KHI LƯU FIRESTORE ===
+      final String hiveBoxKey = '${appState.userId}-variableExpenseList-$monthKey'; // [cite: 27] (Key dùng để đọc trong _loadInitialExpenseNames)
+      final variableExpenseListBox = Hive.box('variableExpenseListBox'); // [cite: 27]
+
+      await variableExpenseListBox.put(hiveBoxKey, updatedList);
+      // === KẾT THÚC THAY ĐỔI ===
+
+      Navigator.pop(context); // Đóng dialog "Đang lưu..." [cite: 52]
+      _showStyledSnackBar("Đã lưu danh sách chi phí biến đổi cho tháng"); // [cite: 52]
+      Navigator.pop(context, true);
+
     } catch (e) {
-      Navigator.pop(context);
-      print("Error saving variable expense list: $e");
-      _showStyledSnackBar("Lỗi khi lưu dữ liệu: $e", isError: true);
+      Navigator.pop(context); // Đóng dialog "Đang lưu..." [cite: 53]
+      print("Error saving variable expense list: $e"); // [cite: 53]
+      _showStyledSnackBar("Lỗi khi lưu dữ liệu: $e", isError: true); // [cite: 54]
     }
   }
 

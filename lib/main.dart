@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -6,88 +7,99 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
-import 'state/app_state.dart';
-import 'screens/main_screen.dart';
-import 'screens/login_screen.dart';
+import 'state/app_state.dart'; // [cite: 367]
+import 'screens/main_screen.dart'; // [cite: 367]
+import 'screens/login_screen.dart'; // [cite: 367]
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  WidgetsFlutterBinding.ensureInitialized(); // [cite: 367]
   try {
-    // Thử khởi tạo Firebase với retry
-    int retries = 3;
-    for (int i = 0; i < retries; i++) {
+    int retries = 3; // [cite: 368]
+    for (int i = 0; i < retries; i++) { // [cite: 369]
       try {
-        await Firebase.initializeApp();
-        break;
+        await Firebase.initializeApp(); // [cite: 369, 370]
+        break; // [cite: 370]
       } catch (e) {
-        if (i == retries - 1) throw e;
-        await Future.delayed(Duration(seconds: 1));
+        if (i == retries - 1) throw e; // [cite: 370]
+        await Future.delayed(Duration(seconds: 1)); // [cite: 371]
       }
     }
-
-    FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    FirebaseFirestore.instance.settings = const Settings( // [cite: 371, 372]
+      persistenceEnabled: true, // [cite: 372]
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED, // [cite: 372]
     );
-
-    // Khởi tạo Hive
-    await Hive.initFlutter();
-    await Future.wait([
-      Hive.openBox('productsBox').then((box) => print('Opened productsBox')),
-      Hive.openBox('transactionsBox').then((box) => print('Opened transactionsBox')),
-      Hive.openBox('revenueBox').then((box) => print('Opened revenueBox')),
-      Hive.openBox('settingsBox').then((box) => print('Opened settingsBox')),
+    await Hive.initFlutter(); // [cite: 373]
+    await Future.wait([ // [cite: 373]
+      Hive.openBox('productsBox').then((box) => print('Opened productsBox')), // [cite: 374]
+      Hive.openBox('transactionsBox').then((box) => print('Opened transactionsBox')), // [cite: 374]
+      Hive.openBox('revenueBox').then((box) => print('Opened revenueBox')), // [cite: 374]
+      Hive.openBox('settingsBox').then((box) => print('Opened settingsBox')), // [cite: 374]
+      Hive.openBox('fixedExpensesBox').then((box) => print('fixedExpensesBox')), // [cite: 374]
+      Hive.openBox('variableExpensesBox').then((box) => print('variableExpensesBox')), // [cite: 374]
+      Hive.openBox('variableExpenseListBox').then((box) => print('variableExpenseListBox')), // [cite: 374]
+      Hive.openBox('monthlyFixedExpensesBox').then((box) => print('monthlyFixedExpensesBox')), // [cite: 374]
+      Hive.openBox('monthlyFixedAmountsBox').then((box) => print('monthlyFixedAmountsBox')), // [cite: 374]
     ]);
-
-    // Khởi tạo định dạng ngày
-    await initializeDateFormatting('vi', null);
+    await initializeDateFormatting('vi', null); // [cite: 375]
+    final appState = AppState(); // [cite: 376]
+    final connectivityResult = await Connectivity().checkConnectivity(); // [cite: 377]
+    if (connectivityResult != ConnectivityResult.none) { // [cite: 378]
+      await appState.syncWithFirestore(); // [cite: 378]
+    }
+    initConnectivityListener(appState); // [cite: 379]
+    runApp(
+      ChangeNotifierProvider( // [cite: 380]
+        create: (context) => appState, // [cite: 380]
+        child: MyApp(), // [cite: 380]
+      ),
+    );
   } catch (e) {
-    print('Lỗi khởi tạo ứng dụng: $e');
-    runApp(MaterialApp(
+    print('Lỗi khởi tạo ứng dụng: $e'); // [cite: 381]
+    runApp(MaterialApp( // [cite: 382]
       home: Scaffold(
-        body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')),
+        body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')), // [cite: 382]
       ),
     ));
-    return;
   }
+}
 
-  runApp(
-    ChangeNotifierProvider(
-      create: (context) => AppState(),
-      child: MyApp(),
-    ),
-  );
+void initConnectivityListener(AppState appState) { // [cite: 383]
+  Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) { // [cite: 383]
+    if (results.any((result) => result != ConnectivityResult.none)) { // [cite: 383]
+      appState.syncWithFirestore(); // [cite: 383]
+    }
+  });
 }
 
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
+    final appState = Provider.of<AppState>(context); // [cite: 383, 384]
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'FinGrowth',
-      theme: ThemeData(
-        primarySwatch: Colors.red,
-        useMaterial3: true,
-        brightness: Brightness.light,
+      debugShowCheckedModeBanner: false, // [cite: 384]
+      title: 'FinGrowth', // [cite: 384]
+      theme: ThemeData( // [cite: 384]
+        primarySwatch: Colors.red, // [cite: 384]
+        useMaterial3: true, // [cite: 384]
+        brightness: Brightness.light, // [cite: 384]
       ),
-      darkTheme: ThemeData(
-        primarySwatch: Colors.red,
-        useMaterial3: true,
-        brightness: Brightness.dark,
+      darkTheme: ThemeData( // [cite: 384]
+        primarySwatch: Colors.red, // [cite: 384]
+        useMaterial3: true, // [cite: 384]
+        brightness: Brightness.dark, // [cite: 384]
       ),
-      themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
+      themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light, // [cite: 385]
+      localizationsDelegates: const [ // [cite: 385]
+        GlobalMaterialLocalizations.delegate, // [cite: 385]
+        GlobalWidgetsLocalizations.delegate, // [cite: 385]
+        GlobalCupertinoLocalizations.delegate, // [cite: 385]
       ],
-      supportedLocales: const [
-        Locale('vi', 'VN'),
-        Locale('en', 'US'),
+      supportedLocales: const [ // [cite: 385]
+        Locale('vi', 'VN'), // [cite: 385]
+        Locale('en', 'US'), // [cite: 385]
       ],
-      locale: const Locale('vi', 'VN'),
-      home: AuthWrapper(),
+      locale: const Locale('vi', 'VN'), // [cite: 385]
+      home: AuthWrapper(), // [cite: 386]
     );
   }
 }
@@ -96,25 +108,40 @@ class AuthWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: FirebaseAuth.instance.authStateChanges(), // [cite: 386]
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting) { // [cite: 386]
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(child: CircularProgressIndicator()), // [cite: 386]
           );
         }
-        if (snapshot.hasError) {
+        if (snapshot.hasError) { // [cite: 387]
           return Scaffold(
-            body: Center(child: Text('Lỗi: ${snapshot.error}')),
+            body: Center(child: Text('Lỗi: ${snapshot.error}')), // [cite: 387]
           );
         }
-        if (snapshot.hasData) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Provider.of<AppState>(context, listen: false).setUserId(snapshot.data!.uid);
-          });
-          return MainScreen();
+        if (snapshot.hasData) { // [cite: 387]
+          // Người dùng đã đăng nhập
+          final appState = Provider.of<AppState>(context, listen: false);
+          // Chỉ gọi setUserId nếu userId trong AppState chưa được thiết lập hoặc không khớp
+          if (appState.userId != snapshot.data!.uid) {
+            // Sử dụng Future.microtask để đảm bảo setUserId được gọi sớm,
+            // sau khi luồng sự kiện hiện tại hoàn tất nhưng trước frame tiếp theo.
+            Future.microtask(() {
+              // Kiểm tra lại context.mounted và snapshot.hasData để đảm bảo an toàn
+              // nếu có những thay đổi trạng thái nhanh chóng.
+              if (context.mounted && snapshot.hasData) {
+                appState.setUserId(snapshot.data!.uid); // [cite: 387]
+              }
+            });
+          }
+          return MainScreen(); // [cite: 388]
         }
-        return LoginScreen();
+        // Người dùng chưa đăng nhập
+        // Bạn có thể cân nhắc gọi appState.logout() ở đây nếu cần thiết
+        // để đảm bảo trạng thái người dùng trong AppState được dọn dẹp khi không có ai đăng nhập.
+        // Ví dụ: Provider.of<AppState>(context, listen: false).logout();
+        return LoginScreen(); // [cite: 388]
       },
     );
   }

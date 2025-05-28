@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 // import 'package:marquee/marquee.dart'; // Marquee can be removed if not desired for total display
@@ -77,14 +78,13 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
     try {
       final appState = Provider.of<AppState>(context, listen: false);
       final results = await Future.wait([
-        ExpenseManager.loadVariableExpenses(appState), // Daily expenses
-        ExpenseManager.loadAvailableVariableExpenses(appState), // List of names
+        ExpenseManager.loadVariableExpenses(appState),
+        ExpenseManager.loadAvailableVariableExpenses(appState),
       ]);
       if (mounted) {
         setState(() {
           variableExpenses = results[0];
           availableExpenses = results[1];
-          // Ensure appState.variableExpenseList.value is also updated if it's the source of truth for display elsewhere
           appState.variableExpenseList.value = List.from(results[0]);
           isLoading = false;
           _animationController.forward();
@@ -96,9 +96,62 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
           hasError = true;
           isLoading = false;
         });
+        // Thử tải từ Hive
+        final appState = Provider.of<AppState>(context, listen: false);
+        final String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
+        final String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
+        final String hiveVariableKey = '${appState.userId}-variableExpenses-$dateKey';
+        final String hiveListKey = '${appState.userId}-variableExpenseList-$monthKey';
+        final variableExpensesBox = Hive.box('variableExpensesBox');
+        final variableExpenseListBox = Hive.box('variableExpenseListBox');
+        final rawCachedVariable = variableExpensesBox.get(hiveVariableKey) ?? [];
+        final rawCachedList = variableExpenseListBox.get(hiveListKey) ?? [];
+
+        List<Map<String, dynamic>> castedVariableExpenses = [];
+        List<Map<String, dynamic>> castedAvailableExpenses = [];
+
+        if (rawCachedVariable != null && rawCachedVariable is List) {
+          for (var item in rawCachedVariable) {
+            if (item is Map) {
+              castedVariableExpenses.add(
+                  Map<String, dynamic>.fromEntries(
+                      item.entries.map((entry) => MapEntry(entry.key.toString(), entry.value))
+                  )
+              );
+            }
+          }
+        }
+
+        if (rawCachedList != null && rawCachedList is List) {
+          for (var item in rawCachedList) {
+            if (item is Map) {
+              castedAvailableExpenses.add(
+                  Map<String, dynamic>.fromEntries(
+                      item.entries.map((entry) => MapEntry(entry.key.toString(), entry.value))
+                  )
+              );
+            }
+          }
+        }
+
+
+        if (castedVariableExpenses.isNotEmpty || castedAvailableExpenses.isNotEmpty) { // [cite: 28] // Điều kiện có thể giữ nguyên hoặc chỉ cần một trong hai có dữ liệu
+          if (mounted) {
+            setState(() {
+              variableExpenses = castedVariableExpenses; // [cite: 28]
+              availableExpenses = castedAvailableExpenses; // [cite: 28]
+              appState.variableExpenseList.value = List.from(castedVariableExpenses); // [cite: 28] // Cập nhật AppState
+              isLoading = false; // [cite: 28]
+              hasError = false; // Quan trọng: đặt lại hasError thành false
+              _animationController.forward(); // [cite: 28]
+            });
+          }
+        }
       }
       print("Error loading expenses in EditVariableExpenseScreen: $e");
-      _showStyledSnackBar("Lỗi tải dữ liệu chi phí.", isError: true);
+      if (mounted && hasError) {
+        _showStyledSnackBar("Lỗi tải dữ liệu chi phí.", isError: true);
+      }
     }
   }
 
@@ -298,7 +351,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context, listen: false); // listen:false if only using for actions
+    final appState = context.watch<AppState>(); // listen:false if only using for actions
     final screenWidth = MediaQuery.of(context).size.width;
 
     return GestureDetector(

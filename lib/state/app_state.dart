@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
@@ -182,6 +183,11 @@ class AppState extends ChangeNotifier {
     Hive.box('productsBox').clear();
     Hive.box('transactionsBox').clear();
     Hive.box('revenueBox').clear();
+    Hive.box('fixedExpensesBox').clear();
+    Hive.box('variableExpensesBox').clear();
+    Hive.box('variableExpenseListBox').clear();
+    Hive.box('monthlyFixedExpensesBox').clear();
+    Hive.box('monthlyFixedAmountsBox').clear();
     notifyListeners();
   }
 
@@ -474,55 +480,131 @@ class AppState extends ChangeNotifier {
     otherRevenueTransactions.value = [];
   }
 
-  Future<void> loadExpenseValues() async {
-    if (!_isFirebaseInitialized) {
-      return;
+  Future<void> syncWithFirestore() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult == ConnectivityResult.none) return;
+
+    final fixedExpensesBox = Hive.box('fixedExpensesBox');
+    final variableExpensesBox = Hive.box('variableExpensesBox');
+    final variableExpenseListBox = Hive.box('variableExpenseListBox');
+    final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox');
+    final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox');
+
+    // Đồng bộ fixedExpenses
+    for (var key in fixedExpensesBox.keys) {
+      if (key.startsWith('$userId-fixedExpenses-')) {
+        final expenses = fixedExpensesBox.get(key);
+        final dateKey = key.split('-').last;
+        await ExpenseManager.saveFixedExpenses(this, List<Map<String, dynamic>>.from(expenses));
+      }
     }
-    final startTime = DateTime.now();
+
+    // Đồng bộ variableExpenses
+    for (var key in variableExpensesBox.keys) {
+      if (key.startsWith('$userId-variableExpenses-')) {
+        final expenses = variableExpensesBox.get(key);
+        final dateKey = key.split('-').last;
+        await ExpenseManager.saveVariableExpenses(this, List<Map<String, dynamic>>.from(expenses));
+      }
+    }
+
+    // Đồng bộ variableExpenseList
+    for (var key in variableExpenseListBox.keys) {
+      if (key.startsWith('$userId-variableExpenseList-')) {
+        final expenses = variableExpenseListBox.get(key);
+        final monthKey = key.split('-').last;
+        final firestoreDocKey = getKey('variableExpenseList_$monthKey');
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('expenses')
+            .doc('variableList')
+            .collection('monthly')
+            .doc(firestoreDocKey)
+            .set({
+          'products': expenses,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    // Đồng bộ monthlyFixedExpenses
+    for (var key in monthlyFixedExpensesBox.keys) {
+      if (key.startsWith('$userId-fixedExpenseList-')) {
+        final expenses = monthlyFixedExpensesBox.get(key);
+        final monthKey = key.split('-').last;
+        await ExpenseManager.saveFixedExpenseList(this, List<Map<String, dynamic>>.from(expenses), DateFormat('yyyy-MM').parse(monthKey));
+      }
+    }
+
+    // Đồng bộ monthlyFixedAmounts
+    for (var key in monthlyFixedAmountsBox.keys) {
+      if (key.startsWith('$userId-monthlyFixedAmounts-')) {
+        final amounts = monthlyFixedAmountsBox.get(key);
+        final monthKey = key.split('-').last;
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('expenses')
+            .doc('fixed')
+            .collection('monthly')
+            .doc(monthKey)
+            .set({
+          'amounts': amounts,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+  }
+
+  Future<void> loadExpenseValues() async {
+    final String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
+    final String hiveFixedKey = '$userId-fixedExpenses-$dateKey';
+    final String hiveVariableKey = '$userId-variableExpenses-$dateKey';
+    final fixedExpensesBox = Hive.box('fixedExpensesBox');
+    final variableExpensesBox = Hive.box('variableExpensesBox');
+
     try {
-      if (userId == null) throw Exception('User ID không tồn tại');
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final fixedDocFuture = firestore
+      final fixedExpenses = await ExpenseManager.loadFixedExpenses(this, selectedDate);
+      final variableExpenses = await ExpenseManager.loadVariableExpenses(this);
+
+      fixedExpenseList.value = fixedExpenses;
+      variableExpenseList.value = variableExpenses;
+
+      final fixedTotal = fixedExpenses.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+      final variableTotal = variableExpenses.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+      // Kiểm tra và cập nhật total trên Firestore nếu cần
+      final firestore = FirebaseFirestore.instance;
+      final fixedDocRef = firestore
           .collection('users')
           .doc(userId)
           .collection('expenses')
           .doc('fixed')
           .collection('daily')
-          .doc(getKey('fixedExpenseList_$dateKey'))
-          .get();
-      final variableDocFuture = firestore
-          .collection('users')
-          .doc(userId)
-          .collection('expenses')
-          .doc('variable')
-          .collection('daily')
-          .doc(getKey('variableTransactionHistory_$dateKey'))
-          .get();
+          .doc(getKey('fixedExpenseList_$dateKey'));
+      final fixedDoc = await fixedDocRef.get();
+      if (fixedDoc.exists && (fixedDoc['total']?.toDouble() ?? 0.0) != fixedTotal) {
+        await fixedDocRef.set({
+          'fixedExpenses': fixedExpenses,
+          'total': fixedTotal,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
 
-      final results = await Future.wait([fixedDocFuture, variableDocFuture])
-          .timeout(Duration(seconds: 15));
-      DocumentSnapshot fixedDoc = results[0];
-      DocumentSnapshot variableDoc = results[1];
-
-      _fixedExpense = fixedDoc.exists ? fixedDoc['total']?.toDouble() ?? 0.0 : 0.0; // [cite: 310]
-      variableExpense = variableDoc.exists ? variableDoc['total']?.toDouble() ?? 0.0 : 0.0; // [cite: 310]
-
-      fixedExpenseList.value = await ExpenseManager.loadFixedExpenses(this); // [cite: 311]
-      variableExpenseList.value = await ExpenseManager.loadVariableExpenses(this); // [cite: 311]
-
-      _updateProfitAndRelatedListenables(); // Call the new method
-
+      setExpenses(fixedTotal, variableTotal);
     } catch (e) {
-      _fixedExpense = 0.0;
-      fixedExpenseListenable.value = 0.0;
-      variableExpense = 0.0;
-      fixedExpenseList.value = [];
-      variableExpenseList.value = [];
-      _updateProfitAndRelatedListenables();
-      print('Lỗi khi tải giá trị chi phí: $e');
-    } finally {
-      print('loadExpenseValues took ${DateTime.now().difference(startTime).inMilliseconds}ms');
+      print("Error loading expense values: $e");
+      final cachedFixed = fixedExpensesBox.get(hiveFixedKey) ?? [];
+      final cachedVariable = variableExpensesBox.get(hiveVariableKey) ?? [];
+
+      fixedExpenseList.value = List<Map<String, dynamic>>.from(cachedFixed);
+      variableExpenseList.value = List<Map<String, dynamic>>.from(cachedVariable);
+
+      final fixedTotal = cachedFixed.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+      final variableTotal = cachedVariable.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+      setExpenses(fixedTotal, variableTotal);
     }
   }
 
@@ -1089,10 +1171,36 @@ class AppState extends ChangeNotifier {
       List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
 
       for (int i = 0; i < days; i++) {
-        totalRevenue += dailyDocs[i].exists ? dailyDocs[i]['totalRevenue']?.toDouble() ?? 0.0 : 0.0;
-        double fixedExpense = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
-        double variableExpense = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
+        // Xử lý dailyDocs[i]
+        double revenue = 0.0;
+        if (dailyDocs[i].exists && dailyDocs[i].data() != null) {
+          final data = dailyDocs[i].data() as Map<String, dynamic>?;
+          revenue = data != null && data.containsKey('totalRevenue')
+              ? (data['totalRevenue'] as num?)?.toDouble() ?? 0.0
+              : 0.0;
+        }
+        totalRevenue += revenue;
+
+        // Xử lý fixedDocs[i]
+        double fixedExpense = 0.0;
+        if (fixedDocs[i].exists && fixedDocs[i].data() != null) {
+          final data = fixedDocs[i].data() as Map<String, dynamic>?;
+          fixedExpense = data != null && data.containsKey('total')
+              ? (data['total'] as num?)?.toDouble() ?? 0.0
+              : 0.0;
+        }
+
+        // Xử lý variableDocs[i]
+        double variableExpense = 0.0;
+        if (variableDocs[i].exists && variableDocs[i].data() != null) {
+          final data = variableDocs[i].data() as Map<String, dynamic>?;
+          variableExpense = data != null && data.containsKey('total')
+              ? (data['total'] as num?)?.toDouble() ?? 0.0
+              : 0.0;
+        }
+
         totalExpense += fixedExpense + variableExpense;
+
       }
 
       double profit = totalRevenue - totalExpense;

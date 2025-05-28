@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -260,9 +261,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 
   Future<void> _showMonthlyFixedExpenseDialog(AppState appState) async {
-    if (_isDialogOpen) {
-      return;
-    }
+    if (_isDialogOpen) return;
     _isDialogOpen = true;
     DateTime _currentDialogMonth = appState.selectedDate;
     DateTimeRange? _currentDialogDateRange = null;
@@ -280,6 +279,53 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             ]).then((results) => {
               'fixedExpenses': results[0],
               'monthlyAmounts': results[1],
+            }).catchError((e) async {
+              print('Error loading monthly fixed expenses: $e, StackTrace: ${StackTrace.current}');
+              // Tải từ Hive nếu Firestore lỗi
+              final String monthKey = DateFormat('yyyy-MM').format(_currentDialogMonth);
+              final String hiveFixedListKey = '${appState.userId}-fixedExpenseList-$monthKey';
+              final String hiveAmountsKey = '${appState.userId}-monthlyFixedAmounts-$monthKey';
+              final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox');
+              final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox');
+
+              // Lấy dữ liệu thô từ Hive
+              var rawFixedExpenses = monthlyFixedExpensesBox.get(hiveFixedListKey);
+              var rawMonthlyAmounts = monthlyFixedAmountsBox.get(hiveAmountsKey);
+
+              // Chuẩn bị danh sách và map đã ép kiểu
+              List<Map<String, dynamic>> castedFixedExpenses = [];
+              Map<String, double> castedMonthlyAmounts = {};
+
+              // Ép kiểu cho fixedExpenses
+              if (rawFixedExpenses != null && rawFixedExpenses is List) {
+                for (var item in rawFixedExpenses) {
+                  if (item is Map) {
+                    castedFixedExpenses.add(
+                        Map<String, dynamic>.fromEntries(
+                            item.entries.map((entry) => MapEntry(entry.key.toString(), entry.value))
+                        )
+                    );
+                  }
+                }
+              }
+
+              // Ép kiểu cho monthlyAmounts
+              if (rawMonthlyAmounts != null && rawMonthlyAmounts is Map) {
+                rawMonthlyAmounts.forEach((key, value) {
+                  double valAsDouble = 0.0;
+                  if (value is num) {
+                    valAsDouble = value.toDouble();
+                  } else if (value is String) {
+                    valAsDouble = double.tryParse(value) ?? 0.0;
+                  }
+                  castedMonthlyAmounts[key.toString()] = valAsDouble;
+                });
+              }
+
+              return {
+                'fixedExpenses': castedFixedExpenses,
+                'monthlyAmounts': castedMonthlyAmounts,
+              };
             }),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -970,7 +1016,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final appState = Provider.of<AppState>(context, listen: false); // listen:false is fine here as we use ValueListenableBuilders
+    final appState = context.watch<AppState>(); // listen:false is fine here as we use ValueListenableBuilders
 
     // This callback ensures animations run after the first frame is built and data is ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
