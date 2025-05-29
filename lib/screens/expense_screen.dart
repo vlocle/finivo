@@ -746,18 +746,81 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                           children: [
                                             if (!isEditingThisAmount)
                                               IconButton(
-                                                icon: Icon(Icons.edit,
-                                                    color: _buttonPrimaryColor,
-                                                    size: 22),
+                                                icon: Icon(Icons.edit, color: _buttonPrimaryColor, size: 22),
                                                 tooltip: "Chỉnh sửa số tiền tháng",
-                                                onPressed: () {
-                                                  setStateDialog(() {
-                                                    monthlyAmountControllers[index]
-                                                        .text =
-                                                        currentSavedAmount.toString();
-                                                    savedMonthlyAmountsFromManager
-                                                        .remove(name);
-                                                  });
+                                                onPressed: () async {
+                                                  TextEditingController editAmountController = TextEditingController(
+                                                    text: savedMonthlyAmountsFromManager[name]?.toString() ?? '',
+                                                  );
+                                                  bool? saved = await showDialog<bool>(
+                                                    context: dialogContext,
+                                                    builder: (ctx) => AlertDialog(
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                                      title: Text("Chỉnh sửa: $name",
+                                                          style: TextStyle(color: _textColorPrimary, fontWeight: FontWeight.bold)),
+                                                      content: _buildModernDialogTextField(
+                                                        controller: editAmountController,
+                                                        labelText: "Số tiền (VNĐ)",
+                                                        keyboardType: TextInputType.number,
+                                                        prefixIcon: Icons.monetization_on_outlined,
+                                                      ),
+                                                      actions: [
+                                                        TextButton(
+                                                          onPressed: () => Navigator.pop(ctx, false),
+                                                          child: Text("Hủy", style: TextStyle(color: _textColorSecondary)),
+                                                        ),
+                                                        ElevatedButton(
+                                                          style: ElevatedButton.styleFrom(
+                                                            backgroundColor: _headerColor,
+                                                            foregroundColor: Colors.white,
+                                                          ),
+                                                          onPressed: () => Navigator.pop(ctx, true),
+                                                          child: Text("Lưu"),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                  if (saved == true) {
+                                                    double amount = double.tryParse(editAmountController.text) ?? 0.0;
+                                                    if (amount > 0) {
+                                                      try {
+                                                        await ExpenseManager.saveMonthlyFixedAmount(
+                                                          appState,
+                                                          name,
+                                                          amount,
+                                                          _currentDialogMonth,
+                                                          dateRange: _currentDialogDateRange,
+                                                        );
+                                                        savedMonthlyAmountsFromManager[name] = amount;
+                                                        monthlyAmountControllers[index].text = amount.toString();
+                                                        await appState.loadExpenseValues();
+                                                        setStateDialog(() {});
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(
+                                                            content: Text("Đã cập nhật số tiền cho '$name'."),
+                                                            backgroundColor: Colors.green,
+                                                            behavior: SnackBarBehavior.floating,
+                                                          ),
+                                                        );
+                                                      } catch (e) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(
+                                                            content: Text("Lỗi khi lưu: $e"),
+                                                            backgroundColor: Colors.redAccent,
+                                                            behavior: SnackBarBehavior.floating,
+                                                          ),
+                                                        );
+                                                      }
+                                                    } else {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text("Số tiền không hợp lệ."),
+                                                          backgroundColor: Colors.orangeAccent,
+                                                          behavior: SnackBarBehavior.floating,
+                                                        ),
+                                                      );
+                                                    }
+                                                  }
                                                 },
                                               ),
                                             IconButton(

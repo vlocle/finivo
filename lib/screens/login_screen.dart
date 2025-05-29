@@ -1,6 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:provider/provider.dart';
+
+import '../state/app_state.dart';
+import 'main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -34,13 +38,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         idToken: googleAuth.idToken, // [cite: 337]
       );
       await FirebaseAuth.instance.signInWithCredential(credential); // [cite: 338]
-
-      // Tạm thời bỏ SnackBar ở đây để kiểm tra, hoặc đảm bảo nó không gây vấn đề
-      // if (mounted) {
-      //   ScaffoldMessenger.of(currentContext).showSnackBar(
-      //     SnackBar(content: Text('Đăng nhập bằng Google thành công')),
-      //   );
-      // }
+      if (mounted) {
+        Provider.of<AppState>(context, listen: false).setUserId(FirebaseAuth.instance.currentUser!.uid);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => MainScreen()),
+        );
+      }
 
     } catch (e) {
       if (mounted) {

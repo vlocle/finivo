@@ -120,27 +120,13 @@ class AuthWrapper extends StatelessWidget {
             body: Center(child: Text('Lỗi: ${snapshot.error}')), // [cite: 387]
           );
         }
-        if (snapshot.hasData) { // [cite: 387]
-          // Người dùng đã đăng nhập
+        if (snapshot.hasData) {
           final appState = Provider.of<AppState>(context, listen: false);
-          // Chỉ gọi setUserId nếu userId trong AppState chưa được thiết lập hoặc không khớp
           if (appState.userId != snapshot.data!.uid) {
-            // Sử dụng Future.microtask để đảm bảo setUserId được gọi sớm,
-            // sau khi luồng sự kiện hiện tại hoàn tất nhưng trước frame tiếp theo.
-            Future.microtask(() {
-              // Kiểm tra lại context.mounted và snapshot.hasData để đảm bảo an toàn
-              // nếu có những thay đổi trạng thái nhanh chóng.
-              if (context.mounted && snapshot.hasData) {
-                appState.setUserId(snapshot.data!.uid); // [cite: 387]
-              }
-            });
+            appState.setUserId(snapshot.data!.uid);
           }
-          return MainScreen(); // [cite: 388]
+          return MainScreen();
         }
-        // Người dùng chưa đăng nhập
-        // Bạn có thể cân nhắc gọi appState.logout() ở đây nếu cần thiết
-        // để đảm bảo trạng thái người dùng trong AppState được dọn dẹp khi không có ai đăng nhập.
-        // Ví dụ: Provider.of<AppState>(context, listen: false).logout();
         return LoginScreen(); // [cite: 388]
       },
     );
