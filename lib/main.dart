@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -63,11 +65,17 @@ void main() async {
   }
 }
 
-void initConnectivityListener(AppState appState) { // [cite: 383]
-  Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) { // [cite: 383]
-    if (results.any((result) => result != ConnectivityResult.none)) { // [cite: 383]
-      appState.syncWithFirestore(); // [cite: 383]
-    }
+void initConnectivityListener(AppState appState) {
+  Timer? _debounceTimer;
+  Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+    if (_debounceTimer?.isActive ?? false) return; // Skip if debounce is active
+    _debounceTimer = Timer(Duration(seconds: 2), () {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        if (!appState.isLoadingListenable.value) { // Use existing isLoadingListenable
+          appState.syncWithFirestore();
+        }
+      }
+    });
   });
 }
 

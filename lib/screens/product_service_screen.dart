@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart'; // Giả định đường dẫn này đúng
 import 'package:google_fonts/google_fonts.dart';
+import 'package:uuid/uuid.dart';
 
 class ProductServiceScreen extends StatefulWidget {
   const ProductServiceScreen({Key? key}) : super(key: key);
@@ -25,6 +26,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   late Animation<double> _scaleAnimation;
   int _selectedTab = 0;
   late Future<List<Map<String, dynamic>>> _productsFuture;
+  late AppState _appState; // Thêm biến để lưu AppState
 
   static const Color _primaryColor = Color(0xFF2F81D7);
   static const Color _secondaryColor = Color(0xFFF1F5F9);
@@ -43,9 +45,17 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
     _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
         CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack));
     _animationController.forward();
-    final appState = Provider.of<AppState>(context, listen: false);
-    _productsFuture = _loadProducts(appState);
-    appState.productsUpdated.addListener(_onProductsUpdated);
+    // Lấy AppState trong initState
+    _appState = Provider.of<AppState>(context, listen: false);
+    _productsFuture = _loadProducts(_appState);
+    _appState.productsUpdated.addListener(_onProductsUpdated);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Cập nhật _appState trong didChangeDependencies để đảm bảo an toàn
+    _appState = Provider.of<AppState>(context, listen: false);
   }
 
   @override
@@ -53,8 +63,8 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
     nameController.dispose();
     priceController.dispose();
     _animationController.dispose();
-    final appState = Provider.of<AppState>(context, listen: false);
-    appState.productsUpdated.removeListener(_onProductsUpdated);
+    // Sử dụng _appState thay vì Provider.of
+    _appState.productsUpdated.removeListener(_onProductsUpdated);
     super.dispose();
   }
 
@@ -145,6 +155,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
 
       List<Map<String, dynamic>> standardizedProductList = productList
           .map((product) => {
+        'id': product['id'].toString(),
         'name': product['name'].toString(),
         'price': (product['price'] as num? ?? 0.0).toDouble(),
       })
@@ -189,15 +200,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
       return;
     }
 
-    // For vi_VN locale used by _inputPriceFormatter (NumberFormat("#,##0", "vi_VN")),
-    // the grouping separator is '.' (e.g., 30.000 for thirty thousand).
-    // double.tryParse expects '.' as a decimal separator and no grouping separators.
-    // So, we need to remove the '.' grouping separators before parsing.
     String parsablePriceText = priceTextFromController.replaceAll('.', ''); // NEW
-    // Since FilteringTextInputFormatter.digitsOnly is used, there won't be a decimal separator (like ',') typed by the user.
-    // If there was a possibility of a decimal separator (e.g. ',') from the controller,
-    // it would also need to be converted to '.' for double.tryParse.
-    // parsablePriceText = parsablePriceText.replaceAll(',', '.'); // Not strictly needed here
 
     // double? price = double.tryParse(priceText); // OLD
     double? price = double.tryParse(parsablePriceText); // NEW
@@ -212,9 +215,10 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
       _showStyledSnackBar("Tên sản phẩm/dịch vụ đã tồn tại!", isError: true);
       return;
     }
+    var uuid = Uuid();
 
     List<Map<String,dynamic>> updatedProductList = List.from(productList);
-    updatedProductList.add({"name": name, "price": price});
+    updatedProductList.add({"id": uuid.v4(),"name": name, "price": price});
     _saveProducts(appState, updatedProductList);
     nameController.clear();
     priceController.clear();
@@ -341,7 +345,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                   return;
                 }
                 List<Map<String,dynamic>> updatedProductList = List.from(productList);
-                updatedProductList[index] = {"name": updatedName, "price": updatedPrice};
+                updatedProductList[index] = {"id": productToEdit['id'], "name": updatedName, "price": updatedPrice};
                 _saveProducts(appState, updatedProductList);
                 nameController.clear();
                 priceController.clear();

@@ -1,15 +1,18 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // Assuming these are your existing imports
 import '../state/app_state.dart';
 import 'edit_main_revenue_screen.dart';
 import 'edit_secondary_revenue_screen.dart';
 import 'edit_other_revenue.dart';
+import 'expense_manager.dart';
 import 'product_service_screen.dart';
 import 'user_setting_screen.dart';
 import '/screens/revenue_manager.dart'; // Make sure this path is correct
@@ -28,6 +31,7 @@ class _RevenueScreenState extends State<RevenueScreen>
   bool _hasAnimated = false;
   String _selectedTransactionCategory = 'Doanh thu chính';
   final PageController _pageController = PageController();
+  AppState? _appState; // Biến để lưu tham chiếu đến AppState
 
   // Define a modern color palette
   static const Color _primaryColor = Color(0xFF0A7AFF); // A vibrant blue
@@ -45,21 +49,27 @@ class _RevenueScreenState extends State<RevenueScreen>
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _animationController, curve: Curves.easeIn));
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final appState = Provider.of<AppState>(context, listen: false);
-      if (appState.dataReadyListenable.value) {
-        // Initial run if data is already there
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _appState = Provider.of<AppState>(context, listen: false);
+      if (!_appState!.dataReadyListenable.value) {
+        await _appState!.initializeData();
+      }
+      if (mounted) {
         _runAnimation();
       }
-      appState.dataReadyListenable.addListener(_onDataReady);
+      _appState!.dataReadyListenable.addListener(_onDataReady);
     });
   }
 
   void _onDataReady() {
-    final appState = Provider.of<AppState>(context, listen: false);
-    if (appState.dataReadyListenable.value && mounted) {
-      print("RevenueScreen: Data is ready. Resetting and running animation.");
-      _resetAnimation(); // Ensure animation plays from start for new data
+    if (!mounted) {
+      print("RevenueScreen: _onDataReady called but widget is unmounted. Skipping.");
+      return;
+    }
+
+    if (_appState != null && _appState!.dataReadyListenable.value) {
+      print("RevenueScreen: Data is ready (via _appState). Resetting and running animation.");
+      _resetAnimation();
       _runAnimation();
     }
   }
@@ -89,12 +99,8 @@ class _RevenueScreenState extends State<RevenueScreen>
   void dispose() {
     _animationController.dispose();
     _pageController.dispose();
-    // Check if AppState is still accessible during dispose
-    // Sometimes context might be an issue here if not careful
-    if (mounted) {
-      final appState = Provider.of<AppState>(context, listen: false);
-      appState.dataReadyListenable.removeListener(_onDataReady);
-    }
+    // Sử dụng _appState thay vì Provider.of
+    _appState?.dataReadyListenable.removeListener(_onDataReady);
     super.dispose();
   }
 
@@ -137,7 +143,6 @@ class _RevenueScreenState extends State<RevenueScreen>
             print("RevenueScreen: Returned from EditOtherRevenueScreen with onUpdate.");
             _resetAnimation();
             _runAnimation();
-            // Consider if a setState is needed for other parts of the UI
           }
         })
             : category == 'Doanh thu chính'
@@ -150,8 +155,6 @@ class _RevenueScreenState extends State<RevenueScreen>
       // This block executes when returning from ANY of the pushed screens.
       if (mounted) {
         print("RevenueScreen: Returned from a pushed screen. Resetting and running animation.");
-        // This is crucial for making the list visible again.
-        // Assumes AppState still holds the correct transaction data for the current date/category.
         _resetAnimation();
         _runAnimation();
       }
@@ -245,21 +248,63 @@ class _RevenueScreenState extends State<RevenueScreen>
     if (index < 0 || index >= transactions.length) return;
 
     final transactionToRemove = transactions[index];
-    // It's better to operate on a copy if `transactions` is directly from ValueNotifier.value
+    final String? salesTransactionId = transactionToRemove['id'] as String?;
+    final String removedItemName = transactionToRemove['name'] as String? ?? "Giao dịch không rõ";
+
+    // Tạo bản sao để thao tác an toàn
     List<Map<String, dynamic>> modifiableTransactions = List.from(transactions);
+
+    // ----- BẮT ĐẦU LOGIC XỬ LÝ XÓA COGS LIÊN QUAN -----
+    List<Map<String, dynamic>> currentDailyVariableExpenses = List.from(appState.variableExpenseList.value);
+    int initialVariableExpenseCount = currentDailyVariableExpenses.length;
+
+    if (salesTransactionId != null) {
+      if (category == 'Doanh thu chính') {
+        currentDailyVariableExpenses.removeWhere((expense) =>
+        expense['sourceSalesTransactionId'] == salesTransactionId &&
+            (expense['source'] == 'AUTO_COGS_OVERRIDE' ||
+                expense['source'] == 'AUTO_COGS_COMPONENT' ||
+                expense['source'] == 'AUTO_COGS_ESTIMATED'));
+      } else if (category == 'Doanh thu phụ') {
+        currentDailyVariableExpenses.removeWhere((expense) =>
+        expense['sourceSalesTransactionId'] == salesTransactionId &&
+            (expense['source'] == 'AUTO_COGS_OVERRIDE_SECONDARY' ||
+                expense['source'] == 'AUTO_COGS_COMPONENT_SECONDARY' ||
+                expense['source'] == 'AUTO_COGS_ESTIMATED_SECONDARY'));
+      }
+      // "Doanh thu khác" thường không có COGS tự động, nên không cần xử lý ở đây
+
+      if (currentDailyVariableExpenses.length < initialVariableExpenseCount) {
+        appState.variableExpenseList.value = List.from(currentDailyVariableExpenses);
+        ExpenseManager.saveVariableExpenses(appState, currentDailyVariableExpenses)
+            .then((_) {
+          double newTotalVariableExpense = currentDailyVariableExpenses.fold(0.0, (sum, item) => sum + (item['amount'] as num? ?? 0.0));
+          appState.setExpenses(appState.fixedExpense, newTotalVariableExpense);
+        })
+            .catchError((e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Lỗi khi cập nhật chi phí sau khi xóa COGS: $e'), backgroundColor: _accentColor),
+          );
+        });
+      }
+    } else {
+      print("Cảnh báo: Giao dịch ($category - $removedItemName) không có ID, không thể tự động xóa COGS liên quan.");
+      // Có thể hiển thị SnackBar thông báo cho người dùng nếu cần
+    }
+    // ----- KẾT THÚC LOGIC XỬ LÝ XÓA COGS -----
+
+    // Xóa giao dịch doanh thu khỏi danh sách cục bộ
     modifiableTransactions.removeAt(index);
 
+    // Lưu lại danh sách giao dịch doanh thu đã cập nhật
     RevenueManager.saveTransactionHistory(appState, category, modifiableTransactions);
+    // Cập nhật ValueNotifier để UI tự động rebuild
     _updateTransactionNotifier(appState, category, modifiableTransactions);
 
-    if (mounted) {
-      // setState might not be needed if ValueListenableBuilder handles the list update
-      // and animation is handled separately.
-    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Đã xóa giao dịch: ${transactionToRemove['name']}'),
-        backgroundColor: Colors.redAccent,
+        content: Text('Đã xóa giao dịch: $removedItemName'),
+        backgroundColor: Colors.redAccent, // Giữ màu gốc hoặc _accentColor
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         margin: EdgeInsets.all(10),
@@ -267,83 +312,212 @@ class _RevenueScreenState extends State<RevenueScreen>
     );
   }
 
-  void _editTransaction(AppState appState,
-      List<Map<String, dynamic>> transactions, int index, String category) {
+  // Bên trong class _RevenueScreenState
+
+  // Thêm hàm này vào trong class _RevenueScreenState
+  void _editTransaction(AppState appState, List<Map<String, dynamic>> transactions, int index, String category) {
+    // Kiểm tra chỉ số hợp lệ
     if (index < 0 || index >= transactions.length) return;
 
-    TextEditingController editQuantityController =
-    TextEditingController(text: transactions[index]['quantity'].toString());
+    final transactionToEdit = transactions[index];
+    final String? salesTransactionId = transactionToEdit['id'] as String?;
+    final String originalProductName = transactionToEdit['name'] as String? ?? "Giao dịch không rõ";
+    final String originalTransactionDate = transactionToEdit['date'] as String? ?? DateTime.now().toIso8601String();
+
+    // Khởi tạo các controller cho dialog
+    final TextEditingController editQuantityController =
+    TextEditingController(text: (transactionToEdit['quantity'] as num? ?? 1).toString());
+    final NumberFormat internalPriceFormatter = NumberFormat("#,##0", "vi_VN");
+
+    // Chỉ cho phép sửa logic giá vốn nếu là Doanh thu chính hoặc phụ
+    bool canHandleCogs = (category == 'Doanh thu chính' || category == 'Doanh thu phụ');
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.edit_note, color: _primaryColor),
-            SizedBox(width: 10),
-            Text("Chỉnh sửa số lượng", style: TextStyle(fontWeight: FontWeight.bold, color: _textColorPrimary)),
-          ],
-        ),
-        content: TextField(
-          keyboardType: TextInputType.number,
-          controller: editQuantityController,
-          decoration: InputDecoration(
-            labelText: "Nhập số lượng mới",
-            labelStyle: TextStyle(color: _textColorSecondary),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: _primaryColor, width: 2)
+      builder: (dialogContext) => GestureDetector(
+        onTap: () => FocusScope.of(dialogContext).unfocus(),
+        behavior: HitTestBehavior.opaque,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: Text("Chỉnh sửa: $originalProductName",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: _textColorPrimary)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  keyboardType: TextInputType.number,
+                  controller: editQuantityController,
+                  decoration: InputDecoration(
+                      labelText: "Nhập số lượng mới",
+                      labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      filled: true,
+                      fillColor: _secondaryColor,
+                      prefixIcon: Icon(Icons.production_quantity_limits_outlined, color: _primaryColor)),
+                  maxLines: 1,
+                  maxLength: 5,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                ),
+                // Chỉ hiển thị trường giá vốn nếu có thể xử lý
+                if (canHandleCogs) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    // Trường này chỉ để hiển thị, không cho sửa
+                    enabled: false,
+                    controller: TextEditingController(
+                        text: internalPriceFormatter.format(transactionToEdit['unitVariableCost'] ?? 0.0)),
+                    decoration: InputDecoration(
+                        labelText: "Chi phí biến đổi/ĐV (Không đổi)",
+                        labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        filled: true,
+                        fillColor: Colors.grey.shade200,
+                        prefixIcon: Icon(Icons.local_atm_outlined, color: _primaryColor)),
+                    maxLines: 1,
+                  ),
+                ]
+              ],
             ),
-            prefixIcon: Icon(Icons.production_quantity_limits, color: _primaryColor.withOpacity(0.7)),
           ),
-          maxLines: 1,
-          maxLength: 5,
-        ),
-        actionsPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("Hủy", style: TextStyle(color: _textColorSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text("Hủy", style: GoogleFonts.poppins(color: _textColorSecondary, fontWeight: FontWeight.w500)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryColor,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12)
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+              onPressed: () {
+                int newQuantity = int.tryParse(editQuantityController.text) ??
+                    (transactionToEdit['quantity'] as int? ?? 1);
+
+                if (newQuantity <= 0) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(
+                      content: Text("Số lượng phải lớn hơn 0", style: GoogleFonts.poppins(color: Colors.white)),
+                      backgroundColor: _accentColor,
+                      behavior: SnackBarBehavior.floating));
+                  return;
+                }
+
+                // Lấy các giá trị gốc để tính toán lại
+                double price = (transactionToEdit['price'] as num? ?? 0.0).toDouble();
+                double unitVariableCost = (transactionToEdit['unitVariableCost'] as double? ?? 0.0);
+
+                // Tạo bản sao của danh sách chi phí và doanh thu để chỉnh sửa
+                List<Map<String, dynamic>> currentDailyVariableExpenses = List.from(appState.variableExpenseList.value);
+                List<Map<String, dynamic>> modifiableTransactions = List.from(transactions);
+                Map<String, dynamic> updatedTransaction = Map<String, dynamic>.from(transactionToEdit);
+
+                // *** LOGIC CỐT LÕI: XÓA VÀ TẠO LẠI GIÁ VỐN ***
+                if (salesTransactionId != null && canHandleCogs) {
+                  // 1. XÓA GIÁ VỐN (COGS) CŨ
+                  // Xác định các loại source cần xóa dựa trên category
+                  List<String> cogsSourcesToRemove = [];
+                  if (category == 'Doanh thu chính') {
+                    cogsSourcesToRemove = ['AUTO_COGS_OVERRIDE', 'AUTO_COGS_COMPONENT', 'AUTO_COGS_ESTIMATED', 'AUTO_COGS_COMPONENT_OVERRIDE'];
+                  } else if (category == 'Doanh thu phụ') {
+                    cogsSourcesToRemove = ['AUTO_COGS_OVERRIDE_SECONDARY', 'AUTO_COGS_COMPONENT_SECONDARY', 'AUTO_COGS_ESTIMATED_SECONDARY', 'AUTO_COGS_COMPONENT_OVERRIDE_SECONDARY'];
+                  }
+                  currentDailyVariableExpenses.removeWhere((expense) =>
+                  expense['sourceSalesTransactionId'] == salesTransactionId &&
+                      cogsSourcesToRemove.contains(expense['source']));
+                }
+
+                // 2. CẬP NHẬT GIAO DỊCH DOANH THU
+                updatedTransaction['quantity'] = newQuantity;
+                updatedTransaction['total'] = price * newQuantity;
+                if (canHandleCogs) {
+                  updatedTransaction['totalVariableCost'] = unitVariableCost * newQuantity;
+                }
+
+                // 3. TẠO LẠI GIÁ VỐN (COGS) MỚI VỚI SỐ LƯỢNG MỚI
+                List<Map<String, dynamic>> newAutoGeneratedCogs = [];
+                if (salesTransactionId != null && canHandleCogs && unitVariableCost > 0) {
+                  // Lấy thông tin về cách giá vốn được tạo ban đầu
+                  final String? originalCogsSourceType = updatedTransaction['cogsSourceType'] as String?;
+                  final List<dynamic>? rawOriginalCogsComponents = updatedTransaction['cogsComponentsUsed'] as List<dynamic>?;
+                  final List<Map<String, dynamic>>? originalCogsComponents = rawOriginalCogsComponents?.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+
+                  // Nếu giá vốn được tạo từ các thành phần chi tiết
+                  if (originalCogsComponents != null && originalCogsComponents.isNotEmpty) {
+                    double totalNewCost = 0;
+                    for (var component in originalCogsComponents) {
+                      double componentCost = (component['cost'] as num? ?? 0.0).toDouble();
+                      double newComponentAmount = componentCost * newQuantity;
+                      totalNewCost += newComponentAmount;
+                      if (newComponentAmount > 0) {
+                        newAutoGeneratedCogs.add({
+                          "name": "${component['name']} (Cho: $originalProductName)",
+                          "amount": newComponentAmount,
+                          "date": originalTransactionDate,
+                          "source": originalCogsSourceType, // Giữ lại source type gốc
+                          "sourceSalesTransactionId": salesTransactionId
+                        });
+                      }
+                    }
+                    // Cập nhật lại tổng chi phí biến đổi cho chính xác
+                    updatedTransaction['totalVariableCost'] = totalNewCost;
+
+                  } else { // Nếu giá vốn được tạo từ một con số tổng ước tính/ghi đè
+                    double totalNewVariableCostForSale = unitVariableCost * newQuantity;
+                    newAutoGeneratedCogs.add({
+                      "name": "Giá vốn hàng bán: $originalProductName",
+                      "amount": totalNewVariableCostForSale,
+                      "date": originalTransactionDate,
+                      "source": originalCogsSourceType, // Giữ lại source type gốc
+                      "sourceSalesTransactionId": salesTransactionId
+                    });
+                  }
+                }
+
+                // 4. LƯU TẤT CẢ THAY ĐỔI
+                // Thêm COGS mới vào danh sách chi phí
+                currentDailyVariableExpenses.addAll(newAutoGeneratedCogs);
+                // Cập nhật giao dịch trong danh sách doanh thu
+                modifiableTransactions[index] = updatedTransaction;
+
+                // Lưu chi phí biến đổi
+                ExpenseManager.saveVariableExpenses(appState, currentDailyVariableExpenses)
+                    .then((_) {
+                  double newTotalVariableExpense = currentDailyVariableExpenses.fold(
+                      0.0, (sum, item) => sum + (item['amount'] as num? ?? 0.0));
+                  appState.setExpenses(appState.fixedExpense, newTotalVariableExpense);
+                }).catchError((e) {
+                  _showStyledSnackBar("Lỗi khi cập nhật chi phí biến đổi: $e", isError: true);
+                });
+
+                // Lưu lịch sử doanh thu
+                RevenueManager.saveTransactionHistory(appState, category, modifiableTransactions);
+                _updateTransactionNotifier(appState, category, modifiableTransactions);
+
+                // Đóng dialog và hiển thị thông báo
+                Navigator.pop(dialogContext);
+                _showStyledSnackBar("Đã cập nhật: $originalProductName");
+              },
+              child: Text("Lưu", style: GoogleFonts.poppins()),
             ),
-            onPressed: () {
-              // Operate on a copy for modification
-              List<Map<String, dynamic>> modifiableTransactions = List.from(transactions);
-              int newQuantity = int.tryParse(editQuantityController.text) ??
-                  modifiableTransactions[index]['quantity'];
-              modifiableTransactions[index]['quantity'] = newQuantity;
-              modifiableTransactions[index]['total'] =
-                  (modifiableTransactions[index]['price'] as num? ?? 0.0) * newQuantity;
+          ],
+        ),
+      ),
+    );
+  }
 
-              RevenueManager.saveTransactionHistory(
-                  appState, category, modifiableTransactions);
-              _updateTransactionNotifier(appState, category, modifiableTransactions);
-
-              // if (mounted) {
-              //   setState(() {}); // May not be needed
-              // }
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Đã cập nhật số lượng cho: ${modifiableTransactions[index]['name']}'),
-                  backgroundColor: _accentColor,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  margin: EdgeInsets.all(10),
-                ),
-              );
-            },
-            child: Text("Lưu"),
-          ),
-        ],
+  void _showStyledSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
+        // Sử dụng màu đỏ cho lỗi và màu chính của màn hình cho các thông báo khác
+        backgroundColor: isError ? Colors.redAccent : _primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(10),
       ),
     );
   }
@@ -763,11 +937,10 @@ class _RevenueScreenState extends State<RevenueScreen>
       sliver: ValueListenableBuilder<List<Map<String, dynamic>>>(
         valueListenable: _getCurrentCategoryTransactions(appState),
         builder: (context, transactions, _) {
-          print("RevenueScreen: TransactionList ValueListenableBuilder rebuilt. Transactions count: ${transactions.length}. Animation value: ${_fadeAnimation.value}");
           if (transactions.isEmpty) {
             return SliverFillRemaining(
               hasScrollBody: false,
-              child: FadeTransition( // Also apply fade to empty state for consistency
+              child: FadeTransition(
                 opacity: _fadeAnimation,
                 child: Center(
                   child: Column(
@@ -795,14 +968,19 @@ class _RevenueScreenState extends State<RevenueScreen>
             delegate: SliverChildBuilderDelegate(
                   (context, index) {
                 final transaction = transactions[index];
-                String? dateTimeString = transaction['date'];
-                String formattedTime = dateTimeString != null
+                final String? dateTimeString = transaction['date'];
+                final String formattedTime = dateTimeString != null
                     ? dateTimeFormat.format(DateTime.parse(dateTimeString))
                     : 'N/A';
 
+                // <<< MỚI: Tính toán các giá trị cần thiết >>>
+                final double totalRevenue = (transaction['total'] as num? ?? 0.0).toDouble();
+                final double totalVariableCost = (transaction['totalVariableCost'] as num? ?? 0.0).toDouble();
+                final double grossProfit = totalRevenue - totalVariableCost;
+                final List<dynamic>? cogsComponents = transaction['cogsComponentsUsed'] as List<dynamic>?;
+
                 IconData transactionIcon;
                 Color iconColor;
-
                 if (_selectedTransactionCategory == 'Doanh thu chính') {
                   transactionIcon = Icons.business_center_outlined;
                   iconColor = _primaryColor;
@@ -821,10 +999,10 @@ class _RevenueScreenState extends State<RevenueScreen>
                     endActionPane: ActionPane(
                       motion: const StretchMotion(),
                       children: [
+                        // Các SlidableAction (Sửa, Xóa) giữ nguyên
                         SlidableAction(
                           onPressed: (context) {
-                            _editTransaction(appState, transactions, index,
-                                _selectedTransactionCategory);
+                            _editTransaction(appState, transactions, index, _selectedTransactionCategory);
                           },
                           backgroundColor: Colors.blueAccent.shade400,
                           foregroundColor: Colors.white,
@@ -837,36 +1015,39 @@ class _RevenueScreenState extends State<RevenueScreen>
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (context) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: Row(
-                                  children: [
-                                    Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
-                                    SizedBox(width: 10),
-                                    Text('Xác nhận xóa', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  ],
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                title: Text(
+                                  'Xác nhận xóa',
+                                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: _textColorPrimary),
                                 ),
-                                content: Text('Bạn có chắc chắn muốn xóa giao dịch này? Hành động này không thể hoàn tác.'),
-                                actionsPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                content: Text(
+                                  'Bạn có chắc chắn muốn xóa giao dịch "${transaction['name']}" không? Hành động này không thể hoàn tác.',
+                                  style: GoogleFonts.poppins(color: _textColorSecondary),
+                                ),
+                                actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(context, false),
-                                    child: Text('Hủy', style: TextStyle(color: _textColorSecondary)),
+                                    child: Text(
+                                        'Hủy',
+                                        style: GoogleFonts.poppins(color: _textColorSecondary, fontWeight: FontWeight.w500)
+                                    ),
                                   ),
                                   ElevatedButton(
                                     style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.redAccent,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                                      backgroundColor: Colors.redAccent,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                     ),
                                     onPressed: () => Navigator.pop(context, true),
-                                    child: Text('Xóa'),
+                                    child: Text('Xóa', style: GoogleFonts.poppins()),
                                   ),
                                 ],
                               ),
                             );
+
                             if (confirm == true) {
-                              _removeTransaction(appState, transactions, index,
-                                  _selectedTransactionCategory);
+                              _removeTransaction(appState, transactions, index, _selectedTransactionCategory);
                             }
                           },
                           backgroundColor: Colors.redAccent.shade400,
@@ -883,15 +1064,13 @@ class _RevenueScreenState extends State<RevenueScreen>
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(15)),
                       color: _cardBackgroundColor,
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 12),
+                      // <<< MỚI: Thay thế ListTile bằng ExpansionTile >>>
+                      child: ExpansionTile(
                         leading: Container(
                           padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(
                               color: iconColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12)
-                          ),
+                              borderRadius: BorderRadius.circular(12)),
                           child: Icon(
                             transactionIcon,
                             color: iconColor,
@@ -901,11 +1080,13 @@ class _RevenueScreenState extends State<RevenueScreen>
                         title: Text(
                           transaction['name']?.toString() ?? 'Không xác định',
                           style: TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 16, color: _textColorPrimary),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: _textColorPrimary),
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(
-                          'Tổng: ${currencyFormat.format(transaction['total'] ?? 0.0)}',
+                          'Tổng DT: ${currencyFormat.format(totalRevenue)}',
                           style: TextStyle(
                               fontSize: 14,
                               color: _textColorSecondary,
@@ -931,6 +1112,57 @@ class _RevenueScreenState extends State<RevenueScreen>
                             ),
                           ],
                         ),
+                        // <<< MỚI: Phần nội dung được mở rộng >>>
+                        children: <Widget>[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0).copyWith(left: 70), // Căn lề với title
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Divider(height: 1, color: Colors.grey.shade200),
+                                SizedBox(height: 8),
+                                _buildProfitDetailRow(
+                                    'Tổng CP Biến đổi:',
+                                    currencyFormat.format(totalVariableCost),
+                                    Colors.red.shade600
+                                ),
+                                SizedBox(height: 4),
+                                _buildProfitDetailRow(
+                                    'Lợi nhuận gộp:',
+                                    currencyFormat.format(grossProfit),
+                                    Colors.green.shade700
+                                ),
+                                // Hiển thị các thành phần chi phí nếu có
+                                if (cogsComponents != null && cogsComponents.isNotEmpty) ...[
+                                  SizedBox(height: 8),
+                                  Divider(height: 1, color: Colors.grey.shade200),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+                                    child: Text(
+                                      'Chi tiết giá vốn:',
+                                      style: TextStyle(fontWeight: FontWeight.w600, color: _textColorSecondary),
+                                    ),
+                                  ),
+                                  ...cogsComponents.map((component) {
+                                    final name = component['name'] ?? 'Thành phần không rõ';
+                                    final cost = (component['cost'] as num? ?? 0.0);
+                                    return Padding(
+                                      padding: const EdgeInsets.only(left: 8.0, top: 2.0, bottom: 2.0),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text('  • $name', style: TextStyle(color: _textColorSecondary)),
+                                          Text(currencyFormat.format(cost), style: TextStyle(color: _textColorSecondary)),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ],
+                                SizedBox(height: 8),
+                              ],
+                            ),
+                          )
+                        ],
                       ),
                     ),
                   ),
@@ -941,6 +1173,30 @@ class _RevenueScreenState extends State<RevenueScreen>
           );
         },
       ),
+    );
+  }
+
+  Widget _buildProfitDetailRow(String label, String value, Color valueColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: _textColorSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            color: valueColor,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
     );
   }
 }

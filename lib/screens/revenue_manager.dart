@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
 import '../state/app_state.dart';
 
 class RevenueManager {
@@ -26,12 +27,20 @@ class RevenueManager {
           .get();
 
       List<Map<String, dynamic>> products = [];
-      if (doc.exists && doc['products'] != null) {
+      bool needsUpdate = false;
+      var uuid = Uuid();
+      if (doc.exists && doc.data() != null && doc['products'] != null) {
         products = (doc['products'] as List<dynamic>).map((item) {
           var map = item as Map<dynamic, dynamic>;
           var standardizedMap = map.map((key, value) {
             return MapEntry(key.toString(), value);
           });
+
+          if (standardizedMap['id'] == null || standardizedMap['id'].toString().isEmpty) {
+            standardizedMap['id'] = uuid.v4();
+            needsUpdate = true;
+          }
+
           // Đảm bảo trường price tồn tại và là số hợp lệ
           if (standardizedMap['price'] == null || (standardizedMap['price'] is num && standardizedMap['price'] <= 0)) {
             standardizedMap['price'] = 0.0; // Hoặc báo lỗi tùy theo yêu cầu
@@ -39,6 +48,15 @@ class RevenueManager {
           }
           return standardizedMap;
         }).cast<Map<String, dynamic>>().toList();
+      }
+      if (needsUpdate) {
+        await firestore
+            .collection('users')
+            .doc(appState.userId)
+            .collection('products')
+            .doc(key)
+            .set({'products': products, 'updatedAt': FieldValue.serverTimestamp()});
+        print('Migrated and updated product list with new IDs.');
       }
 
       // Lưu vào Hive
@@ -117,11 +135,22 @@ class RevenueManager {
           print('Cảnh báo: Giao dịch ${transaction['name']} có giá không hợp lệ: $price');
         }
         return {
+          "id": transaction['id'],
           'name': transaction['name'].toString(),
           'price': price,
           'total': (transaction['total'] as num?)?.toDouble() ?? (transaction['amount'] as num?)?.toDouble() ?? 0.0,
           'quantity': (transaction['quantity'] as num?)?.toDouble() ?? 1.0,
           'date': transaction['date']?.toString() ?? DateTime.now().toIso8601String(),
+          'unitVariableCost': (transaction['unitVariableCost'] as num?)?.toDouble() ?? 0.0,
+          'totalVariableCost': (transaction['totalVariableCost'] as num?)?.toDouble() ?? 0.0,
+          if (transaction.containsKey('cogsSourceType')) 'cogsSourceType': transaction['cogsSourceType'],
+          if (transaction.containsKey('cogsWasFlexible')) 'cogsWasFlexible': transaction['cogsWasFlexible'],
+          if (transaction.containsKey('cogsDefaultCostAtTimeOfSale')) 'cogsDefaultCostAtTimeOfSale': transaction['cogsDefaultCostAtTimeOfSale'],
+          if (transaction.containsKey('cogsComponentsUsed')) 'cogsComponentsUsed': transaction['cogsComponentsUsed'],
+          if (transaction.containsKey('cogsSourceType_Secondary')) 'cogsSourceType_Secondary': transaction['cogsSourceType_Secondary'],
+          if (transaction.containsKey('cogsWasFlexible_Secondary')) 'cogsWasFlexible_Secondary': transaction['cogsWasFlexible_Secondary'],
+          if (transaction.containsKey('cogsDefaultCostAtTimeOfSale_Secondary')) 'cogsDefaultCostAtTimeOfSale_Secondary': transaction['cogsDefaultCostAtTimeOfSale_Secondary'],
+          if (transaction.containsKey('cogsComponentsUsed_Secondary')) 'cogsComponentsUsed_Secondary': transaction['cogsComponentsUsed_Secondary'],
         };
       }).toList();
 

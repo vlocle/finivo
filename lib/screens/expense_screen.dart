@@ -29,6 +29,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   String selectedExpenseCategory = 'Chi phí cố định';
   final PageController _pageController = PageController();
   bool _isDialogOpen = false;
+  late AppState appState;
 
   // Modern color palette for Expense Screen
   static const Color _headerColor = Color(0xFFE53935); // Distinct Red for Expense AppBar
@@ -42,14 +43,21 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(duration: const Duration(milliseconds: 700), vsync: this);
+    _controller = AnimationController(
+        duration: const Duration(milliseconds: 700), vsync: this);
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
+  }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Lưu trữ tham chiếu đến AppState
+    appState = Provider.of<AppState>(context, listen: false);
+    // Di chuyển logic thêm listener vào đây
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final appState = Provider.of<AppState>(context, listen: false);
       if (appState.dataReadyListenable.value) {
-        _runAnimation(); // Initial run if data is already there
+        _runAnimation();
       }
       appState.dataReadyListenable.addListener(_onDataReady);
     });
@@ -87,6 +95,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   @override
   void dispose() {
+    // final appState = Provider.of<AppState>(context, listen: false); // XÓA DÒNG NÀY
+    appState.dataReadyListenable.removeListener(_onDataReady); // Sử dụng biến appState đã có [cite: 26]
     _controller.dispose();
     _pageController.dispose();
     super.dispose();
@@ -119,8 +129,6 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     }
   }
 
-
-
   void _navigateToEditExpense(String category) async {
     final appState = Provider.of<AppState>(context, listen: false);
     if (category == 'Cố định tháng') {
@@ -128,11 +136,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       if (mounted) {
         _resetAnimation();
         _runAnimation();
-      } else {
-        print('ExpenseScreen: Not mounted after _showMonthlyFixedExpenseDialog at ${DateTime.now().toIso8601String()}');
       }
     } else {
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => category == 'Cố định ngày'
@@ -964,6 +970,130 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     });
   }
 
+  // Thêm 2 hàm này vào trong class _ExpenseScreenState
+
+  /// Hàm xử lý và nhóm các chi phí biến đổi.
+  List<dynamic> _groupVariableExpenses(List<Map<String, dynamic>> expenses) {
+    final Map<String, List<Map<String, dynamic>>> groupedExpenses = {};
+    final List<Map<String, dynamic>> manualExpenses = [];
+
+    for (final expense in expenses) {
+      final String? transactionId = expense['sourceSalesTransactionId'] as String?;
+      if (transactionId != null) {
+        if (groupedExpenses[transactionId] == null) {
+          groupedExpenses[transactionId] = [];
+        }
+        groupedExpenses[transactionId]!.add(expense);
+      } else {
+        manualExpenses.add(expense);
+      }
+    }
+
+    final List<dynamic> displayList = [];
+
+    // Xử lý và thêm các nhóm
+    groupedExpenses.forEach((transactionId, items) {
+      if (items.isNotEmpty) {
+        String productName = "Sản phẩm không xác định";
+        final String firstItemName = items.first['name'] as String? ?? '';
+        RegExp regExp = RegExp(r"\((?:Cho|Cho DTP): (.*?)\)");
+        var match = regExp.firstMatch(firstItemName);
+        if (match != null && match.groupCount >= 1) {
+          productName = match.group(1)!;
+        } else {
+          regExp = RegExp(r":\s*(.*)$");
+          match = regExp.firstMatch(firstItemName);
+          if (match != null && match.groupCount >= 1) {
+            productName = match.group(1)!.trim();
+          }
+        }
+
+        displayList.add({
+          'isGroup': true,
+          'groupTitle': "Giá vốn cho: $productName",
+          'items': items,
+          'totalAmount': items.fold(0.0, (sum, item) => sum + (item['amount'] as num? ?? 0.0)),
+          // Lấy ngày của mục đầu tiên làm đại diện để sắp xếp
+          'date': items.first['date'],
+        });
+      }
+    });
+
+    // Thêm các chi phí thủ công
+    displayList.addAll(manualExpenses);
+
+    // Sắp xếp lại danh sách: mới nhất lên đầu
+    displayList.sort((a, b) {
+      DateTime dateA = DateTime.tryParse(a['date'] ?? '') ?? DateTime(1900);
+      DateTime dateB = DateTime.tryParse(b['date'] ?? '') ?? DateTime(1900);
+      return dateB.compareTo(dateA);
+    });
+
+    return displayList;
+  }
+
+  /// Widget để render một card cho cả nhóm chi phí COGS
+  Widget _buildGroupedExpenseCard(Map<String, dynamic> group) {
+    final String title = group['groupTitle'];
+    final double totalAmount = group['totalAmount'];
+    final List<Map<String, dynamic>> items = group['items'];
+
+    return Card(
+      elevation: 1.5,
+      margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: _cardBackgroundColor,
+      child: ExpansionTile(
+        leading: Container(
+          padding: EdgeInsets.all(10),
+          decoration: BoxDecoration(
+              color: Colors.orange.shade700.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10)),
+          child: Icon(
+            Icons.link, // Icon riêng cho nhóm giá vốn
+            color: Colors.orange.shade700,
+            size: 24,
+          ),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+            color: _textColorPrimary,
+          ),
+        ),
+        subtitle: Text(
+          'Tổng: ${currencyFormat.format(totalAmount)}',
+          style: TextStyle(
+              fontSize: 14,
+              color: _textColorSecondary.withOpacity(0.9),
+              fontWeight: FontWeight.w500),
+        ),
+        childrenPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8).copyWith(left: 70),
+        children: items.map((expense) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  expense['name'] ?? 'Không có tên',
+                  style: TextStyle(fontSize: 14, color: _textColorPrimary),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(width: 10),
+              Text(
+                currencyFormat.format((expense['amount'] as num?)?.toDouble() ?? 0.0),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _textColorSecondary),
+              ),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
 
   void removeExpense(AppState appState, List<Map<String, dynamic>> currentExpensesList, int index, String category) {
     List<Map<String, dynamic>> modifiableExpenses = List.from(currentExpensesList);
@@ -1412,28 +1542,28 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       sliver: ValueListenableBuilder<List<Map<String, dynamic>>>(
         valueListenable: selectedExpenseCategory == 'Chi phí cố định'
             ? appState.fixedExpenseList
-            : appState.variableExpenseList,
+            : appState.variableExpenseList, //
         builder: (context, expenses, _) {
-          if (expenses.isEmpty) {
-            return SliverFillRemaining( // Use SliverFillRemaining for empty state in CustomScrollView
-              hasScrollBody: false,
+          if (expenses.isEmpty) { //
+            return SliverFillRemaining( //
+              hasScrollBody: false, //
               child: FadeTransition(
-                opacity: _fadeAnimation, // Apply fade animation
-                child: Center(
+                opacity: _fadeAnimation, //
+                child: Center( //
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.center, //
                     children: [
-                      Icon(Icons.receipt_long_outlined, size: 60, color: Colors.grey.shade400),
-                      SizedBox(height: 16),
+                      Icon(Icons.receipt_long_outlined, size: 60, color: Colors.grey.shade400), //
+                      SizedBox(height: 16), //
                       Text(
                         'Không có chi phí nào',
-                        style: TextStyle(fontSize: 17, color: _textColorSecondary),
+                        style: TextStyle(fontSize: 17, color: _textColorSecondary), //
                       ),
-                      SizedBox(height: 8),
+                      SizedBox(height: 8), //
                       Text(
-                        'Thêm chi phí mới để theo dõi.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                        'Thêm chi phí mới để theo dõi.', //
+                        textAlign: TextAlign.center, //
+                        style: TextStyle(fontSize: 14, color: Colors.grey.shade500), //
                       ),
                     ],
                   ),
@@ -1441,116 +1571,138 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               ),
             );
           }
+
+          // <<<< LOGIC MỚI BẮT ĐẦU TỪ ĐÂY >>>>
+
+          final bool isVariableCategory = selectedExpenseCategory == 'Chi phí biến đổi';
+          final List<dynamic> displayItems = isVariableCategory ? _groupVariableExpenses(expenses) : expenses;
+
           return SliverList(
             delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                final expense = expenses[index];
+                final item = displayItems[index];
+
+                // --- A. Render một nhóm chi phí ---
+                if (isVariableCategory && item is Map && item['isGroup'] == true) {
+                  return FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: _buildGroupedExpenseCard(item as Map<String, dynamic>),
+                  );
+                }
+
+                // --- B. Render một chi phí đơn lẻ (cố định hoặc biến đổi thủ công) ---
+                final expense = item as Map<String, dynamic>;
+                bool isAutoCogs = expense['sourceSalesTransactionId'] != null; //
                 IconData expenseItemIcon;
                 Color iconColorInList;
 
                 if (selectedExpenseCategory == 'Chi phí cố định') {
-                  expenseItemIcon = Icons.shield_outlined;
-                  iconColorInList = _buttonPrimaryColor.withOpacity(0.8);
+                  expenseItemIcon = Icons.shield_outlined; //
+                  iconColorInList = _buttonPrimaryColor.withOpacity(0.8); //
                 } else {
-                  expenseItemIcon = Icons.local_fire_department_outlined;
-                  iconColorInList = Colors.orange.shade700;
+                  expenseItemIcon = Icons.local_fire_department_outlined; //
+                  iconColorInList = Colors.orange.shade700; //
                 }
 
-                // String itemDateDisplay = DateFormat('dd/MM HH:mm', 'vi_VN').format(appState.selectedDate); // REMOVED as per request
+                // Tìm index gốc để các hàm edit/remove không bị lỗi
+                final originalIndex = expenses.indexOf(expense);
 
                 return FadeTransition(
-                  opacity: _fadeAnimation, // Apply fade animation to each item
+                  opacity: _fadeAnimation, //
                   child: Slidable(
-                    key: Key(expense['id']?.toString() ?? expense['name']?.toString() ?? UniqueKey().toString()), // Ensure unique key
-                    endActionPane: ActionPane(
-                      motion: const StretchMotion(),
+                    key: Key(expense['id']?.toString() ?? expense['name']?.toString() ?? UniqueKey().toString()), //
+                    endActionPane: isAutoCogs
+                        ? ActionPane( //
+                      motion: const StretchMotion(), //
                       children: [
-                        SlidableAction(
+                        SlidableAction( //
                           onPressed: (context) {
-                            editExpense(appState, expenses, index, selectedExpenseCategory);
+                            ScaffoldMessenger.of(context).showSnackBar( //
+                              SnackBar(
+                                content: Text('Đây là giá vốn tự động, quản lý qua giao dịch doanh thu.'), //
+                                backgroundColor: _textColorSecondary, //
+                              ),
+                            );
                           },
-                          backgroundColor: _buttonPrimaryColor,
-                          foregroundColor: Colors.white,
-                          icon: Icons.edit_outlined,
-                          label: 'Sửa',
-                          borderRadius: BorderRadius.circular(12),
+                          backgroundColor: Colors.grey.shade300, //
+                          foregroundColor: _textColorPrimary, //
+                          icon: Icons.info_outline, //
+                          label: 'Chi tiết', //
+                          borderRadius: BorderRadius.circular(12), //
                         ),
-                        SlidableAction(
+                      ],
+                    )
+                        : ActionPane( //
+                      motion: const StretchMotion(), //
+                      children: [
+                        SlidableAction( //
+                          onPressed: (context) {
+                            if (originalIndex != -1) {
+                              editExpense(appState, expenses, originalIndex, selectedExpenseCategory);
+                            }
+                          },
+                          backgroundColor: _buttonPrimaryColor, //
+                          foregroundColor: Colors.white, //
+                          icon: Icons.edit_outlined, //
+                          label: 'Sửa', //
+                          borderRadius: BorderRadius.circular(12), //
+                        ),
+                        SlidableAction( //
                           onPressed: (context) async {
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (dialogCtx) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: Text('Xác nhận xóa', style: TextStyle(color: _textColorPrimary, fontWeight:FontWeight.bold)),
-                                content: Text('Bạn có chắc chắn muốn xóa chi phí "${expense['name']}" không?', style: TextStyle(color: _textColorSecondary)),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dialogCtx, false),
-                                    child: Text('Hủy', style: TextStyle(color: _textColorSecondary)),
-                                  ),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                        backgroundColor: _accentColor,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                                    ),
-                                    onPressed: () => Navigator.pop(dialogCtx, true),
-                                    child: Text('Xóa'),
-                                  ),
-                                ],
+                                // ... (Giữ nguyên Dialog xác nhận xóa) ...
                               ),
                             );
-                            if (confirm == true) {
-                              removeExpense(appState, expenses, index, selectedExpenseCategory);
+                            if (confirm == true) { //
+                              if (originalIndex != -1) {
+                                removeExpense(appState, expenses, originalIndex, selectedExpenseCategory);
+                              }
                             }
                           },
-                          backgroundColor: _accentColor.withOpacity(0.9),
-                          foregroundColor: Colors.white,
-                          icon: Icons.delete_outline,
-                          label: 'Xóa',
-                          borderRadius: BorderRadius.circular(12),
+                          backgroundColor: _accentColor.withOpacity(0.9), //
+                          foregroundColor: Colors.white, //
+                          icon: Icons.delete_outline, //
+                          label: 'Xóa', //
+                          borderRadius: BorderRadius.circular(12), //
                         ),
                       ],
                     ),
                     child: Card(
-                      elevation: 1.5,
-                      margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 0), // Adjusted margin
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      color: _cardBackgroundColor,
+                      elevation: 1.5, //
+                      margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 0), //
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), //
+                      color: _cardBackgroundColor, //
                       child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), //
                         leading: Container(
-                          padding: EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                              color: iconColorInList.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10)
-                          ),
-                          child: Icon(
+                          padding: EdgeInsets.all(10), //
+                          decoration: BoxDecoration( //
+                              color: iconColorInList.withOpacity(0.1), //
+                              borderRadius: BorderRadius.circular(10)), //
+                          child: Icon( //
                             expenseItemIcon,
-                            color: iconColorInList,
-                            size: 24,
+                            color: iconColorInList, //
+                            size: 24, //
                           ),
                         ),
                         title: Text(
-                          expense['name']?.toString() ?? 'Không xác định',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: _textColorPrimary),
-                          overflow: TextOverflow.ellipsis,
+                          expense['name']?.toString() ?? 'Không xác định', //
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: _textColorPrimary), //
+                          overflow: TextOverflow.ellipsis, //
                         ),
                         subtitle: Text(
-                          '${currencyFormat.format(expense['amount'] ?? 0.0)}',
-                          style: TextStyle(fontSize: 14, color: _textColorSecondary.withOpacity(0.9), fontWeight: FontWeight.w500),
-                          overflow: TextOverflow.ellipsis,
+                          '${currencyFormat.format(expense['amount'] ?? 0.0)}', //
+                          style: TextStyle(fontSize: 14, color: _textColorSecondary.withOpacity(0.9), fontWeight: FontWeight.w500), //
+                          overflow: TextOverflow.ellipsis, //
                         ),
-                        // trailing: Text( // REMOVED as per request
-                        //   itemDateDisplay,
-                        //   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                        // ),
                       ),
                     ),
                   ),
                 );
               },
-              childCount: expenses.length,
+              childCount: displayItems.length,
             ),
           );
         },
@@ -1559,8 +1711,6 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 }
 
-// This class seems to be a remnant or an alternative item display, not directly used in the main list above.
-// If it's not needed, it can be removed. Otherwise, ensure it's used correctly.
 class ExpenseCategoryItem extends StatelessWidget {
   final String title;
   final double amount;
