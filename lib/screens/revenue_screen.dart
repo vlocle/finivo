@@ -25,7 +25,7 @@ class RevenueScreen extends StatefulWidget {
 class _RevenueScreenState extends State<RevenueScreen>
     with SingleTickerProviderStateMixin {
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'VND');
-  final dateTimeFormat = DateFormat('HH:mm a', 'vi_VN');
+  final dateTimeFormat = DateFormat('HH:mm', 'vi_VN');
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   bool _hasAnimated = false;

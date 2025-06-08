@@ -88,7 +88,14 @@ class RevenueManager {
       // Thử tải từ Hive trước
       List<dynamic>? cachedTransactions = transactionsBox.get(hiveKey);
       if (cachedTransactions != null) {
-        return cachedTransactions.cast<Map<String, dynamic>>();
+        try {
+          return cachedTransactions.map((item) {
+            final map = item as Map;
+            return map.map((key, value) => MapEntry(key.toString(), value));
+          }).toList().cast<Map<String, dynamic>>();
+        } catch (e) {
+          print('Lỗi khi chuyển đổi dữ liệu giao dịch từ Hive: $e');
+        }
       }
 
       // Nếu không có trong Hive, tải từ Firestore
@@ -228,7 +235,17 @@ class RevenueManager {
 
       // Kiểm tra dữ liệu trong Hive
       if (transactionsBox.containsKey(hiveKey)) {
-        return List<Map<String, dynamic>>.from(transactionsBox.get(hiveKey) ?? []);
+        final cachedData = transactionsBox.get(hiveKey) as List?;
+        if (cachedData != null) {
+          try {
+            return cachedData.map((item) {
+              final map = item as Map;
+              return map.map((key, value) => MapEntry(key.toString(), value));
+            }).toList().cast<Map<String, dynamic>>();
+          } catch (e) {
+            print('Lỗi khi chuyển đổi dữ liệu otherRevenue từ Hive: $e');
+          }
+        }
       }
 
       // Tải từ Firestore

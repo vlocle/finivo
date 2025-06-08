@@ -147,13 +147,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               ? const EditVariableExpenseScreen()
               : UpdateExpenseListScreen(category: 'Chi phí biến đổi'),
         ),
-      ).then((_) {
-        if (mounted) {
-          appState.loadExpenseValues();
-          _resetAnimation();
-          _runAnimation();
-        }
-      });
+      );
     }
   }
 
@@ -213,11 +207,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                       : null,
                   onTap: () {
                     if (mounted) {
+                      // Chỉ cần gọi setState để kích hoạt việc build lại widget
+                      // ValueListenableBuilder sẽ tự động lấy giá trị mới nhất từ AppState
                       setState(() {
                         selectedExpenseCategory = categoryName;
                       });
-                      _resetAnimation();
-                      _runAnimation();
                     }
                     Navigator.pop(context);
                   },

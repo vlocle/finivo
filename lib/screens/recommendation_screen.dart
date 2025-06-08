@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 import '../state/app_state.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class AnalysisScreen extends StatefulWidget {
   @override
@@ -103,16 +104,17 @@ class _AnalysisScreenState extends State<AnalysisScreen>
       AppState appState, DateTimeRange range) async {
     try {
       // Dữ liệu hiện tại
+      final productProfitability = await appState.getProductProfitability(range);
       final revenueData = await appState.getRevenueForRange(range);
       final expenseData = await appState.getExpensesForRange(range);
       final overview = await appState.getOverviewForRange(range);
       final topProducts = await appState.getTopProductsByCategory(range);
-      final dailyRevenuesData = await appState.getDailyRevenueForRange(range); // Renamed for clarity
-      final dailyExpensesData = await appState.getDailyExpensesForRange(range); // Renamed for clarity
+      final dailyRevenuesData = await appState.getDailyRevenueWithDetailsForRange(range);
+      final dailyExpensesData = await appState.getDailyExpensesWithDetailsForRange(range);
+      // Renamed for clarity
       final expenseBreakdown = await appState.getExpenseBreakdown(range);
       final productRevenueBreakdown =
       await appState.getProductRevenueBreakdown(range);
-
       // Dữ liệu kỳ trước
       final int daysInPeriod = range.end.difference(range.start).inDays + 1;
       final previousRange = DateTimeRange(
@@ -162,17 +164,14 @@ class _AnalysisScreenState extends State<AnalysisScreen>
       double revenueChangePercentage = prevTotalRevenue > 0
           ? ((totalRevenue - prevTotalRevenue) / prevTotalRevenue * 100)
           : (totalRevenue > 0 ? 100.0 : 0.0); // Handle prevTotalRevenue = 0
-      double expenseChangePercentage = prevTotalExpense > 0
-          ? ((totalExpense - prevTotalExpense) / prevTotalExpense * 100)
-          : (totalExpense > 0 ? 100.0 : 0.0);
-      double profitChangePercentage = prevProfit != 0
-          ? ((profit - prevProfit) / prevProfit.abs() * 100)
-          : (profit != 0 ? 100.0 : 0.0);
+
       double profitMarginChangePoints = profitMargin - prevProfitMargin;
 
       // Xử lý so sánh doanh thu kỳ này vs kỳ trước (Cách số 3 đã làm trước đó)
       double absoluteRevenueChange = totalRevenue - prevTotalRevenue;
       String revenueComparisonReportText;
+      String expenseComparisonReportText;
+      String profitComparisonReportText;
       if (prevTotalRevenue == 0) {
         if (totalRevenue > 0) {
           revenueComparisonReportText =
@@ -188,6 +187,32 @@ class _AnalysisScreenState extends State<AnalysisScreen>
         "${absoluteRevenueChange >= 0 ? 'tăng' : 'giảm'} ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(absoluteRevenueChange.abs())} VNĐ (tương đương ${revenueChangePercentage >= 0 ? '+' : ''}${revenueChangePercentage.toStringAsFixed(1)}%) so với kỳ trước.";
       } else {
         revenueComparisonReportText = "không thể so sánh do dữ liệu doanh thu kỳ trước không hợp lệ (${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(prevTotalRevenue)} VNĐ).";
+      }
+
+      double absoluteExpenseChange = totalExpense - prevTotalExpense;
+      if (prevTotalExpense == 0) {
+        if (totalExpense > 0) {
+          expenseComparisonReportText = "tăng ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(absoluteExpenseChange)} VNĐ (kỳ trước không có chi phí).";
+        } else {
+          expenseComparisonReportText = "vẫn là 0 VNĐ, không có thay đổi.";
+        }
+      } else {
+        double expenseChangePercentage = (absoluteExpenseChange / prevTotalExpense.abs()) * 100;
+        expenseComparisonReportText = "${absoluteExpenseChange >= 0 ? 'tăng' : 'giảm'} ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(absoluteExpenseChange.abs())} VNĐ (tương đương ${expenseChangePercentage >= 0 ? '+' : ''}${expenseChangePercentage.toStringAsFixed(1)}%) so với kỳ trước.";
+      }
+
+      double absoluteProfitChange = profit - prevProfit;
+      if (prevProfit == 0) {
+        if (profit > 0) {
+          profitComparisonReportText = "tăng ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(absoluteProfitChange)} VNĐ (kỳ trước lợi nhuận là 0).";
+        } else if (profit < 0) {
+          profitComparisonReportText = "giảm ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(absoluteProfitChange.abs())} VNĐ (kỳ trước lợi nhuận là 0).";
+        } else {
+          profitComparisonReportText = "vẫn là 0 VNĐ, không có thay đổi.";
+        }
+      } else {
+        double profitChangePercentage = (absoluteProfitChange / prevProfit.abs()) * 100;
+        profitComparisonReportText = "${absoluteProfitChange >= 0 ? 'tăng' : 'giảm'} ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(absoluteProfitChange.abs())} VNĐ (tương đương ${profitChangePercentage >= 0 ? '+' : ''}${profitChangePercentage.toStringAsFixed(1)}%) so với kỳ trước.";
       }
 
 
@@ -273,39 +298,86 @@ class _AnalysisScreenState extends State<AnalysisScreen>
             .join(', ');
       });
 
+      // Thay thế logic phát hiện bất thường doanh thu cũ bằng đoạn này
       List<String> revenueAnomalies = [];
       List<String> revenueAnomalyDetails = [];
-      // (Giữ nguyên logic phát hiện điểm bất thường cho doanh thu)
+
       if (revenueValues.isNotEmpty) {
-        double revenueMean = revenueValues.reduce((a, b) => a + b) / revenueValues.length;
-        double revenueStd = _calculateStandardDeviation(revenueValues);
-        for (int i = 0; i < revenueValues.length && i < previousDailyRevenuesData.length; i++) {
-          if ((revenueValues[i] - revenueMean).abs() > 2 * revenueStd) {
+        double revenueMean = revenueValues.reduce((a, b) => a + b) / revenueValues.length; //
+        double revenueStd = _calculateStandardDeviation(revenueValues); //
+
+        for (int i = 0; i < revenueValues.length; i++) {
+          if ((revenueValues[i] - revenueMean).abs() > 2 * revenueStd) { //
             String date = DateFormat('dd/MM').format(range.start.add(Duration(days: i)));
-            double prevRevenue = (previousDailyRevenuesData[i]['totalRevenue'] as num?)?.toDouble() ?? 0.0;
-            double change = prevRevenue > 0 ? ((revenueValues[i] - prevRevenue) / prevRevenue * 100) : 0.0;
             revenueAnomalies.add(
-                'Ngày $date: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(revenueValues[i])} VNĐ (${revenueValues[i] > revenueMean ? "cao" : "thấp"} bất thường, ${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)}% so với kỳ trước)');
-            // Thêm chi tiết nếu cần
+                'Ngày $date: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(revenueValues[i])} VNĐ (${revenueValues[i] > revenueMean ? "cao" : "thấp"} bất thường)');
+
+            // **Phần thêm mới để phân tích chi tiết**
+            List<Map<String, dynamic>> dailyTransactions = List<Map<String, dynamic>>.from(dailyRevenuesData[i]['transactions'] ?? []);
+            if (dailyTransactions.isNotEmpty) {
+              // **BẮT ĐẦU THAY ĐỔI: Gộp các giao dịch cùng tên**
+              final Map<String, double> aggregatedAmounts = {};
+              for (var transaction in dailyTransactions) {
+                final name = transaction['name']?.toString() ?? 'Không xác định';
+                final total = (transaction['total'] as num?)?.toDouble() ?? 0.0;
+                // Cộng dồn giá trị cho mỗi sản phẩm
+                aggregatedAmounts[name] = (aggregatedAmounts[name] ?? 0) + total;
+              }
+
+              // Chuyển Map thành List để sắp xếp dựa trên tổng giá trị đã gộp
+              final sortedContributors = aggregatedAmounts.entries.toList()
+                ..sort((a, b) => b.value.compareTo(a.value));
+
+              if (sortedContributors.isNotEmpty) {
+                final topContributor = sortedContributors.first;
+                revenueAnomalyDetails.add(
+                    'Ngày $date ${revenueValues[i] > revenueMean ? "tăng" : "giảm"} đột biến, chủ yếu do sản phẩm "${topContributor.key}" đóng góp tổng cộng ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(topContributor.value)} VNĐ.'
+                );
+              }
+            }
           }
         }
       }
 
 
+      // Thay thế logic phát hiện bất thường chi phí cũ bằng đoạn này
       List<String> expenseAnomalies = [];
       List<String> expenseAnomalyDetails = [];
-      // (Giữ nguyên logic phát hiện điểm bất thường cho chi phí)
+
       if (expenseValues.isNotEmpty) {
-        double expenseMean = expenseValues.reduce((a, b) => a + b) / expenseValues.length;
-        double expenseStd = _calculateStandardDeviation(expenseValues);
-        for (int i = 0; i < expenseValues.length && i < previousDailyExpensesData.length; i++) {
-          if ((expenseValues[i] - expenseMean).abs() > 2 * expenseStd) {
+        double expenseMean = expenseValues.reduce((a, b) => a + b) / expenseValues.length; //
+        double expenseStd = _calculateStandardDeviation(expenseValues); //
+
+        for (int i = 0; i < expenseValues.length; i++) {
+          if ((expenseValues[i] - expenseMean).abs() > 2 * expenseStd) { //
             String date = DateFormat('dd/MM').format(range.start.add(Duration(days: i)));
-            double prevExpense = (previousDailyExpensesData[i]['totalExpense'] as num?)?.toDouble() ?? 0.0;
-            double change = prevExpense > 0 ? ((expenseValues[i] - prevExpense) / prevExpense * 100) : 0.0;
             expenseAnomalies.add(
-                'Ngày $date: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(expenseValues[i])} VNĐ (${expenseValues[i] > expenseMean ? "cao" : "thấp"} bất thường, ${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)}% so với kỳ trước)');
-            // Thêm chi tiết nếu cần
+                'Ngày $date: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(expenseValues[i])} VNĐ (${expenseValues[i] > expenseMean ? "cao" : "thấp"} bất thường)');
+
+            // **Phần thêm mới để phân tích chi tiết**
+            List<Map<String, dynamic>> dailyTransactions = List<Map<String, dynamic>>.from(dailyExpensesData[i]['transactions'] ?? []);
+            if (dailyTransactions.isNotEmpty) {
+              // **BẮT ĐẦU THAY ĐỔI: Gộp các giao dịch cùng tên**
+              final Map<String, double> aggregatedAmounts = {};
+              for (var transaction in dailyTransactions) {
+                final name = transaction['name']?.toString() ?? 'Không xác định';
+                // Chú ý key là 'amount' cho chi phí
+                final amount = (transaction['amount'] as num?)?.toDouble() ?? 0.0;
+                // Cộng dồn giá trị cho mỗi khoản mục chi phí
+                aggregatedAmounts[name] = (aggregatedAmounts[name] ?? 0) + amount;
+              }
+
+              // Chuyển Map thành List để sắp xếp dựa trên tổng giá trị đã gộp
+              final sortedContributors = aggregatedAmounts.entries.toList()
+                ..sort((a, b) => b.value.compareTo(a.value));
+
+              if (sortedContributors.isNotEmpty) {
+                final topContributor = sortedContributors.first;
+                expenseAnomalyDetails.add(
+                    'Ngày $date ${expenseValues[i] > expenseMean ? "tăng" : "giảm"} đột biến, chủ yếu do khoản chi "${topContributor.key}" đóng góp tổng cộng ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(topContributor.value)} VNĐ.'
+                );
+              }
+            }
           }
         }
       }
@@ -324,6 +396,41 @@ class _AnalysisScreenState extends State<AnalysisScreen>
         }
       }
 
+
+      double contributionMargin = totalRevenue - variableExpense; // Lợi nhuận góp
+      double contributionMarginRatio = totalRevenue > 0 ? (contributionMargin / totalRevenue) : 0.0; // Tỷ lệ lợi nhuận góp
+
+
+      double breakEvenRevenue = contributionMarginRatio > 0 ? (fixedExpense / contributionMarginRatio) : 0.0;
+
+      double safetyMargin = totalRevenue - breakEvenRevenue;
+      String breakEvenAnalysisReport = '''
+6. PHÂN TÍCH ĐIỂM HÒA VỐN:
+   - Doanh thu hòa vốn cần đạt: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(breakEvenRevenue)} VNĐ.
+   - Tình hình hiện tại: ${totalRevenue >= breakEvenRevenue
+          ? 'Chúc mừng! Bạn đã VƯỢT điểm hòa vốn. Vùng an toàn hiện tại là ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(safetyMargin)} VNĐ.'
+          : 'Cần cố gắng! Bạn cần thêm ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(breakEvenRevenue - totalRevenue)} VNĐ doanh thu để đạt điểm hòa vốn.'}
+''';
+
+
+// Sắp xếp sản phẩm theo lợi nhuận giảm dần
+      final sortedProductsByProfit = productProfitability.entries.toList()
+        ..sort((a, b) => (b.value['totalProfit'] ?? 0).compareTo(a.value['totalProfit'] ?? 0));
+
+// Format thành chuỗi để đưa vào prompt, lấy top 5 sản phẩm
+      String productProfitabilitySummary = sortedProductsByProfit.take(5).map((entry) {
+        String name = entry.key;
+        double profit = entry.value['totalProfit'] ?? 0.0;
+        double margin = entry.value['profitMargin'] ?? 0.0;
+        return '$name (Lợi nhuận: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(profit)} VNĐ, Biên LN: ${margin.toStringAsFixed(1)}%)';
+      }).join('; ');
+
+// Tạo một chuỗi báo cáo riêng cho phần này
+      String productProfitabilityReport = '''
+5. PHÂN TÍCH HIỆU SUẤT SẢN PHẨM:
+   - Top 5 sản phẩm lợi nhuận cao nhất: ${productProfitabilitySummary.isNotEmpty ? productProfitabilitySummary : 'Không có dữ liệu'}.
+''';
+
       String expenseBreakdownSummary = expenseBreakdown.entries
           .map((e) =>
       '${e.key}: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(e.value)} VNĐ')
@@ -331,25 +438,14 @@ class _AnalysisScreenState extends State<AnalysisScreen>
       String productRevenueSummary = productRevenueBreakdown.entries
           .map((e) => '${e.key}: ${e.value.toStringAsFixed(1)}%')
           .join(', ');
-      Map<String, double> categoryMargins = {
-        'Doanh thu chính': mainRevenue > 0
-            ? (mainRevenue - (variableExpense * (mainRevenue / (totalRevenue == 0 ? 1 : totalRevenue)))) / mainRevenue * 100
-            : 0.0,
-        'Doanh thu phụ': secondaryRevenue > 0
-            ? (secondaryRevenue - (variableExpense * (secondaryRevenue / (totalRevenue == 0 ? 1 : totalRevenue)))) / secondaryRevenue * 100
-            : 0.0,
-        'Doanh thu khác': otherRevenue > 0
-            ? (otherRevenue - (variableExpense * (otherRevenue / (totalRevenue == 0 ? 1 : totalRevenue)))) / otherRevenue * 100
-            : 0.0,
-      };
 
 
       String report =
       '''Phân tích ${daysInPeriod} ngày gần nhất (${DateFormat('dd/MM/yyyy').format(range.start)} - ${DateFormat('dd/MM/yyyy').format(range.end)}):
 So sánh với kỳ trước (${DateFormat('dd/MM/yyyy').format(previousRange.start)} - ${DateFormat('dd/MM/yyyy').format(previousRange.end)}):
 - Doanh thu tổng: $revenueComparisonReportText
-- Chi phí tổng: ${expenseChangePercentage >= 0 ? '+' : ''}${expenseChangePercentage.toStringAsFixed(1)}%
-- Lợi nhuận tổng: ${profitChangePercentage >= 0 ? '+' : ''}${profitChangePercentage.toStringAsFixed(1)}%
+- Chi phí tổng: $expenseComparisonReportText
+- Lợi nhuận tổng: $profitComparisonReportText
 - Thay đổi điểm % Biên LN: ${profitMarginChangePoints >= 0 ? '+' : ''}${profitMarginChangePoints.toStringAsFixed(1)} điểm %
 
 Phân tích chi tiết kỳ này:
@@ -375,15 +471,14 @@ Phân tích chi tiết kỳ này:
 3. LỢI NHUẬN:
    - Lợi nhuận: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(profit)} VNĐ.
    - Biên lợi nhuận: ${profitMargin.toStringAsFixed(1)}%.
-   - Biên lợi nhuận theo danh mục DT:
-     + Chính: ${categoryMargins['Doanh thu chính']!.toStringAsFixed(1)}%
-     + Phụ: ${categoryMargins['Doanh thu phụ']!.toStringAsFixed(1)}%
-     + Khác: ${categoryMargins['Doanh thu khác']!.toStringAsFixed(1)}%
    - Xu hướng biên lợi nhuận (hồi quy): $overallProfitMarginTrendDescription
    - Điểm bất thường biên Lợi Nhuận: ${profitMarginAnomalies.isNotEmpty ? profitMarginAnomalies.join('; ') : 'Không có'}.
 
 4. PHÂN BỔ DOANH THU SẢN PHẨM (toàn kỳ): ${productRevenueSummary.isNotEmpty ? productRevenueSummary : 'Không có'}.
-Ngành nghề kinh doanh: $industry.''';
+Ngành nghề kinh doanh: $industry.
+${productProfitabilityReport}
+${breakEvenAnalysisReport}
+''';
 
       print('Báo cáo phân tích: $report');
       return {
@@ -418,25 +513,47 @@ Ngành nghề kinh doanh: $industry.''';
       final analysis = await _analyzeFinancialData(appState, range);
       String report = analysis['report'];
       String prompt =
-      '''Bạn là chuyên gia tài chính trong ngành $industry.
-Dưới đây là phân tích dữ liệu kinh doanh:
+      '''Bạn là chuyên gia tài chính trong ngành $industry.Dưới đây là phân tích dữ liệu kinh doanh:
+
 $report
-Hãy cung cấp một báo cáo phân tích chuyên sâu, bao gồm:
-1. Tổng quan hiệu suất kinh doanh: Tóm tắt doanh thu, chi phí, lợi nhuận, và các thay đổi so với kỳ trước, giải thích ý nghĩa của các chỉ số trong ngành $industry.
-2. Phân tích điểm bất thường:
-   - Doanh thu: Giải thích lý do các điểm bất thường (dựa trên top sản phẩm, phân bổ doanh thu, và so sánh với kỳ trước), ví dụ: sản phẩm nào hoặc sự kiện nào gây ra tăng/giảm đột biến.
-   - Chi phí: Xác định nguyên nhân các điểm bất thường (dựa trên phân bổ chi phí, chi tiết bất thường, và so sánh với kỳ trước), ví dụ: chi phí nào tăng/giảm và tại sao.
-   - Biên lợi nhuận: Lý do các điểm bất thường xảy ra (dựa trên biên lợi nhuận theo danh mục, phân bổ doanh thu sản phẩm, và so sánh với kỳ trước).
-3. Yếu tố ngành: Phân tích các yếu tố trong ngành $industry có thể ảnh hưởng đến xu hướng và điểm bất thường, ví dụ: mùa vụ, cạnh tranh, hoặc thay đổi thị trường.
+
+Hãy cung cấp một báo cáo phân tích chuyên sâu, bao gồm các phần sau:
+
+1.  **Tổng quan hiệu suất kinh doanh:** Tóm tắt doanh thu, chi phí, lợi nhuận, và các thay đổi so với kỳ trước. Giải thích ngắn gọn ý nghĩa của các chỉ số này trong ngành $industry.
+
+2.  **Phân tích Xu hướng (Hồi quy tuyến tính):**
+    * **Dựa vào 'Xu hướng doanh thu (hồi quy)':** Hãy nhận xét về tốc độ tăng trưởng hoặc suy giảm. Xu hướng này có tốt và bền vững không? Nếu đang tăng trưởng, gợi ý cách để duy trì đà tăng. Nếu đang suy giảm, chỉ ra các nguyên nhân có thể và đề xuất hướng khắc phục.
+    * **Dựa vào 'Xu hướng chi phí (hồi quy)':** Hãy đánh giá việc kiểm soát chi phí. Tốc độ tăng của chi phí đang nhanh hơn hay chậm hơn doanh thu? Điều này nói lên điều gì về hiệu quả hoạt động của doanh nghiệp?
+    * **Dựa vào 'Xu hướng biên lợi nhuận (hồi quy)':** Bình luận về sự thay đổi trong khả năng sinh lời theo thời gian. Xu hướng này có bền vững không và yếu tố nào có thể đang tác động đến nó (ví dụ: thay đổi cơ cấu sản phẩm bán ra, chính sách giá, việc kiểm soát chi phí biến đổi)?
+
+3.  **Phân tích Cấu trúc Chi phí:**
+    * **Dựa vào mục "Phân bổ chi phí" trong báo cáo**, hãy liệt kê và phân tích các khoản mục chi phí lớn nhất.
+    * Đánh giá xem cơ cấu chi phí này (tỷ trọng của từng khoản mục) có hợp lý và phù hợp với đặc thù của ngành kinh doanh "$industry" hay không.
+    * Chỉ ra những khoản mục chi phí có tỷ trọng cao bất thường hoặc có thể tối ưu.
+
+4.  **Phân tích điểm bất thường:**
+    * Doanh thu: Giải thích lý do có những ngày doanh thu tăng/giảm đột biến (nếu có).
+    * Chi phí: Xác định nguyên nhân có những ngày chi phí tăng/giảm đột biến (nếu có).
+
+5.  **Phân tích Hiệu suất Sản phẩm:**
+    * **Dựa trên báo cáo "PHÂN TÍCH HIỆU SUẤT SẢN PHẨM"**, hãy xác định các sản phẩm "Ngôi sao" (lợi nhuận cao) và sản phẩm "Cần cải thiện" (lợi nhuận thấp hoặc âm).
+    * Đưa ra gợi ý chiến lược cụ thể cho các nhóm sản phẩm này (ví dụ: nên tập trung marketing cho sản phẩm nào, nên xem xét lại giá bán hoặc chi phí của sản phẩm nào).
+
+6.  **Phân tích Điểm hòa vốn:**
+    * **Dựa trên báo cáo "PHÂN TÍCH ĐIỂM HÒA VỐN"**, hãy giải thích ý nghĩa của con số "Doanh thu hòa vốn" đối với doanh nghiệp.
+    * Đánh giá "Tình hình hiện tại" và đưa ra lời khuyên. Nếu chưa đạt điểm hòa vốn, hãy gợi ý những hành động cụ thể để có thể đạt được.
+
 Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra ví dụ thực tế, và phù hợp với ngành $industry.''';
       final user = FirebaseAuth.instance.currentUser;
       final idToken = await user?.getIdToken();
       if (idToken == null) {
         appState.setLastRecommendation(
             "  ❌   Bạn chưa đăng nhập. Vui lòng đăng nhập để sử dụng A.I.");
-        setState(() {
-          isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            isLoading = false;
+          });
+        }
         return;
       }
       final response = await http.post(
@@ -454,9 +571,11 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
         final errorMessage =
             errorData["error"] ?? "Bạn đã vượt quá số lượt gọi.";
         appState.setLastRecommendation("  ⚠️   $errorMessage");
-        setState(() {
-          isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            isLoading = false;
+          });
+        }
         return;
       }
       if (response.statusCode == 200) {
@@ -474,9 +593,11 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
       appState.setLastRecommendation(
           "⚠️Bạn đã dùng hết số lần gọi hôm nay. Vui lòng thử lại vào ngày mai.");
     }
-    setState(() {
-      isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   Future<void> _selectDateRange(BuildContext context) async {
@@ -644,12 +765,24 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                SelectableText(
-                                  appState.lastRecommendation,
-                                  style: TextStyle(
-                                    fontSize: isWideScreen ? 16 : 14,
-                                    color: _textColorPrimary,
-                                    height: 1.4,
+                                MarkdownBody(
+                                  data: appState.lastRecommendation,
+                                  selectable: true, // Giữ lại tính năng cho phép người dùng chọn/sao chép văn bản
+                                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                                    p: TextStyle( // 'p' là viết tắt của paragraph, tương đương với style cũ của bạn
+                                      fontSize: isWideScreen ? 16 : 14,
+                                      color: _textColorPrimary,
+                                      height: 1.4,
+                                    ),
+                                    // Bạn cũng có thể tùy chỉnh style cho các thẻ khác như h1, h2, strong (in đậm)...
+                                    h2: TextStyle(
+                                      fontSize: isWideScreen ? 20 : 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: _primaryColor, // Sử dụng màu primary cho tiêu đề
+                                    ),
+                                    strong: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 8),

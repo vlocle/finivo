@@ -26,7 +26,6 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
 
   // State variables mới
   double selectedPriceFromDropdown = 0.0; //
-  bool isFlexibleAmountEnabled = false; //
   final FocusNode _amountFocusNode = FocusNode(); //
 
   late AnimationController _animationController; //
@@ -100,19 +99,29 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
     });
 
     try {
-      final appState = Provider.of<AppState>(context, listen: false); //
-      final results = await Future.wait([ //
-        ExpenseManager.loadVariableExpenses(appState), //
-        ExpenseManager.loadAvailableVariableExpenses(appState), //
+      final appState = Provider.of<AppState>(context, listen: false);
+      final results = await Future.wait([
+        ExpenseManager.loadVariableExpenses(appState),
+        ExpenseManager.loadAvailableVariableExpenses(appState),
       ]);
-      if (mounted) { //
+
+      // ===================== PHẦN THÊM MỚI =====================
+      // Lọc danh sách chi phí có sẵn để chỉ lấy những chi phí không được gắn sản phẩm.
+      final List<Map<String, dynamic>> allAvailableExpenses = results[1];
+      final List<Map<String, dynamic>> unlinkedExpenses = allAvailableExpenses
+          .where((expense) => expense['linkedProductId'] == null)
+          .toList();
+      // ========================================================
+
+      if (mounted) {
         setState(() {
-          variableExpenses = results[0]; //
-          availableExpenses = results[1]; //
-          appState.variableExpenseList.value = List.from(results[0]); //
-          isLoading = false; //
-          _animationController.forward(); //
-          _resetFormFields(); //
+          variableExpenses = results[0];
+          // Sử dụng danh sách đã được lọc
+          availableExpenses = unlinkedExpenses;
+          appState.variableExpenseList.value = List.from(results[0]);
+          isLoading = false;
+          _animationController.forward();
+          _resetFormFields();
         });
       }
     } catch (e) { //
@@ -188,31 +197,29 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   }
 
   void _updateAmountControllerBasedOnSelection() {
-    if (!mounted) return; //
-
-    if (!isFlexibleAmountEnabled && selectedExpenseName != null) { //
+    if (!mounted) return;
+    if (selectedExpenseName != null) {
       final selectedExpenseData = availableExpenses.firstWhere(
               (exp) => exp['name'] == selectedExpenseName,
-          orElse: () => {'price': 0.0}); //
+          orElse: () => {'price': 0.0});
       selectedPriceFromDropdown =
-          (selectedExpenseData['price'] as num? ?? 0.0).toDouble(); //
+          (selectedExpenseData['price'] as num? ?? 0.0).toDouble();
       amountController.text =
-          _inputPriceFormatter.format(selectedPriceFromDropdown); //
-    } else if (!isFlexibleAmountEnabled && selectedExpenseName == null) { //
-      selectedPriceFromDropdown = 0.0; //
-      amountController.text = _inputPriceFormatter.format(0); //
+          _inputPriceFormatter.format(selectedPriceFromDropdown);
+    } else {
+      selectedPriceFromDropdown = 0.0;
+      amountController.text = _inputPriceFormatter.format(0);
     }
   }
 
   void _resetFormFields() {
-    if (!mounted) return; //
+    if (!mounted) return;
     setState(() {
-      selectedExpenseName = null; //
-      isFlexibleAmountEnabled = false; //
-      selectedPriceFromDropdown = 0.0; //
-      amountController.text = _inputPriceFormatter.format(0); //
-      if (_amountFocusNode.hasFocus) { //
-        _amountFocusNode.unfocus(); //
+      selectedExpenseName = null;
+      selectedPriceFromDropdown = 0.0;
+      amountController.text = _inputPriceFormatter.format(0);
+      if (_amountFocusNode.hasFocus) {
+        _amountFocusNode.unfocus();
       }
     });
   }
@@ -231,57 +238,44 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   }
 
   void addExpense(AppState appState) {
-    if (selectedExpenseName == null) { //
-      _showStyledSnackBar("Vui lòng chọn một khoản chi phí!", isError: true); //
-      return; //
+    if (selectedExpenseName == null) {
+      _showStyledSnackBar("Vui lòng chọn một khoản chi phí!", isError: true);
+      return;
     }
 
-    double amountToUse;
-    if (isFlexibleAmountEnabled) { //
-      amountToUse = double.tryParse(
-          amountController.text.replaceAll('.', '').replaceAll(',', '')) ??
-          0.0; //
-      if (amountToUse <= 0) { //
-        _showStyledSnackBar("Số tiền phải lớn hơn 0!", isError: true); //
-        return; //
-      }
-    } else {
-      amountToUse = selectedPriceFromDropdown; //
-      if (amountToUse <= 0 && selectedExpenseName != null) { //
-        _showStyledSnackBar(
-            "Giá trị mặc định của '$selectedExpenseName' không hợp lệ hoặc bằng 0. Hãy thử bật số tiền linh hoạt.",
-            isError: true); //
-        return; //
-      }
-      if (amountToUse <= 0 && selectedExpenseName == null) { //
-        _showStyledSnackBar(
-            "Vui lòng chọn khoản chi hoặc bật số tiền linh hoạt và nhập số tiền.",
-            isError: true); //
-        return; //
-      }
+    // Luôn lấy số tiền từ ô nhập liệu
+    double amountToUse = double.tryParse(
+        amountController.text.replaceAll('.', '').replaceAll(',', '')) ??
+        0.0;
+
+    if (amountToUse <= 0) {
+      _showStyledSnackBar("Số tiền phải lớn hơn 0!", isError: true);
+      return;
     }
 
-    if (!mounted) return; //
-    setState(() { //
+    if (!mounted) return;
+
+    // Giữ nguyên phần logic lưu dữ liệu ở sau
+    setState(() {
       List<Map<String, dynamic>> currentVariableExpenses =
       List.from(appState.variableExpenseList.value);
-      currentVariableExpenses.add({ //
+      currentVariableExpenses.add({
         "name": selectedExpenseName,
         "amount": amountToUse,
         "date": DateTime.now().toIso8601String()
       });
       appState.variableExpenseList.value = currentVariableExpenses; //
-      variableExpenses = List.from(currentVariableExpenses); //
-      ExpenseManager.saveVariableExpenses(appState, currentVariableExpenses) //
+      variableExpenses = List.from(currentVariableExpenses);
+      ExpenseManager.saveVariableExpenses(appState, currentVariableExpenses)
           .then((_) {
-        return ExpenseManager.updateTotalVariableExpense( //
-            appState, currentVariableExpenses);
+        return ExpenseManager.updateTotalVariableExpense(
+            appState, currentVariableExpenses); //
       }).then((total) {
-        appState.setExpenses(appState.fixedExpense, total); //
-        _showStyledSnackBar("Đã thêm: $selectedExpenseName"); //
-        _resetFormFields(); //
-      }).catchError((e) { //
-        _showStyledSnackBar("Lỗi khi lưu chi phí: $e", isError: true); //
+        appState.setExpenses(appState.fixedExpense, total);
+        _showStyledSnackBar("Đã thêm: $selectedExpenseName");
+        _resetFormFields();
+      }).catchError((e) {
+        _showStyledSnackBar("Lỗi khi lưu chi phí: $e", isError: true);
       });
     });
     FocusScope.of(context).unfocus(); //
@@ -834,48 +828,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                     borderRadius:
                                     BorderRadius.circular(12), //
                                   ),
-                                  const SizedBox(height: 12),
-                                  SwitchListTile.adaptive(
-                                    title: Text("Số tiền linh hoạt",
-                                        style: GoogleFonts.poppins(
-                                            color: _textColorPrimary,
-                                            fontSize: 16,
-                                            fontWeight:
-                                            FontWeight.w500)),
-                                    value: isFlexibleAmountEnabled,
-                                    activeColor: _appBarColor, //
-                                    inactiveThumbColor:
-                                    Colors.grey.shade400,
-                                    inactiveTrackColor:
-                                    Colors.grey.shade200, //
-                                    onChanged: (bool value) {
-                                      setState(() {
-                                        isFlexibleAmountEnabled =
-                                            value; //
-                                        if (!isFlexibleAmountEnabled) { //
-                                          _updateAmountControllerBasedOnSelection(); //
-                                          if (_amountFocusNode
-                                              .hasFocus) { //
-                                            _amountFocusNode
-                                                .unfocus(); //
-                                          }
-                                        } else {
-                                          _amountFocusNode
-                                              .requestFocus(); //
-                                        }
-                                      });
-                                    },
-                                    contentPadding:
-                                    EdgeInsets.zero, //
-                                    secondary: Icon(
-                                        isFlexibleAmountEnabled
-                                            ? Icons.edit_note
-                                            : Icons
-                                            .price_check_outlined,
-                                        color: _appBarColor,
-                                        size: 22),
-                                  ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 16),
                                   _buildModernTextField( //
                                     controller: amountController, //
                                     labelText: "Nhập số tiền", //
@@ -889,9 +842,10 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                           .digitsOnly, //
                                       TextInputFormatter.withFunction( //
                                             (oldValue, newValue) {
-                                          if (newValue.text.isEmpty)
+                                          if (newValue.text.isEmpty) {
                                             return newValue.copyWith(
                                                 text: '0'); //
+                                          }
                                           final String
                                           plainNumberText =
                                           newValue.text
@@ -918,7 +872,6 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                       ),
                                     ],
                                     maxLength: 15, //
-                                    enabled: isFlexibleAmountEnabled,
                                     focusNode: _amountFocusNode,
                                   ),
                                   const SizedBox(height: 24), //

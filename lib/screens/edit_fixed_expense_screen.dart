@@ -147,10 +147,10 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                 try {
                   final updatedExpenses = List<Map<String, dynamic>>.from(appState.fixedExpenseList.value);
                   updatedExpenses[index]['amount'] = newAmount;
-                  appState.fixedExpenseList.value = updatedExpenses;
+                  //appState.fixedExpenseList.value = updatedExpenses;
 
                   await ExpenseManager.saveFixedExpenses(appState, updatedExpenses);
-                  await appState.loadExpenseValues();
+                  //await appState.loadExpenseValues();
 
                   amountController.clear();
                   Navigator.pop(dialogContext);
@@ -204,10 +204,10 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
       try {
         final updatedExpenses = List<Map<String, dynamic>>.from(appState.fixedExpenseList.value);
         updatedExpenses.removeAt(index);
-        appState.fixedExpenseList.value = updatedExpenses;
+        //appState.fixedExpenseList.value = updatedExpenses;
 
         await ExpenseManager.saveFixedExpenses(appState, updatedExpenses);
-        await appState.loadExpenseValues();
+        //await appState.loadExpenseValues();
         _showStyledSnackBar("Đã xóa khoản chi phí: $expenseName");
       } catch (e) {
         _showStyledSnackBar("Lỗi khi xóa: $e", isError: true);

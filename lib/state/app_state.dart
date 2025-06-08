@@ -49,6 +49,8 @@ class AppState extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot>? _revenueSubscription;
   StreamSubscription<DocumentSnapshot>? _fixedExpenseSubscription; // Thêm subscription cho chi phí cố định
   StreamSubscription<DocumentSnapshot>? _variableExpenseSubscription;
+  StreamSubscription<DocumentSnapshot>? _dailyFixedExpenseSubscription;
+
 
 
   double get fixedExpense => _fixedExpense;
@@ -93,6 +95,7 @@ class AppState extends ChangeNotifier {
         await _loadInitialData();
         _subscribeToFixedExpenses(); // Kích hoạt listener cho chi phí cố định
         _subscribeToVariableExpenses();
+        _subscribeToDailyFixedExpenses();
       }
     } catch (e) {
       _isFirebaseInitialized = false;
@@ -164,11 +167,13 @@ class AppState extends ChangeNotifier {
       _cancelRevenueSubscription();
       _cancelFixedExpenseSubscription();
       _cancelVariableExpenseSubscription(); // THÊM MỚI
+      _cancelDailyFixedExpenseSubscription();
 
       _loadSettings();
       _loadInitialData().then((_) {
         _subscribeToFixedExpenses();
         _subscribeToVariableExpenses(); // THÊM MỚI
+        _subscribeToDailyFixedExpenses();
         notifyListeners();
       });
     }
@@ -196,6 +201,7 @@ class AppState extends ChangeNotifier {
     _cancelRevenueSubscription();
     _cancelFixedExpenseSubscription();
     _cancelVariableExpenseSubscription();
+    _cancelDailyFixedExpenseSubscription();
     _saveSettings();
     _cachedDateKey = null;
     _cachedData = null;
@@ -223,13 +229,16 @@ class AppState extends ChangeNotifier {
 
       // Hủy sub cũ trước khi tạo sub mới cho ngày mới
       _cancelVariableExpenseSubscription(); // THÊM MỚI
+      _cancelDailyFixedExpenseSubscription();
 
       _loadInitialData(); // Vẫn tải dữ liệu ban đầu cho ngày mới
       _subscribeToFixedExpenses(); // Cập nhật sub cho fixed expenses nếu cần
       _subscribeToVariableExpenses(); // THÊM MỚI - Đăng ký cho ngày mới
+      _subscribeToDailyFixedExpenses();
     }
   }
 
+  // Trong file appstate.docx, sửa lại hàm _loadInitialData
   Future<void> _loadInitialData() async {
     if (userId == null || _isLoading || !_isFirebaseInitialized) {
       return;
@@ -237,48 +246,22 @@ class AppState extends ChangeNotifier {
     _isLoading = true;
     isLoadingListenable.value = true;
     dataReadyListenable.value = false;
-    try {
-      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      if (_cachedDateKey == dateKey && _cachedData != null && _cachedData!['userId'] == userId) {
-        _applyCachedData(_cachedData!);
-        _isLoading = false;
-        isLoadingListenable.value = false;
-        return;
-      }
 
+    try {
+      // Bây giờ chỉ cần tải doanh thu và chi phí biến đổi
+      // Chi phí cố định sẽ được listener tự động tải
       await Future.wait([
         loadRevenueValues(),
-        loadExpenseValues(),
+        loadExpenseValues(), // Hàm này giờ chỉ tải chi phí biến đổi
       ]);
 
-      totalRevenueListenable.value = getTotalRevenue();
-      profitListenable.value = getProfit();
-      profitMarginListenable.value = getProfitMargin();
-      _cachedDateKey = dateKey;
-      _cachedData = {
-        'userId': userId,
-        'mainRevenue': mainRevenue,
-        'secondaryRevenue': secondaryRevenue,
-        'otherRevenue': otherRevenue,
-        'mainRevenueTransactions': mainRevenueTransactions.value,
-        'secondaryRevenueTransactions': secondaryRevenueTransactions.value,
-        'otherRevenueTransactions': otherRevenueTransactions.value,
-        'fixedExpense': _fixedExpense,
-        'variableExpense': variableExpense,
-        'fixedExpenseList': fixedExpenseList.value,
-        'variableExpenseList': variableExpenseList.value,
-      };
-      if (!_isLoading) { // Chỉ thông báo nếu vẫn đang tải
-        dataReadyListenable.value = true;
-      }
     } catch (e) {
       print('Error in _loadInitialData: $e');
     } finally {
       _isLoading = false;
       isLoadingListenable.value = false;
-      if (!_isLoading) {
-        notifyListeners(); // Chỉ gọi một lần ở đây
-      }
+      dataReadyListenable.value = true; // Báo hiệu dữ liệu đã sẵn sàng
+      // không cần notifyListeners() ở đây vì các hàm con đã gọi
     }
   }
 
@@ -413,6 +396,73 @@ class AppState extends ChangeNotifier {
       // Có thể thêm xử lý lỗi ở đây, ví dụ: thử lại sau một khoảng thời gian
     });
     // print('Subscribed to daily variable expenses for $_selectedDate');
+  }
+
+  // Trong file appstate.docx, sửa lại hàm _subscribeToDailyFixedExpenses
+  void _subscribeToDailyFixedExpenses() {
+    if (!_isFirebaseInitialized || userId == null) return;
+
+    _dailyFixedExpenseSubscription?.cancel();
+
+    final firestore = FirebaseFirestore.instance;
+    String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+    String dailyFixedExpenseDocId = getKey('fixedExpenseList_$dateKey');
+
+    // THÊM MỚI: Chuẩn bị key cho Hive
+    final String hiveKey = '$userId-fixedExpenses-$dailyFixedExpenseDocId';
+    final fixedExpensesBox = Hive.box('fixedExpensesBox');
+
+    _dailyFixedExpenseSubscription = firestore
+        .collection('users')
+        .doc(userId)
+        .collection('expenses')
+        .doc('fixed')
+        .collection('daily')
+        .doc(dailyFixedExpenseDocId)
+        .snapshots()
+        .listen((snapshot) async { // Thêm async
+
+      if (snapshot.metadata.hasPendingWrites) {
+        return;
+      }
+
+      if (snapshot.exists && snapshot.data() != null) {
+        var data = snapshot.data()!;
+        List<Map<String, dynamic>> newExpenses = List<Map<String, dynamic>>.from(data['fixedExpenses'] ?? []);
+        double newTotal = (data['total'] as num?)?.toDouble() ?? 0.0;
+
+        if (!_areListsEqual(fixedExpenseList.value, newExpenses) || _fixedExpense != newTotal) {
+          fixedExpenseList.value = newExpenses;
+          _fixedExpense = newTotal;
+          fixedExpenseListenable.value = newTotal;
+
+          // THÊM MỚI: Lưu vào Hive
+          await fixedExpensesBox.put(hiveKey, newExpenses);
+
+          _updateProfitAndRelatedListenables();
+          notifyListeners();
+        }
+      } else {
+        if (fixedExpenseList.value.isNotEmpty || _fixedExpense != 0.0) {
+          fixedExpenseList.value = [];
+          _fixedExpense = 0.0;
+          fixedExpenseListenable.value = 0.0;
+
+          // THÊM MỚI: Xóa khỏi Hive
+          await fixedExpensesBox.delete(hiveKey);
+
+          _updateProfitAndRelatedListenables();
+          notifyListeners();
+        }
+      }
+    }, onError: (error) {
+      print('Error listening to daily fixed expenses: $error');
+    });
+  }
+
+  void _cancelDailyFixedExpenseSubscription() {
+    _dailyFixedExpenseSubscription?.cancel();
+    _dailyFixedExpenseSubscription = null;
   }
 
 // Hàm phụ để so sánh hai danh sách
@@ -780,61 +830,53 @@ class AppState extends ChangeNotifier {
     }
   }
 
+
   Future<void> loadExpenseValues() async {
+    // Hàm này giờ chỉ tập trung vào Chi phí biến đổi (Variable Expenses)
+    // vì Chi phí cố định đã được xử lý bởi listener _subscribeToDailyFixedExpenses
     final String dateKey = DateFormat('yyyy-MM-dd').format(selectedDate);
-    final String firestoreDailyFixedDocId = getKey('fixedExpenseList_$dateKey');
-    final String hiveFixedKey = '$userId-fixedExpenses-$firestoreDailyFixedDocId';
     final String firestoreDailyVariableDocId = getKey('variableTransactionHistory_$dateKey');
     final String hiveVariableKey = '$userId-variableExpenses-$firestoreDailyVariableDocId';
-    final String monthKey = DateFormat('yyyy-MM').format(selectedDate);
-    final fixedExpensesBox = Hive.box('fixedExpensesBox');
     final variableExpensesBox = Hive.box('variableExpensesBox');
 
-    try {
-      String firestorePathForSync = 'users/$userId/expenses/fixed/daily/$firestoreDailyFixedDocId'; // Sử dụng ID tài liệu đã tạo ở trên
-      bool isSynced = await _isFirestoreSynced(hiveFixedKey, firestorePathForSync);
-      if (!isSynced && await _isOnline()) {
-        final fixedExpenses = await ExpenseManager.loadFixedExpenses(this, selectedDate);
-        final variableExpenses = await ExpenseManager.loadVariableExpenses(this);
-        fixedExpenseList.value = fixedExpenses;
-        variableExpenseList.value = variableExpenses;
-        await fixedExpensesBox.put(hiveFixedKey, fixedExpenses);
-        await variableExpensesBox.put(hiveVariableKey, variableExpenses);
-        await _updateSyncTimestamp(hiveFixedKey);
-      } else {
-        fixedExpenseList.value = List<Map<String, dynamic>>.from(fixedExpensesBox.get(hiveFixedKey) ?? []);
-        variableExpenseList.value = List<Map<String, dynamic>>.from(variableExpensesBox.get(hiveVariableKey) ?? []);
+    List<Map<String, dynamic>> safeCast(List<dynamic>? data) {
+      if (data == null) return [];
+      try {
+        return data.map((item) {
+          final map = item as Map;
+          return map.map((key, value) => MapEntry(key.toString(), value));
+        }).toList().cast<Map<String, dynamic>>();
+      } catch (e) {
+        print('Error safely casting variable expenses from Hive: $e');
+        return [];
       }
-
-      final fixedTotal = fixedExpenseList.value.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
-      final variableTotal = variableExpenseList.value.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
-
-      final firestore = FirebaseFirestore.instance;
-      final fixedDocRef = firestore
-          .collection('users')
-          .doc(userId)
-          .collection('expenses')
-          .doc('fixed')
-          .collection('daily')
-          .doc(getKey('fixedExpenseList_$dateKey'));
-      final fixedDoc = await fixedDocRef.get();
-      if (fixedDoc.exists && (fixedDoc['total']?.toDouble() ?? 0.0) != fixedTotal) {
-        await fixedDocRef.set({
-          'fixedExpenses': fixedExpenseList.value,
-          'total': fixedTotal,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      setExpenses(fixedTotal, variableTotal);
-    } catch (e) {
-      print("Error loading expense values: $e");
-      fixedExpenseList.value = List<Map<String, dynamic>>.from(fixedExpensesBox.get(hiveFixedKey) ?? []);
-      variableExpenseList.value = List<Map<String, dynamic>>.from(variableExpensesBox.get(hiveVariableKey) ?? []);
-      final fixedTotal = fixedExpenseList.value.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
-      final variableTotal = variableExpenseList.value.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
-      setExpenses(fixedTotal, variableTotal);
     }
+
+    try {
+      // Luôn ưu tiên tải từ Firestore nếu online để đảm bảo dữ liệu mới nhất
+      if (await _isOnline()) {
+        final variableExpenses = await ExpenseManager.loadVariableExpenses(this);
+        variableExpenseList.value = variableExpenses;
+        await variableExpensesBox.put(hiveVariableKey, variableExpenses);
+      } else {
+        // Nếu offline, tải từ cache Hive
+        final cachedData = variableExpensesBox.get(hiveVariableKey) as List?;
+        variableExpenseList.value = safeCast(cachedData);
+      }
+    } catch (e) {
+      print("Error loading variable expense values: $e");
+      // Fallback về cache nếu có lỗi
+      final cachedDataOnError = variableExpensesBox.get(hiveVariableKey) as List?;
+      variableExpenseList.value = safeCast(cachedDataOnError);
+    }
+
+    final variableTotal = variableExpenseList.value.fold<double>(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    // Cập nhật giá trị tổng chi phí biến đổi
+    this.variableExpense = variableTotal;
+
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
   }
 
   Future<void> setRevenue(double main, double secondary, double other) async {
@@ -992,6 +1034,135 @@ class AppState extends ChangeNotifier {
       if (userId == null || !_isFirebaseInitialized) return [];
       return await ExpenseManager.loadAvailableVariableExpenses(this);
     } catch (e) {
+      return [];
+    }
+  }
+
+  // Dán hàm mới này vào trong class AppState của file appstate.docx
+  Future<List<Map<String, dynamic>>> getDailyExpensesWithDetailsForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return [];
+    try {
+      if (userId == null) return [];
+      final FirebaseFirestore firestore = FirebaseFirestore.instance; //
+      List<Map<String, dynamic>> dailyData = [];
+      int days = range.end.difference(range.start).inDays + 1; //
+      List<Future<DocumentSnapshot>> fixedFutures = []; //
+      List<Future<DocumentSnapshot>> variableFutures = []; //
+
+      for (int i = 0; i < days; i++) {
+        DateTime date = range.start.add(Duration(days: i));
+        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        String fixedKey = getKey('fixedExpenseList_$dateKey'); //
+        String variableKey = getKey('variableTransactionHistory_$dateKey'); //
+
+        fixedFutures.add(
+          firestore
+              .collection('users')
+              .doc(userId)
+              .collection('expenses')
+              .doc('fixed')
+              .collection('daily')
+              .doc(fixedKey)
+              .get(), //
+        );
+        variableFutures.add(
+          firestore
+              .collection('users')
+              .doc(userId)
+              .collection('expenses')
+              .doc('variable')
+              .collection('daily')
+              .doc(variableKey)
+              .get(), //
+        );
+      }
+
+      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures); //
+      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures); //
+
+      for (int i = 0; i < days; i++) {
+        double fixed = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
+        double variable = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
+
+        // Lấy danh sách giao dịch chi tiết từ snapshot
+        List<Map<String, dynamic>> fixedTransactions = [];
+        if (fixedDocs[i].exists && (fixedDocs[i].data() as Map<String, dynamic>).containsKey('fixedExpenses')) {
+          fixedTransactions = List<Map<String, dynamic>>.from(fixedDocs[i]['fixedExpenses'] ?? []); //
+        }
+
+        List<Map<String, dynamic>> variableTransactions = [];
+        if (variableDocs[i].exists && (variableDocs[i].data() as Map<String, dynamic>).containsKey('variableExpenses')) {
+          variableTransactions = List<Map<String, dynamic>>.from(variableDocs[i]['variableExpenses'] ?? []); //
+        }
+
+        dailyData.add({
+          'fixedExpense': fixed,
+          'variableExpense': variable,
+          'totalExpense': fixed + variable,
+          'transactions': [...fixedTransactions, ...variableTransactions], // Dữ liệu chi tiết được tổng hợp ở đây
+        });
+      }
+      return dailyData;
+    } catch (e) {
+      print('Error in getDailyExpensesWithDetailsForRange: $e');
+      return [];
+    }
+  }
+
+  // Dán hàm mới này vào trong class AppState của file appstate.docx
+  Future<List<Map<String, dynamic>>> getDailyRevenueWithDetailsForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized) return [];
+    try {
+      if (userId == null) return [];
+      final FirebaseFirestore firestore = FirebaseFirestore.instance; //
+      List<Map<String, dynamic>> dailyData = [];
+      int days = range.end.difference(range.start).inDays + 1; //
+      List<Future<DocumentSnapshot>> futures = []; //
+
+      for (int i = 0; i < days; i++) {
+        DateTime date = range.start.add(Duration(days: i));
+        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        futures.add(
+          firestore
+              .collection('users')
+              .doc(userId)
+              .collection('daily_data')
+              .doc(getKey(dateKey))
+              .get(), //
+        );
+      }
+
+      List<DocumentSnapshot> docs = await Future.wait(futures); //
+      for (var doc in docs) {
+        if (doc.exists) {
+          double mainRevenue = doc['mainRevenue']?.toDouble() ?? 0.0; //
+          double secondaryRevenue = doc['secondaryRevenue']?.toDouble() ?? 0.0; //
+          double otherRevenue = doc['otherRevenue']?.toDouble() ?? 0.0; //
+
+          List<Map<String, dynamic>> mainTransactions = List<Map<String, dynamic>>.from(doc['mainRevenueTransactions'] ?? []); //
+          List<Map<String, dynamic>> secondaryTransactions = List<Map<String, dynamic>>.from(doc['secondaryRevenueTransactions'] ?? []); //
+          List<Map<String, dynamic>> otherTransactions = List<Map<String, dynamic>>.from(doc['otherRevenueTransactions'] ?? []);
+
+          dailyData.add({
+            'mainRevenue': mainRevenue,
+            'secondaryRevenue': secondaryRevenue,
+            'otherRevenue': otherRevenue,
+            'totalRevenue': mainRevenue + secondaryRevenue + otherRevenue,
+            'transactions': [...mainTransactions, ...secondaryTransactions, ...otherTransactions], // Dữ liệu chi tiết được tổng hợp ở đây
+          });
+        } else {
+          dailyData.add({
+            'mainRevenue': 0.0,
+            'secondaryRevenue': 0.0,
+            'otherRevenue': 0.0,
+            'totalRevenue': 0.0,
+            'transactions': [],
+          });
+        }
+      }
+      return dailyData;
+    } catch (e) {
+      print('Error in getDailyRevenueWithDetailsForRange: $e');
       return [];
     }
   }
@@ -1496,6 +1667,69 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // Dán đoạn code này vào trong class AppState trong file appstate.docx
+
+  Future<Map<String, Map<String, double>>> getProductProfitability(DateTimeRange range) async {
+    if (userId == null || !_isFirebaseInitialized) return {};
+
+    Map<String, Map<String, double>> productProfitability = {};
+    int days = range.end.difference(range.start).inDays + 1;
+    List<Future<DocumentSnapshot>> futures = [];
+
+    for (int i = 0; i < days; i++) {
+      DateTime date = range.start.add(Duration(days: i));
+      String dateKey = DateFormat('yyyy-MM-dd').format(date);
+      futures.add(
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('daily_data')
+            .doc(getKey(dateKey))
+            .get(),
+      );
+    }
+
+    List<DocumentSnapshot> docs = await Future.wait(futures);
+
+    for (var doc in docs) {
+      if (doc.exists) {
+        // Phân tích cho Doanh thu chính và Phụ, vì chúng có giá vốn (COGS)
+        for (String field in ['mainRevenueTransactions', 'secondaryRevenueTransactions']) {
+          List<dynamic> transactions = doc[field] ?? [];
+          for (var t in transactions) {
+            if (t is Map<String, dynamic>) {
+              String name = t['name'] ?? 'Không xác định';
+              double revenue = (t['total'] as num?)?.toDouble() ?? 0.0;
+              double cost = (t['totalVariableCost'] as num?)?.toDouble() ?? 0.0;
+              double quantity = (t['quantity'] as num?)?.toDouble() ?? 1.0;
+
+              productProfitability.putIfAbsent(name, () => {
+                'totalRevenue': 0.0,
+                'totalCost': 0.0,
+                'totalQuantity': 0.0,
+              });
+
+              productProfitability[name]!['totalRevenue'] = (productProfitability[name]!['totalRevenue'] ?? 0) + revenue;
+              productProfitability[name]!['totalCost'] = (productProfitability[name]!['totalCost'] ?? 0) + cost;
+              productProfitability[name]!['totalQuantity'] = (productProfitability[name]!['totalQuantity'] ?? 0) + quantity;
+            }
+          }
+        }
+      }
+    }
+
+    // Tính toán lợi nhuận và biên lợi nhuận cho mỗi sản phẩm
+    productProfitability.forEach((name, data) {
+      double totalRevenue = data['totalRevenue']!;
+      double totalCost = data['totalCost']!;
+      double totalProfit = totalRevenue - totalCost;
+      data['totalProfit'] = totalProfit;
+      data['profitMargin'] = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0.0;
+    });
+
+    return productProfitability;
+  }
+
   Future<Map<String, Map<String, double>>> getTopProductsByCategory(DateTimeRange range) async {
     if (!_isFirebaseInitialized) {
       return {
@@ -1786,6 +2020,7 @@ class AppState extends ChangeNotifier {
     _cancelRevenueSubscription();
     _cancelFixedExpenseSubscription();
     _cancelVariableExpenseSubscription();
+    _cancelDailyFixedExpenseSubscription();
     super.dispose();
   }
 }
