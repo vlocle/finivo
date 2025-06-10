@@ -21,7 +21,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   final TextEditingController priceController = TextEditingController();
   final NumberFormat currencyFormat =
   NumberFormat.currency(locale: 'vi_VN', symbol: 'VNĐ');
-  String selectedCategory = "Sản phẩm/Dịch vụ chính";
+  String selectedCategory = "Doanh thu chính";
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   int _selectedTab = 0;
@@ -92,12 +92,12 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
 
   Future<List<Map<String, dynamic>>> _loadProducts(AppState appState) async {
     try {
-      if (appState.userId == null) {
+      if (appState.activeUserId == null) {
         _showStyledSnackBar("Vui lòng đăng nhập để tải sản phẩm.", isError: true);
         return [];
       }
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính"
+      String baseKey = selectedCategory == "Doanh thu chính"
           ? 'mainProductList'
           : 'extraProductList';
       String firestoreDocKey = appState.getKey(baseKey);
@@ -121,7 +121,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
 
       DocumentSnapshot doc = await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('products')
           .doc(firestoreDocKey)
           .get();
@@ -143,7 +143,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   Future<void> _saveProducts(
       AppState appState, List<Map<String, dynamic>> productList) async {
     try {
-      if (appState.userId == null) {
+      if (appState.activeUserId == null) {
         throw Exception('User ID không tồn tại');
       }
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -163,7 +163,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
 
       await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('products')
           .doc(firestoreDocKey)
           .set({
@@ -406,6 +406,8 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final bool isOwner = appState.authUserId == appState.activeUserId;
+    final bool canManageProducts = appState.hasPermission('canManageProducts');
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
@@ -467,7 +469,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                     nameController: nameController,
                     priceController: priceController,
                     selectedCategory: selectedCategory,
-                    onAddProduct: () => addProduct(appState, productList),
+                    onAddProduct: canManageProducts ? () => addProduct(appState, productList) : null,
                     onCategoryChanged: (newCategory) {
                       if (mounted) {
                         setState(() {
@@ -482,10 +484,8 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                   ProductListSection(
                     key: ValueKey('productList_${selectedCategory}'),
                     productList: productList,
-                    onEditProduct: (index) =>
-                        editProduct(appState, productList, index),
-                    onDeleteProduct: (index) =>
-                        deleteProduct(appState, productList, index),
+                    onEditProduct: canManageProducts ? (index) => editProduct(appState, productList, index) : null,
+                    onDeleteProduct: canManageProducts ? (index) => deleteProduct(appState, productList, index) : null,
                     appState: appState,
                     currencyFormat: currencyFormat,
                     primaryColor: _primaryColor,
@@ -539,7 +539,7 @@ class ProductInputSection extends StatelessWidget {
   final TextEditingController nameController;
   final TextEditingController priceController;
   final String selectedCategory;
-  final VoidCallback onAddProduct;
+  final VoidCallback? onAddProduct;
   final Function(String) onCategoryChanged;
   final AppState appState;
   final NumberFormat inputPriceFormatter;
@@ -595,12 +595,12 @@ class ProductInputSection extends StatelessWidget {
                   SegmentedButton<String>(
                     segments: const [
                       ButtonSegment<String>(
-                        value: "Sản phẩm/Dịch vụ chính",
+                        value: "Doanh thu chính",
                         label: Text("Doanh thu chính", overflow: TextOverflow.ellipsis),
                         icon: Icon(Icons.star_border_purple500_outlined, size: 18),
                       ),
                       ButtonSegment<String>(
-                        value: "Sản phẩm/Dịch vụ phụ",
+                        value: "Doanh thu phụ",
                         label: Text("Doanh thu phụ", overflow: TextOverflow.ellipsis),
                         icon: Icon(Icons.star_half_outlined, size: 18),
                       ),
@@ -720,8 +720,8 @@ class ProductInputSection extends StatelessWidget {
 
 class ProductListSection extends StatelessWidget {
   final List<Map<String, dynamic>> productList;
-  final Function(int) onEditProduct;
-  final Function(int) onDeleteProduct;
+  final Function(int)? onEditProduct;
+  final Function(int)? onDeleteProduct;
   final AppState appState;
   final NumberFormat currencyFormat;
   final Color primaryColor;
@@ -803,7 +803,7 @@ class ProductListSection extends StatelessWidget {
                 ),
                 direction: DismissDirection.endToStart,
                 onDismissed: (direction) {
-                  onDeleteProduct(index);
+                  onDeleteProduct!(index);
                 },
                 child: Card(
                   elevation: 1.5,
@@ -846,7 +846,7 @@ class ProductListSection extends StatelessWidget {
                     trailing: IconButton(
                       icon: Icon(Icons.edit_note_outlined,
                           color: primaryColor.withOpacity(0.9), size: 22),
-                      onPressed: () => onEditProduct(index),
+                      onPressed: onEditProduct != null ? () => onEditProduct!(index) : null,
                       splashRadius: 18,
                       padding: EdgeInsets.zero,
                       constraints: BoxConstraints(minWidth: 30, minHeight: 30),

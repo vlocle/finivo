@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
+import '/screens/firestore_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../state/app_state.dart';
 import 'main_screen.dart';
@@ -37,13 +39,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         accessToken: googleAuth.accessToken, // [cite: 337]
         idToken: googleAuth.idToken, // [cite: 337]
       );
-      await FirebaseAuth.instance.signInWithCredential(credential); // [cite: 338]
-      if (mounted) {
-        Provider.of<AppState>(context, listen: false).setUserId(FirebaseAuth.instance.currentUser!.uid);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => MainScreen()),
-        );
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final User? user = userCredential.user;
+
+      if (user != null) {
+        // GỌI HÀM LƯU THÔNG TIN VÀO FIRESTORE
+        await FirestoreService().saveUserInfoToFirestore(user);
+
+        if (mounted) {
+          Provider.of<AppState>(context, listen: false).setUserId(user.uid); // Dùng user.uid từ đối tượng đã có
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => MainScreen()),
+          );
+        }
       }
 
     } catch (e) {

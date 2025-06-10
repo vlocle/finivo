@@ -7,11 +7,17 @@ import '../state/app_state.dart';
 class ExpenseManager {
   // Load fixed expenses
   static Future<List<Map<String, dynamic>>> loadFixedExpenses(AppState appState, DateTime date) async {
-    final String? userId = appState.userId; // [cite: 862]
+    final String? userId = appState.activeUserId; // [cite: 862]
     if (userId == null) return []; // [cite: 863]
-    final String dateKey = DateFormat('yyyy-MM-dd').format(date); // [cite: 863]
-    final String firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); // [cite: 863]
-    final String hiveKey = '$userId-fixedExpenses-$firestoreDocId'; // [cite: 864]
+    final String dateKey = DateFormat('yyyy-MM-dd').format(date);
+    final String firestoreDocId = appState.getKey('fixedExpenseList_$dateKey');
+    final String hiveKey = '$userId-fixedExpenses-$firestoreDocId';
+    if (!Hive.isBoxOpen('fixedExpensesBox')) {
+      await Hive.openBox('fixedExpensesBox');
+    }
+    if (!Hive.isBoxOpen('revenueBox')) {
+      await Hive.openBox('revenueBox');
+    }
     final fixedExpensesBox = Hive.box('fixedExpensesBox'); // [cite: 864]
 
     var syncTimestamps = Hive.box('revenueBox').get(appState.getKey('sync_timestamps')) as Map<dynamic, dynamic>?; // [cite: 864]
@@ -88,7 +94,10 @@ class ExpenseManager {
   static Future<void> _saveDailyFixedExpense(AppState appState, DateTime date, String name, double dailyAmount) async {
     final String dateKey = DateFormat('yyyy-MM-dd').format(date); // [cite: 879]
     final String firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); // [cite: 880]
-    final String hiveKey = '${appState.userId}-fixedExpenses-$firestoreDocId'; // [cite: 880]
+    final String hiveKey = '${appState.activeUserId}-fixedExpenses-$firestoreDocId';
+    if (!Hive.isBoxOpen('fixedExpensesBox')) {
+      await Hive.openBox('fixedExpensesBox');
+    }
     final fixedExpensesBox = Hive.box('fixedExpensesBox'); // [cite: 880]
     try {
       List<Map<String, dynamic>> dailyExpenses = await loadFixedExpenses(appState, date); // [cite: 881]
@@ -101,7 +110,7 @@ class ExpenseManager {
       double total = dailyExpenses.fold(0.0, (sum, item) => sum + (item['amount']?.toDouble() ?? 0.0)); // [cite: 884]
       await FirebaseFirestore.instance // [cite: 884]
           .collection('users') // [cite: 885]
-          .doc(appState.userId) // [cite: 885]
+          .doc(appState.activeUserId) // [cite: 885]
           .collection('expenses') // [cite: 885]
           .doc('fixed') // [cite: 885]
           .collection('daily') // [cite: 885]
@@ -120,11 +129,14 @@ class ExpenseManager {
 
   // Save fixed expenses
   static Future<void> saveFixedExpenses(AppState appState, List<Map<String, dynamic>> expenses) async {
-    final String? userId = appState.userId; // [cite: 888]
+    final String? userId = appState.activeUserId; // [cite: 888]
     if (userId == null) return; // [cite: 889]
     final String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate); // [cite: 889]
     final String firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); // [cite: 889]
-    final String hiveKey = '$userId-fixedExpenses-$firestoreDocId'; // [cite: 890]
+    final String hiveKey = '$userId-fixedExpenses-$firestoreDocId';
+    if (!Hive.isBoxOpen('fixedExpensesBox')) {
+      await Hive.openBox('fixedExpensesBox');
+    }
     final fixedExpensesBox = Hive.box('fixedExpensesBox'); // [cite: 890]
     try {
       final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 890]
@@ -170,11 +182,14 @@ class ExpenseManager {
   }
 
   static Future<List<Map<String, dynamic>>> loadVariableExpenses(AppState appState) async {
-    final String? userId = appState.userId; // [cite: 906]
+    final String? userId = appState.activeUserId; // [cite: 906]
     if (userId == null) return []; // [cite: 907]
     final String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate); // [cite: 907]
     final String firestoreDocId = appState.getKey('variableTransactionHistory_${DateFormat('yyyy-MM-dd').format(appState.selectedDate)}'); // [cite: 907]
-    final String hiveKey = '${appState.userId}-variableExpenses-$firestoreDocId'; // [cite: 908]
+    final String hiveKey = '${appState.activeUserId}-variableExpenses-$firestoreDocId'; // [cite: 908]
+    if (!Hive.isBoxOpen('variableExpensesBox')) {
+      await Hive.openBox('variableExpensesBox');
+    }
     final variableExpensesBox = Hive.box('variableExpensesBox'); // [cite: 909]
     final cachedData = variableExpensesBox.get(hiveKey); // [cite: 910]
 
@@ -242,10 +257,13 @@ class ExpenseManager {
   // Load available variable expenses (Danh sách các loại chi phí biến đổi có thể chọn)
   static Future<List<Map<String, dynamic>>> loadAvailableVariableExpenses(
       AppState appState) async {
-    final String? userId = appState.userId; // [cite: 922]
+    final String? userId = appState.activeUserId; // [cite: 922]
     if (userId == null) return []; // [cite: 923]
     final String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate); // [cite: 923]
     final String hiveKey = '$userId-variableExpenseList-$monthKey'; // [cite: 923]
+    if (!Hive.isBoxOpen('variableExpenseListBox')) {
+      await Hive.openBox('variableExpenseListBox');
+    }
     final variableExpenseListBox = Hive.box('variableExpenseListBox'); // [cite: 924]
 
     final cachedData = variableExpenseListBox.get(hiveKey); // [cite: 924]
@@ -328,11 +346,14 @@ class ExpenseManager {
   }
 
   static Future<void> saveVariableExpenses(AppState appState, List<Map<String, dynamic>> expenses) async {
-    final String? userId = appState.userId; // [cite: 939]
+    final String? userId = appState.activeUserId; // [cite: 939]
     if (userId == null) return; // [cite: 940]
     final String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate); // [cite: 940]
     final String firestoreDocId = appState.getKey('variableTransactionHistory_${DateFormat('yyyy-MM-dd').format(appState.selectedDate)}'); // [cite: 940]
-    final String hiveKey = '${appState.userId}-variableExpenses-$firestoreDocId'; // [cite: 941]
+    final String hiveKey = '${appState.activeUserId}-variableExpenses-$firestoreDocId'; // [cite: 941]
+    if (!Hive.isBoxOpen('variableExpensesBox')) {
+      await Hive.openBox('variableExpensesBox');
+    }
     final variableExpensesBox = Hive.box('variableExpensesBox'); // [cite: 942]
     try {
       final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 943]
@@ -364,10 +385,13 @@ class ExpenseManager {
   }
 
   static Future<List<Map<String, dynamic>>> loadFixedExpenseList(AppState appState, DateTime month) async {
-    final String? userId = appState.userId; // [cite: 952]
+    final String? userId = appState.activeUserId; // [cite: 952]
     if (userId == null) return []; // [cite: 953]
     final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 953]
     final String hiveKey = '$userId-fixedExpenseList-$monthKey'; // [cite: 953]
+    if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) {
+      await Hive.openBox('monthlyFixedExpensesBox');
+    }
     final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox'); // [cite: 954]
     final cachedData = monthlyFixedExpensesBox.get(hiveKey); // [cite: 954]
     if (cachedData != null) { // [cite: 955]
@@ -399,10 +423,13 @@ class ExpenseManager {
   }
 
   static Future<void> saveFixedExpenseList(AppState appState, List<Map<String, dynamic>> expenses, DateTime month) async {
-    final String? userId = appState.userId; // [cite: 962]
+    final String? userId = appState.activeUserId; // [cite: 962]
     if (userId == null) return; // [cite: 963]
     final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 963]
     final String hiveKey = '$userId-fixedExpenseList-$monthKey'; // [cite: 963]
+    if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) {
+      await Hive.openBox('monthlyFixedExpensesBox');
+    }
     final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox'); // [cite: 964]
     try {
       final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 964]
@@ -426,10 +453,13 @@ class ExpenseManager {
   }
 
   static Future<Map<String, double>> loadMonthlyFixedAmounts(AppState appState, DateTime month) async {
-    final String? userId = appState.userId; // [cite: 969]
+    final String? userId = appState.activeUserId; // [cite: 969]
     if (userId == null) return {}; // [cite: 970]
     final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 970]
     final String hiveKey = '$userId-monthlyFixedAmounts-$monthKey'; // [cite: 970]
+    if (!Hive.isBoxOpen('monthlyFixedAmountsBox')) {
+      await Hive.openBox('monthlyFixedAmountsBox');
+    }
     final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox'); // [cite: 971]
     final cachedData = monthlyFixedAmountsBox.get(hiveKey); // [cite: 971]
     if (cachedData != null) { // [cite: 972]
@@ -461,10 +491,13 @@ class ExpenseManager {
   }
 
   static Future<void> saveMonthlyFixedAmount(AppState appState, String name, double amount, DateTime month, {DateTimeRange? dateRange}) async {
-    final String? userId = appState.userId; // [cite: 979]
+    final String? userId = appState.activeUserId; // [cite: 979]
     if (userId == null) return; // [cite: 980]
     final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 980]
     final String hiveKey = '$userId-monthlyFixedAmounts-$monthKey'; // [cite: 980]
+    if (!Hive.isBoxOpen('monthlyFixedAmountsBox')) {
+      await Hive.openBox('monthlyFixedAmountsBox');
+    }
     final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox'); // [cite: 981]
     try {
       final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 981]
@@ -506,13 +539,22 @@ class ExpenseManager {
 
   static Future<void> deleteMonthlyFixedExpense(AppState appState, String name,
       DateTime month, {DateTimeRange? dateRange}) async {
-    final String? userId = appState.userId; // [cite: 990]
+    final String? userId = appState.activeUserId; // [cite: 990]
     if (userId == null) { // [cite: 991]
       print("User ID is null, cannot delete monthly fixed expense."); // [cite: 991]
       return; // [cite: 992]
     }
     final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 992]
     final String hiveMonthlyAmountsKey = '$userId-monthlyFixedAmounts-$monthKey'; // [cite: 993]
+    if (!Hive.isBoxOpen('monthlyFixedAmountsBox')) {
+      await Hive.openBox('monthlyFixedAmountsBox');
+    }
+    if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) {
+      await Hive.openBox('monthlyFixedExpensesBox');
+    }
+    if (!Hive.isBoxOpen('fixedExpensesBox')) {
+      await Hive.openBox('fixedExpensesBox');
+    }
     final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox'); // [cite: 994]
     final String hiveFixedExpenseListKey = '$userId-fixedExpenseList-$monthKey'; // [cite: 994]
     final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox'); // [cite: 994]

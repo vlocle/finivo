@@ -16,6 +16,8 @@ import 'expense_manager.dart';
 import 'product_service_screen.dart';
 import 'user_setting_screen.dart';
 import '/screens/revenue_manager.dart'; // Make sure this path is correct
+import '/screens/account_switcher.dart'; // Thay your_app_name bằng tên package của bạn
+
 
 class RevenueScreen extends StatefulWidget {
   @override
@@ -553,6 +555,8 @@ class _RevenueScreenState extends State<RevenueScreen>
     print('RevenueScreen: build method called at ${DateTime.now().toIso8601String()}');
     final user = FirebaseAuth.instance.currentUser;
     final appState = Provider.of<AppState>(context, listen: false);
+    final bool canEditRevenue = appState.hasPermission('canEditRevenue');
+    final bool canManageProducts = appState.hasPermission('canManageProducts');
 
     return Scaffold(
       backgroundColor: _secondaryColor,
@@ -648,33 +652,27 @@ class _RevenueScreenState extends State<RevenueScreen>
                       ),
                       const SizedBox(width: 14),
                       Flexible(
-                        child: ValueListenableBuilder<DateTime>(
-                          valueListenable: appState.selectedDateListenable,
-                          builder: (context, selectedDate, _) => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                "Chào, ${user?.displayName?.split(' ').first ?? 'Bạn'}",
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // WIDGET MỚI ĐẶT Ở ĐÂY
+                            AccountSwitcher(),
+
+                            // Giữ nguyên phần hiển thị ngày
+                            const SizedBox(height: 2),
+                            ValueListenableBuilder<DateTime>(
+                              valueListenable: appState.selectedDateListenable,
+                              builder: (context, selectedDate, _) => Text(
                                 "Ngày ${DateFormat('dd MMMM, yyyy', 'vi').format(selectedDate)}",
                                 style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.white.withOpacity(0.9),
-                                    fontWeight: FontWeight.w500
+                                  fontSize: 13,
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -932,6 +930,7 @@ class _RevenueScreenState extends State<RevenueScreen>
   }
 
   Widget _buildTransactionList(AppState appState) {
+    final bool isOwner = appState.authUserId == appState.activeUserId;
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
       sliver: ValueListenableBuilder<List<Map<String, dynamic>>>(
@@ -968,6 +967,8 @@ class _RevenueScreenState extends State<RevenueScreen>
             delegate: SliverChildBuilderDelegate(
                   (context, index) {
                 final transaction = transactions[index];
+                final bool isCreator = (transaction['createdBy'] ?? "") == appState.authUserId;
+                final bool canModify = appState.isOwner() || (appState.hasPermission('canEditRevenue') && isCreator);
                 final String? dateTimeString = transaction['date'];
                 final String formattedTime = dateTimeString != null
                     ? dateTimeFormat.format(DateTime.parse(dateTimeString))
@@ -996,7 +997,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                   opacity: _fadeAnimation,
                   child: Slidable(
                     key: Key(transaction['id']?.toString() ?? UniqueKey().toString()),
-                    endActionPane: ActionPane(
+                    endActionPane: canModify ? ActionPane(
                       motion: const StretchMotion(),
                       children: [
                         // Các SlidableAction (Sửa, Xóa) giữ nguyên
@@ -1057,7 +1058,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ],
-                    ),
+                    ): null,
                     child: Card(
                       elevation: 2,
                       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),

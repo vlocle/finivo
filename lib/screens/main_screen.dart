@@ -22,17 +22,30 @@ class _MainScreenState extends State<MainScreen> { // Removed SingleTickerProvid
     AnalysisScreen(),
   ];
 
-  // AnimationController and _scaleAnimation are removed as we are using a simpler BottomNavigationBar design
-
   void _onItemTapped(int index, AppState appState) {
-    appState.setSelectedScreenIndex(index);
-    // Animation controller calls removed
-  }
+    // Mặc định là cho phép điều hướng
+    bool canNavigate = true;
 
-  Future<void> _signOut() async {
-    await FirebaseAuth.instance.signOut();
-    await GoogleSignIn().signOut();
-    // Potentially navigate to login screen or handle UI update
+    // Nếu người dùng không phải là chủ sở hữu, ta mới cần kiểm tra quyền chi tiết
+    if (!appState.isOwner()) {
+      if (index == 2 || index == 3) {
+        canNavigate = appState.hasPermission('canViewReport');
+      }
+    }
+
+    if (canNavigate) {
+      // Nếu được phép, thực hiện chuyển tab
+      appState.setSelectedScreenIndex(index);
+    } else {
+      // Nếu không được phép, hiển thị thông báo và không làm gì cả
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Bạn không có quyền truy cập chức năng này.'),
+          backgroundColor: Colors.orangeAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override

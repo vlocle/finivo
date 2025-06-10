@@ -31,17 +31,6 @@ void main() async {
       cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED, // [cite: 372]
     );
     await Hive.initFlutter(); // [cite: 373]
-    await Future.wait([ // [cite: 373]
-      Hive.openBox('productsBox').then((box) => print('Opened productsBox')), // [cite: 374]
-      Hive.openBox('transactionsBox').then((box) => print('Opened transactionsBox')), // [cite: 374]
-      Hive.openBox('revenueBox').then((box) => print('Opened revenueBox')), // [cite: 374]
-      Hive.openBox('settingsBox').then((box) => print('Opened settingsBox')), // [cite: 374]
-      Hive.openBox('fixedExpensesBox').then((box) => print('fixedExpensesBox')), // [cite: 374]
-      Hive.openBox('variableExpensesBox').then((box) => print('variableExpensesBox')), // [cite: 374]
-      Hive.openBox('variableExpenseListBox').then((box) => print('variableExpenseListBox')), // [cite: 374]
-      Hive.openBox('monthlyFixedExpensesBox').then((box) => print('monthlyFixedExpensesBox')), // [cite: 374]
-      Hive.openBox('monthlyFixedAmountsBox').then((box) => print('monthlyFixedAmountsBox')), // [cite: 374]
-    ]);
     await initializeDateFormatting('vi', null); // [cite: 375]
     final appState = AppState(); // [cite: 376]
     final connectivityResult = await Connectivity().checkConnectivity(); // [cite: 377]
@@ -130,7 +119,7 @@ class AuthWrapper extends StatelessWidget {
         }
         if (snapshot.hasData) {
           final appState = Provider.of<AppState>(context, listen: false);
-          if (appState.userId != snapshot.data!.uid) {
+          if (appState.activeUserId != snapshot.data!.uid) {
             appState.setUserId(snapshot.data!.uid);
           }
           return MainScreen();

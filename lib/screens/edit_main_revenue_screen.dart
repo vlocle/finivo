@@ -21,7 +21,6 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
   final TextEditingController priceController = TextEditingController(); // Giá BÁN // [cite: 5]
   late AnimationController _animationController; // [cite: 5]
   late Animation<double> _scaleAnimation; // [cite: 6]
-  late Future<List<Map<String, dynamic>>> _productsFuture; // [cite: 6]
   int _selectedTab = 0; // [cite: 7]
   late AppState _appState; // [cite: 7]
   final GlobalKey<_ProductInputSectionState> _productInputSectionKey =
@@ -46,9 +45,6 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
         CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack)); // [cite: 18]
     _animationController.forward(); // [cite: 19]
     _appState = Provider.of<AppState>(context, listen: false); // [cite: 19]
-    _productsFuture =
-        RevenueManager.loadProducts(_appState, "Doanh thu chính"); // [cite: 20, 21]
-    _appState.productsUpdated.addListener(_onProductsUpdated); // [cite: 21]
   }
 
   @override
@@ -63,18 +59,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
     quantityController.dispose(); // [cite: 24]
     priceController.dispose(); // [cite: 24]
     _animationController.dispose(); // [cite: 25]
-    _appState.productsUpdated.removeListener(_onProductsUpdated); // [cite: 25]
     super.dispose(); // [cite: 26]
-  }
-
-  void _onProductsUpdated() {
-    if (mounted) { // [cite: 26]
-      setState(() {
-        // THAY ĐỔI: không cần Provider.of ở đây nếu _appState đã là thành viên
-        _productsFuture =
-            RevenueManager.loadProducts(_appState, "Doanh thu chính"); // [cite: 26]
-      });
-    }
   }
 
   void _showStyledSnackBar(String message, {bool isError = false}) {
@@ -189,6 +174,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
       "date": DateTime.now().toIso8601String(), // [cite: 56]
       "unitVariableCost": unitVariableCostForSale, // [cite: 56]
       "totalVariableCost": totalUnitVariableCostForSale, // [cite: 57]
+      "createdBy": appState.authUserId,
       if (cogsSourceType != null) "cogsSourceType": cogsSourceType, // [cite: 57]
       "cogsWasFlexible": cogsWasFlexible, // Lưu cờ này bất kể có component hay không // [cite: 57]
       if (cogsDefaultCostAtTimeOfSale > 0 && cogsComponentsUsed != null)
@@ -649,6 +635,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context); // [cite: 190]
+    final bool canEditThisRevenue = appState.hasPermission('canEditRevenue');
     return GestureDetector( // [cite: 191]
       onTap: () => FocusScope.of(context).unfocus(), // [cite: 191]
       behavior: HitTestBehavior.opaque, // [cite: 191]
@@ -688,7 +675,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
           ),
         ),
         body: FutureBuilder<List<Map<String, dynamic>>>( // [cite: 197]
-          future: _productsFuture, // [cite: 197]
+          future: RevenueManager.loadProducts(appState, "Doanh thu chính"),
           builder: (context, snapshot) { // [cite: 197]
             if (snapshot.connectionState == ConnectionState.waiting) { // [cite: 197]
               return Center(
@@ -710,26 +697,25 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                       productList: productList, // [cite: 202]
                       quantityController: quantityController, // [cite: 203]
                       priceController: priceController, // Controller cho giá BÁN // [cite: 203]
-                      onAddTransaction: (selectedProduct, selectedPrice, // [cite: 203]
-                          isFlexiblePrice) {
-                        addTransaction( // [cite: 204]
-                            appState, // [cite: 204]
-                            appState.mainRevenueTransactions.value, // [cite: 205]
-                            selectedProduct, // [cite: 205]
-                            selectedPrice, // giá bán từ dropdown (nếu không flexible) // [cite: 205]
-                            isFlexiblePrice // cờ giá bán linh hoạt // [cite: 206]
-                          // Removed arguments for general variable expenses
-                          // unitVarCost sẽ được tính bên trong addTransaction // [cite: 210]
+                      onAddTransaction: canEditThisRevenue
+                          ? (selectedProduct, selectedPrice, isFlexiblePrice) {
+                        addTransaction(
+                            appState,
+                            appState.mainRevenueTransactions.value,
+                            selectedProduct,
+                            selectedPrice,
+                            isFlexiblePrice
                         );
-                      },
+                      }
+                          : null, // Truyền null nếu không có quyền
                       appState: appState, // [cite: 211]
                       currencyFormat: currencyFormat, // [cite: 211]
                     ),
                     TransactionHistorySection( // [cite: 211]
                       key: const ValueKey('transactionHistory'), // [cite: 212]
                       transactionsNotifier: appState.mainRevenueTransactions, // [cite: 212]
-                      onEditTransaction: editTransaction, // [cite: 212]
-                      onRemoveTransaction: removeTransaction, // [cite: 212]
+                      onEditTransaction: canEditThisRevenue ? editTransaction : null,
+                      onRemoveTransaction: canEditThisRevenue ? removeTransaction : null,
                       appState: appState, // [cite: 213]
                       currencyFormat: currencyFormat, // [cite: 213]
                       primaryColor: _primaryColor, // [cite: 213]
@@ -750,7 +736,7 @@ class ProductInputSection extends StatefulWidget {
   final List<Map<String, dynamic>> productList; // [cite: 217]
   final TextEditingController quantityController; // [cite: 217]
   final TextEditingController priceController; // [cite: 218]
-  final Function(String?, double, bool) onAddTransaction; // [cite: 218]
+  final Function(String?, double, bool)? onAddTransaction; // [cite: 218]
   final AppState appState; // [cite: 219]
   final NumberFormat currencyFormat; // [cite: 219]
 
@@ -1420,19 +1406,19 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                       const EdgeInsets.symmetric(vertical: 14), // [cite: 481]
                       elevation: 2, // [cite: 481]
                     ),
-                    onPressed: () {
-                      // Tìm lại tên sản phẩm từ ID đã chọn để truyền vào onAddTransaction
+                    onPressed: widget.onAddTransaction != null ? () {
+                      // Tìm lại tên sản phẩm từ ID đã chọn
                       final String? productName = selectedProductId != null
                           ? widget.productList.firstWhere(
                               (p) => p['id'] == selectedProductId,
                           orElse: () => {'name': null})['name']
                           : null;
 
-                      widget.onAddTransaction(
+                      widget.onAddTransaction!(
                           productName,
                           selectedPriceFromDropdown,
                           isFlexiblePriceEnabled);
-                    },
+                    } : null,
                     child: Text( // [cite: 482]
                       "Thêm giao dịch", // [cite: 482, 483]
                       style: GoogleFonts.poppins( // [cite: 483]
@@ -1506,9 +1492,9 @@ class _ProductInputSectionState extends State<ProductInputSection> {
 // TransactionHistorySection không thay đổi logic cốt lõi trong bản cập nhật này
 class TransactionHistorySection extends StatelessWidget {
   final ValueNotifier<List<Map<String, dynamic>>> transactionsNotifier; // [cite: 495]
-  final Function(AppState, List<Map<String, dynamic>>, int)
+  final Function(AppState, List<Map<String, dynamic>>, int)?
   onEditTransaction; // [cite: 496]
-  final Function(AppState, List<Map<String, dynamic>>, int)
+  final Function(AppState, List<Map<String, dynamic>>, int)?
   onRemoveTransaction; // [cite: 497]
   final AppState appState; // [cite: 497]
   final NumberFormat currencyFormat; // [cite: 498]
@@ -1615,7 +1601,7 @@ class TransactionHistorySection extends StatelessWidget {
                     direction: DismissDirection.endToStart, // [cite: 521]
                     onDismissed: (direction) { // [cite: 521]
                       if (originalIndex != -1) { // [cite: 521]
-                        onRemoveTransaction( // [cite: 522]
+                        onRemoveTransaction!( // [cite: 522]
                             appState, transactionsNotifier.value, originalIndex);
                       }
                     },
@@ -1718,7 +1704,7 @@ class TransactionHistorySection extends StatelessWidget {
                               size: 24), // [cite: 556]
                           onPressed: () { // [cite: 556]
                             if (originalIndex != -1) { // [cite: 557]
-                              onEditTransaction(appState, // [cite: 557]
+                              onEditTransaction!(appState, // [cite: 557]
                                   transactionsNotifier.value, originalIndex); // [cite: 558]
                             }
                           },

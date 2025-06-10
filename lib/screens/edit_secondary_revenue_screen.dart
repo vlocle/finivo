@@ -23,7 +23,6 @@ class _EditSecondaryRevenueScreenState
   final TextEditingController priceController = TextEditingController(); // Giá BÁN // [cite: 544]
   late AnimationController _animationController; // [cite: 544]
   late Animation<double> _scaleAnimation; // [cite: 545]
-  late Future<List<Map<String, dynamic>>> _productsFuture; // [cite: 545]
   int _selectedTab = 0; // [cite: 546]
   late AppState _appState; // [cite: 546]
   final GlobalKey<_ProductInputSectionState> _productInputSectionKey =
@@ -47,9 +46,6 @@ class _EditSecondaryRevenueScreenState
         CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack)); // [cite: 557]
     _animationController.forward(); // [cite: 558]
     _appState = Provider.of<AppState>(context, listen: false); // [cite: 558]
-    _productsFuture =
-        RevenueManager.loadProducts(_appState, "Doanh thu phụ"); // [cite: 559]
-    _appState.productsUpdated.addListener(_onProductsUpdated); // [cite: 560]
   }
 
   @override
@@ -63,18 +59,7 @@ class _EditSecondaryRevenueScreenState
     quantityController.dispose(); // [cite: 563]
     priceController.dispose(); // [cite: 564]
     _animationController.dispose(); // [cite: 564]
-    _appState.productsUpdated.removeListener(_onProductsUpdated); // [cite: 565]
     super.dispose(); // [cite: 565]
-  }
-
-  void _onProductsUpdated() {
-    if (mounted) { // [cite: 566]
-      setState(() {
-        // final appState = Provider.of<AppState>(context, listen: false); // _appState đã là thành viên
-        _productsFuture =
-            RevenueManager.loadProducts(_appState, "Doanh thu phụ"); // [cite: 566]
-      });
-    }
   }
 
   void _showStyledSnackBar(String message, {bool isError = false}) {
@@ -191,6 +176,7 @@ class _EditSecondaryRevenueScreenState
       "date": DateTime.now().toIso8601String(), // [cite: 56]
       "unitVariableCost": unitVariableCostForSale, // [cite: 56]
       "totalVariableCost": totalUnitVariableCostForSale, // [cite: 57]
+      "createdBy": appState.authUserId,
       if (cogsSourceType != null) "cogsSourceType": cogsSourceType, // [cite: 57]
       "cogsWasFlexible": cogsWasFlexible, // [cite: 57]
       if (cogsDefaultCostAtTimeOfSale > 0 && cogsComponentsUsed != null)
@@ -743,6 +729,7 @@ class _EditSecondaryRevenueScreenState
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context); // [cite: 190] // appState này sẽ được dùng trong onAddTransaction
+    final bool canEditThisRevenue = appState.hasPermission('canEditRevenue');
 
     return GestureDetector( // [cite: 191]
       onTap: () => FocusScope.of(context).unfocus(), // [cite: 191]
@@ -785,7 +772,7 @@ class _EditSecondaryRevenueScreenState
           ),
         ),
         body: FutureBuilder<List<Map<String, dynamic>>>( // [cite: 197]
-          future: _productsFuture, // [cite: 197]
+          future: RevenueManager.loadProducts(appState, "Doanh thu phụ"),
           builder: (context, snapshot) { // [cite: 197]
             if (snapshot.connectionState == ConnectionState.waiting) { // [cite: 197]
               return Center(
@@ -809,16 +796,17 @@ class _EditSecondaryRevenueScreenState
                       productList: productList, // [cite: 202]
                       quantityController: quantityController, // [cite: 203]
                       priceController: priceController, // [cite: 203]
-                      onAddTransaction: (selectedProduct, selectedPrice,
-                          isFlexiblePrice) { // [cite: 203]
-                        addTransaction( // [cite: 204]
-                            appState, //Sử dụng appState từ scope của _EditSecondaryRevenueScreenState
-                            appState.secondaryRevenueTransactions.value, // [cite: 205] // Danh sách cho DTP
-                            selectedProduct, // [cite: 205]
-                            selectedPrice, // [cite: 205]
-                            isFlexiblePrice // [cite: 206]
+                      onAddTransaction: canEditThisRevenue
+                          ? (selectedProduct, selectedPrice, isFlexiblePrice) {
+                        addTransaction(
+                            appState,
+                            appState.mainRevenueTransactions.value,
+                            selectedProduct,
+                            selectedPrice,
+                            isFlexiblePrice
                         );
-                      },
+                      }
+                          : null, // Truyền null nếu không có quyền
                       appState: appState, // [cite: 211]
                       currencyFormat: currencyFormat, // [cite: 211]
                       // Truyền màu primary của màn hình này cho ProductInputSection
@@ -828,8 +816,8 @@ class _EditSecondaryRevenueScreenState
                       key: const ValueKey('transactionHistorySecondary'), // [cite: 212] // Key khác biệt
                       transactionsNotifier:
                       appState.secondaryRevenueTransactions, // [cite: 212] // Danh sách cho DTP
-                      onEditTransaction: editTransaction, // [cite: 212]
-                      onRemoveTransaction: removeTransaction, // [cite: 212]
+                      onEditTransaction: canEditThisRevenue ? editTransaction : null,
+                      onRemoveTransaction: canEditThisRevenue ? removeTransaction : null,
                       appState: appState, // [cite: 213]
                       currencyFormat: currencyFormat, // [cite: 213]
                       primaryColor: _primaryColor, // [cite: 213]
@@ -851,7 +839,7 @@ class ProductInputSection extends StatefulWidget {
   final List<Map<String, dynamic>> productList; // [cite: 217]
   final TextEditingController quantityController; // [cite: 217]
   final TextEditingController priceController; // [cite: 218]
-  final Function(String?, double, bool) onAddTransaction; // [cite: 218]
+  final Function(String?, double, bool)? onAddTransaction; // [cite: 218]
   final AppState appState; // [cite: 219]
   final NumberFormat currencyFormat; // [cite: 219]
   final Color screenPrimaryColor; // Thêm màu từ màn hình cha
@@ -1537,19 +1525,20 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                       const EdgeInsets.symmetric(vertical: 14),
                       elevation: 2, // [cite: 481]
                     ),
-                    onPressed: () {
-                      // Tìm lại tên sản phẩm từ ID đã chọn để truyền vào onAddTransaction
+                    onPressed: widget.onAddTransaction != null ? () { // <-- KIỂM TRA NULL
+                      // Tìm lại tên sản phẩm từ ID đã chọn
                       final String? productName = selectedProductId != null
                           ? widget.productList.firstWhere(
                               (p) => p['id'] == selectedProductId,
                           orElse: () => {'name': null})['name']
                           : null;
 
-                      widget.onAddTransaction(
+                      // Dùng dấu ! vì đã kiểm tra null
+                      widget.onAddTransaction!(
                           productName,
                           selectedPriceFromDropdown,
                           isFlexiblePriceEnabled);
-                    },
+                    } : null,
                     child: Text( // [cite: 482]
                       "Thêm giao dịch (DTP)", // [cite: 482, 483]
                       style: GoogleFonts.poppins( // [cite: 483]
@@ -1628,9 +1617,9 @@ class _ProductInputSectionState extends State<ProductInputSection> {
 // Nó sẽ nhận primaryColor từ _EditSecondaryRevenueScreenState
 class TransactionHistorySection extends StatelessWidget {
   final ValueNotifier<List<Map<String, dynamic>>> transactionsNotifier; // [cite: 495]
-  final Function(AppState, List<Map<String, dynamic>>, int)
+  final Function(AppState, List<Map<String, dynamic>>, int)?
   onEditTransaction; // [cite: 496]
-  final Function(AppState, List<Map<String, dynamic>>, int)
+  final Function(AppState, List<Map<String, dynamic>>, int)?
   onRemoveTransaction; // [cite: 497]
   final AppState appState; // [cite: 497]
   final NumberFormat currencyFormat; // [cite: 498]
@@ -1742,7 +1731,7 @@ class TransactionHistorySection extends StatelessWidget {
                     direction: DismissDirection.endToStart, // [cite: 521]
                     onDismissed: (direction) { // [cite: 521]
                       if (originalIndex != -1) { // [cite: 521]
-                        onRemoveTransaction( // [cite: 522]
+                        onRemoveTransaction!( // [cite: 522]
                             appState, transactionsNotifier.value, originalIndex);
                       }
                     },
@@ -1851,7 +1840,7 @@ class TransactionHistorySection extends StatelessWidget {
                               size: 24), // [cite: 533]
                           onPressed: () { // [cite: 533]
                             if (originalIndex != -1) { // [cite: 534]
-                              onEditTransaction(appState, // [cite: 534]
+                              onEditTransaction!(appState, // [cite: 534]
                                   transactionsNotifier.value, originalIndex); // [cite: 535]
                             }
                           },

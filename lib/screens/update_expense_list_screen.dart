@@ -122,81 +122,63 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
   }
 
   Future<void> _loadInitialExpenseItems() async {
-    if (!mounted) return; // [cite: 1124]
+    if (!mounted) return;
     setState(() {
-      _isLoading = true; // [cite: 1125]
-      hasError = false; // [cite: 1125]
+      _isLoading = true;
+      hasError = false;
     });
+
     try {
-      final appState = Provider.of<AppState>(context, listen: false); // [cite: 1126]
-      final data = await ExpenseManager.loadAvailableVariableExpenses(appState); // [cite: 1126]
+      final appState = Provider.of<AppState>(context, listen: false);
+      final data = await ExpenseManager.loadAvailableVariableExpenses(appState);
+
       if (mounted) {
+        final validProductIds =
+        availableProductsForDropdown.map((p) => p['id'] as String?).toSet();
+
+        final cleanedData = data.map((expense) {
+          final linkedId = expense['linkedProductId'] as String?;
+          if (linkedId != null && !validProductIds.contains(linkedId)) {
+            final cleanedExpense = Map<String, dynamic>.from(expense);
+            cleanedExpense['linkedProductId'] = null;
+            return cleanedExpense;
+          }
+          return expense;
+        }).toList();
+
         setState(() {
-          nameControllers = data // [cite: 1127]
+          nameControllers = cleanedData
               .map((item) =>
               TextEditingController(text: item['name']?.toString() ?? ''))
               .toList();
-          priceControllers = data // MỚI
+          priceControllers = cleanedData
               .map((item) => TextEditingController(
               text: _inputPriceFormatter
                   .format(item['price'] as num? ?? 0.0)))
               .toList();
-          selectedProductIdForExpense = data //MỚI
+          selectedProductIdForExpense = cleanedData
               .map((item) => item['linkedProductId'] as String?)
               .toList();
-          nameFocusNodes = data.map((_) => FocusNode()).toList(); // [cite: 1127]
-          priceFocusNodes = data.map((_) => FocusNode()).toList(); // MỚI
-          if (nameControllers.isEmpty) { // [cite: 1127]
-            _addControllerInternal(); // [cite: 1127]
+
+          nameFocusNodes = cleanedData.map((_) => FocusNode()).toList();
+          priceFocusNodes = cleanedData.map((_) => FocusNode()).toList();
+
+          if (nameControllers.isEmpty) {
+            _addControllerInternal();
           }
-          _isLoading = false; // [cite: 1127]
-          _animationController.forward(); // [cite: 1128]
+          _isLoading = false;
+          _animationController.forward();
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _isLoading = false; // [cite: 1128]
-          hasError = true; // [cite: 1128]
+          _isLoading = false;
+          hasError = true;
         });
-        final appState = Provider.of<AppState>(context, listen: false); // [cite: 1129]
-        final String monthKey =
-        DateFormat('yyyy-MM').format(appState.selectedDate); // [cite: 1130]
-        final String hiveKey =
-            '${appState.userId}-variableExpenseList-$monthKey'; // [cite: 1130]
-        final variableExpenseListBox = Hive.box('variableExpenseListBox'); // [cite: 1130]
-        final cachedData = variableExpenseListBox.get(hiveKey); // [cite: 1130]
-        if (cachedData != null && mounted) { // [cite: 1131]
-          final List<Map<String, dynamic>> castedList =
-          List<Map<String, dynamic>>.from(cachedData);
-          setState(() {
-            nameControllers = castedList // [cite: 1131]
-                .map((item) => TextEditingController(
-                text: item['name']?.toString() ?? ''))
-                .toList();
-            priceControllers = castedList // MỚI
-                .map((item) => TextEditingController(
-                text: _inputPriceFormatter
-                    .format(item['price'] as num? ?? 0.0)))
-                .toList();
-            selectedProductIdForExpense = castedList // MỚI
-                .map((item) => item['linkedProductId'] as String?)
-                .toList();
-            nameFocusNodes =
-                castedList.map((_) => FocusNode()).toList(); // [cite: 1131]
-            priceFocusNodes = castedList.map((_) => FocusNode()).toList(); // MỚI
-            if (nameControllers.isEmpty) { // [cite: 1131]
-              _addControllerInternal(); // [cite: 1132]
-            }
-            _isLoading = false; // [cite: 1132]
-            hasError = false; // [cite: 1132]
-            _animationController.forward(); // [cite: 1132]
-          });
-        } else if (mounted) {
-          _showStyledSnackBar("Lỗi tải danh sách chi phí và không có dữ liệu cache.", isError: true); // [cite: 1133]
-        }
+        _showStyledSnackBar("Lỗi tải danh sách chi phí: $e", isError: true);
+        print("Error in _loadInitialExpenseItems: $e");
       }
-      print("Error in _loadInitialExpenseItems: $e"); // [cite: 1133]
     }
   }
 
@@ -340,7 +322,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
           ),
         ));
     try {
-      if (appState.userId == null) throw Exception('User ID không tồn tại'); // [cite: 1154]
+      if (appState.activeUserId == null) throw Exception('User ID không tồn tại'); // [cite: 1154]
       final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 1155]
       String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate); // [cite: 1156]
       String firestoreDocKey =
@@ -348,7 +330,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
 
       await firestore
           .collection('users')
-          .doc(appState.userId) // [cite: 1158]
+          .doc(appState.activeUserId) // [cite: 1158]
           .collection('expenses') // [cite: 1158]
           .doc('variableList') // [cite: 1158]
           .collection('monthly') // [cite: 1158]
@@ -359,7 +341,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
       });
 
       final String hiveBoxKey =
-          '${appState.userId}-variableExpenseList-$monthKey'; // [cite: 1160]
+          '${appState.activeUserId}-variableExpenseList-$monthKey'; // [cite: 1160]
       final variableExpenseListBox = Hive.box('variableExpenseListBox'); // [cite: 1161]
       await variableExpenseListBox.put(hiveBoxKey, updatedList); // [cite: 1162]
       appState.notifyProductsUpdated(); // [cite: 1162]
@@ -378,6 +360,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context, listen: false); // [cite: 1169]
     final screenWidth = MediaQuery.of(context).size.width; // [cite: 1170]
+    final bool canManageTypes = appState.hasPermission('canManageExpenseTypes');
 
     if (widget.category != "Chi phí biến đổi") { // [cite: 1171]
       return Scaffold(
@@ -458,7 +441,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                             icon: const Icon(Icons.add_circle_outline, // [cite: 1193]
                                 color: Colors.white, // [cite: 1195]
                                 size: 28), // [cite: 1195]
-                            onPressed: addController, // [cite: 1195]
+                            onPressed: canManageTypes ? addController : null,
                             tooltip: "Thêm mục chi phí", // [cite: 1195]
                             splashRadius: 22, // [cite: 1195]
                           ),
@@ -606,7 +589,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                                       scale: _buttonScaleAnimation, // [cite: 1220]
                                       child: IconButton( // [cite: 1220]
                                         icon: Icon(Icons.remove_circle_outline, color: _accentColor, size: 26), // [cite: 1221]
-                                        onPressed: () => removeController(index), // [cite: 1221]
+                                        onPressed: canManageTypes ? () => removeController(index) : null,
                                         tooltip: "Xóa mục này", // [cite: 1221]
                                         splashRadius: 20, // [cite: 1133]
                                         padding: EdgeInsets.zero, // [cite: 1133]
@@ -636,7 +619,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                             padding: const EdgeInsets.symmetric(vertical: 14), // [cite: 1228]
                             elevation: 2, // [cite: 1228]
                           ),
-                          onPressed: () => saveUpdatedList(appState), // [cite: 1229]
+                          onPressed: canManageTypes ? () => saveUpdatedList(appState) : null,
                           icon: const Icon(Icons.save_alt_outlined, size: 20), // [cite: 1229]
                           label: Text( // [cite: 1230]
                             "Lưu danh sách", // [cite: 1230]

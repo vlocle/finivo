@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'general_settings_screen.dart'; // Giả sử bạn có màn hình này
 import 'login_screen.dart';
+import 'permissions_screen.dart';
 
 class UserSettingsScreen extends StatelessWidget {
   const UserSettingsScreen({super.key});
@@ -92,7 +93,7 @@ class UserSettingsScreen extends StatelessWidget {
   // --- Hàm xóa toàn bộ dữ liệu ---
   Future<void> _clearAllData(BuildContext context) async {
     final appState = Provider.of<AppState>(context, listen: false);
-    String? userId = appState.userId;
+    String? userId = appState.activeUserId;
 
     if (userId == null) {
       if (context.mounted) {
@@ -414,11 +415,10 @@ class UserSettingsScreen extends StatelessWidget {
               children: [
                 _buildSettingsItem(
                   context,
-                  icon: Icons.security_outlined,
-                  title: "Phân quyền",
+                  icon: Icons.group_add_outlined,
+                  title: "Quản lý quyền truy cập",
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Chức năng đang phát triển")));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
                   },
                 ),
                 _buildSettingsItem(

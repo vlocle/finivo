@@ -136,9 +136,9 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
         final String firestoreDailyVariableDocId =
         appState.getKey('variableTransactionHistory_$dateKey'); //
         final String hiveVariableKey =
-            '${appState.userId}-variableExpenses-$firestoreDailyVariableDocId'; //
+            '${appState.activeUserId}-variableExpenses-$firestoreDailyVariableDocId'; //
         final String hiveListKey =
-            '${appState.userId}-variableExpenseList-$monthKey'; //
+            '${appState.activeUserId}-variableExpenseList-$monthKey'; //
         final variableExpensesBox = Hive.box('variableExpensesBox'); //
         final variableExpenseListBox = Hive.box('variableExpenseListBox'); //
         final rawCachedVariable = variableExpensesBox.get(hiveVariableKey) ?? []; //
@@ -262,7 +262,8 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
       currentVariableExpenses.add({
         "name": selectedExpenseName,
         "amount": amountToUse,
-        "date": DateTime.now().toIso8601String()
+        "date": DateTime.now().toIso8601String(),
+        "createdBy": appState.authUserId,
       });
       appState.variableExpenseList.value = currentVariableExpenses; //
       variableExpenses = List.from(currentVariableExpenses);

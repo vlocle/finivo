@@ -7,71 +7,78 @@ import '../state/app_state.dart';
 class RevenueManager {
   static Future<List<Map<String, dynamic>>> loadProducts(AppState appState, String category) async {
     try {
-      if (appState.userId == null) return [];
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      // Luôn sử dụng activeUserId
+      if (appState.activeUserId == null) {
+        print("Lỗi: activeUserId là null, không thể tải sản phẩm.");
+        return [];
+      }
+
+      // Xác định các key cần thiết dựa trên activeUserId
       String baseKey = category == "Doanh thu chính" ? 'mainProductList' : 'extraProductList';
-      String key = appState.getKey(baseKey);
-      String hiveKey = appState.getKey('${category}_productList');
+      String firestoreDocKey = appState.getKey(baseKey);
+      String hiveStorageKey = appState.getKey('${category}_productList');
 
       if (!Hive.isBoxOpen('productsBox')) {
         await Hive.openBox('productsBox');
       }
       var productsBox = Hive.box('productsBox');
 
-      // Tải từ Firestore trước để đảm bảo dữ liệu mới nhất
+      // --- LOGIC ƯU TIÊN HIVE (LẤY TỪ product_service_screen) ---
+      // Kiểm tra cache trước
+      if (productsBox.containsKey(hiveStorageKey)) {
+        var rawData = productsBox.get(hiveStorageKey);
+        if (rawData != null && rawData is List && rawData.isNotEmpty) {
+          print("Sản phẩm được tải từ Hive cache cho key: $hiveStorageKey");
+          return (rawData)
+              .map((item) => (item as Map<dynamic, dynamic>)
+              .map((key, value) => MapEntry(key.toString(), value)))
+              .cast<Map<String, dynamic>>()
+              .toList();
+        }
+      }
+
+      // --- NẾU KHÔNG CÓ TRONG CACHE, TẢI TỪ FIRESTORE ---
+      print("Không có cache, tải sản phẩm từ Firestore cho key: $firestoreDocKey");
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
       DocumentSnapshot doc = await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId) // Dùng activeUserId
           .collection('products')
-          .doc(key)
+          .doc(firestoreDocKey)
           .get();
 
-      List<Map<String, dynamic>> products = [];
-      bool needsUpdate = false;
-      var uuid = Uuid();
-      if (doc.exists && doc.data() != null && doc['products'] != null) {
-        products = (doc['products'] as List<dynamic>).map((item) {
-          var map = item as Map<dynamic, dynamic>;
-          var standardizedMap = map.map((key, value) {
-            return MapEntry(key.toString(), value);
-          });
-
-          if (standardizedMap['id'] == null || standardizedMap['id'].toString().isEmpty) {
-            standardizedMap['id'] = uuid.v4();
-            needsUpdate = true;
-          }
-
-          // Đảm bảo trường price tồn tại và là số hợp lệ
-          if (standardizedMap['price'] == null || (standardizedMap['price'] is num && standardizedMap['price'] <= 0)) {
-            standardizedMap['price'] = 0.0; // Hoặc báo lỗi tùy theo yêu cầu
-            print('Cảnh báo: Sản phẩm ${standardizedMap['name']} có giá không hợp lệ: ${standardizedMap['price']}');
-          }
-          return standardizedMap;
-        }).cast<Map<String, dynamic>>().toList();
-      }
-      if (needsUpdate) {
-        await firestore
-            .collection('users')
-            .doc(appState.userId)
-            .collection('products')
-            .doc(key)
-            .set({'products': products, 'updatedAt': FieldValue.serverTimestamp()});
-        print('Migrated and updated product list with new IDs.');
+      List<Map<String, dynamic>> productList = [];
+      if (doc.exists && doc.data() != null) {
+        var data = doc.data() as Map<String, dynamic>;
+        if (data['products'] != null) {
+          // Xử lý và chuẩn hóa dữ liệu từ Firestore (tương tự logic cũ)
+          var uuid = Uuid();
+          productList = (data['products'] as List<dynamic>).map((item) {
+            var map = item as Map<dynamic, dynamic>;
+            var standardizedMap = map.map((key, value) => MapEntry(key.toString(), value));
+            if (standardizedMap['id'] == null || standardizedMap['id'].toString().isEmpty) {
+              standardizedMap['id'] = uuid.v4();
+            }
+            return standardizedMap;
+          }).cast<Map<String, dynamic>>().toList();
+        }
       }
 
-      // Lưu vào Hive
-      await productsBox.put(hiveKey, products);
-      print('Tải sản phẩm từ Firestore và lưu vào Hive: $products');
-      return products;
+      // Lưu kết quả vào cache cho lần sau
+      await productsBox.put(hiveStorageKey, productList);
+      print("Đã lưu sản phẩm vào Hive cache với key: $hiveStorageKey");
+
+      return productList;
+
     } catch (e) {
-      print('Lỗi khi tải sản phẩm: $e');
+      print('Lỗi nghiêm trọng khi tải sản phẩm: $e');
       return [];
     }
   }
 
   static Future<List<Map<String, dynamic>>> loadTransactions(AppState appState, String category) async {
     try {
-      if (appState.userId == null) return [];
+      if (appState.activeUserId == null) return [];
       String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
       String field = category == 'Doanh thu chính'
           ? 'mainRevenueTransactions'
@@ -101,7 +108,7 @@ class RevenueManager {
       // Nếu không có trong Hive, tải từ Firestore
       DocumentSnapshot doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('daily_data')
           .doc(appState.getKey(dateKey))
           .get();
@@ -125,7 +132,7 @@ class RevenueManager {
 
   static Future<void> saveTransactionHistory(AppState appState, String category, List<Map<String, dynamic>> transactions) async {
     try {
-      if (appState.userId == null) throw Exception('User ID không tồn tại');
+      if (appState.activeUserId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
       String field = category == 'Doanh thu chính'
@@ -134,6 +141,8 @@ class RevenueManager {
           ? 'secondaryRevenueTransactions'
           : 'otherRevenueTransactions';
       String hiveKey = appState.getKey('${dateKey}_${field}');
+
+
 
       // Chuẩn hóa transactions trước khi lưu
       List<Map<String, dynamic>> standardizedTransactions = transactions.map((transaction) {
@@ -150,6 +159,7 @@ class RevenueManager {
           'date': transaction['date']?.toString() ?? DateTime.now().toIso8601String(),
           'unitVariableCost': (transaction['unitVariableCost'] as num?)?.toDouble() ?? 0.0,
           'totalVariableCost': (transaction['totalVariableCost'] as num?)?.toDouble() ?? 0.0,
+          if (transaction.containsKey('createdBy')) 'createdBy': transaction['createdBy'],
           if (transaction.containsKey('cogsSourceType')) 'cogsSourceType': transaction['cogsSourceType'],
           if (transaction.containsKey('cogsWasFlexible')) 'cogsWasFlexible': transaction['cogsWasFlexible'],
           if (transaction.containsKey('cogsDefaultCostAtTimeOfSale')) 'cogsDefaultCostAtTimeOfSale': transaction['cogsDefaultCostAtTimeOfSale'],
@@ -164,7 +174,7 @@ class RevenueManager {
       // Lưu vào Firestore
       await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('daily_data')
           .doc(appState.getKey(dateKey))
           .set({
@@ -191,7 +201,7 @@ class RevenueManager {
 
   static Future<void> updateTotalRevenue(AppState appState, String category, List<Map<String, dynamic>> transactions) async {
     try {
-      if (appState.userId == null) throw Exception('User ID không tồn tại');
+      if (appState.activeUserId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
       double total = transactions.fold(0.0, (sum, item) => sum + (item['total'] as num? ?? item['amount'] as num? ?? 0.0).toDouble());
@@ -206,7 +216,7 @@ class RevenueManager {
 
       await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('daily_data')
           .doc(appState.getKey(dateKey))
           .set({
@@ -223,13 +233,17 @@ class RevenueManager {
 
   static Future<List<Map<String, dynamic>>> loadOtherRevenueTransactions(AppState appState) async {
     try {
-      if (appState.userId == null) {
+      if (appState.activeUserId == null) {
         print('User ID không tồn tại');
         return [];
       }
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
       String hiveKey = appState.getKey('${dateKey}_otherRevenueTransactions');
+
+      if (!Hive.isBoxOpen('transactionsBox')) {
+        await Hive.openBox('transactionsBox');
+      }
 
       var transactionsBox = Hive.box('transactionsBox');
 
@@ -251,7 +265,7 @@ class RevenueManager {
       // Tải từ Firestore
       DocumentSnapshot doc = await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('daily_data')
           .doc(appState.getKey(dateKey))
           .get();
@@ -284,7 +298,7 @@ class RevenueManager {
 
   static Future<void> saveOtherRevenueTransactions(AppState appState, List<Map<String, dynamic>> transactions) async {
     try {
-      if (appState.userId == null) {
+      if (appState.activeUserId == null) {
         throw Exception('User ID không tồn tại');
       }
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -302,19 +316,24 @@ class RevenueManager {
           'total': (transaction['total'] as num?)?.toDouble() ?? (transaction['amount'] as num?)?.toDouble() ?? 0.0,
           'quantity': (transaction['quantity'] as num?)?.toDouble() ?? 1.0,
           'date': transaction['date']?.toString() ?? DateTime.now().toIso8601String(),
+          if (transaction.containsKey('createdBy')) 'createdBy': transaction['createdBy'],
         };
       }).toList();
 
       // Lưu vào Firestore
       await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('daily_data')
           .doc(appState.getKey(dateKey))
           .set({
         'otherRevenueTransactions': standardizedTransactions,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+
+      if (!Hive.isBoxOpen('transactionsBox')) {
+        await Hive.openBox('transactionsBox');
+      }
 
       // Lưu vào Hive
       var transactionsBox = Hive.box('transactionsBox');
@@ -329,7 +348,7 @@ class RevenueManager {
 
   static Future<void> deleteTransaction(AppState appState, String category, Map<String, dynamic> transactionToDelete) async {
     try {
-      if (appState.userId == null) throw Exception('User ID không tồn tại');
+      if (appState.activeUserId == null) throw Exception('User ID không tồn tại');
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
       String field = category == 'Doanh thu chính'
@@ -341,7 +360,7 @@ class RevenueManager {
 
       DocumentSnapshot doc = await firestore
           .collection('users')
-          .doc(appState.userId)
+          .doc(appState.activeUserId)
           .collection('daily_data')
           .doc(appState.getKey(dateKey))
           .get();
@@ -357,7 +376,7 @@ class RevenueManager {
       if (transactions.isEmpty) {
         await firestore
             .collection('users')
-            .doc(appState.userId)
+            .doc(appState.activeUserId)
             .collection('daily_data')
             .doc(appState.getKey(dateKey))
             .set({
@@ -371,7 +390,7 @@ class RevenueManager {
       } else {
         await firestore
             .collection('users')
-            .doc(appState.userId)
+            .doc(appState.activeUserId)
             .collection('daily_data')
             .doc(appState.getKey(dateKey))
             .set({

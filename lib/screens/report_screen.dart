@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart'; // [cite: 1]
 import 'package:provider/provider.dart'; // [cite: 1]
 import '../state/app_state.dart'; // Giả định đường dẫn này đúng // [cite: 1]
 import 'package:intl/intl.dart'; // [cite: 1]
+import 'account_switcher.dart';
 import 'user_setting_screen.dart'; // [cite: 1]
 // Giả định đường dẫn này đúng
 import 'skeleton_loading.dart'; // Giả định đường dẫn này đúng // [cite: 2]
@@ -216,15 +217,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(width: 12), // [cite: 53]
-              Text( // [cite: 54]
-                "Báo Cáo", // [cite: 54]
-                style: TextStyle(
-                  fontFamily: 'Poppins', // [cite: 54]
-                  fontSize: 24, // [cite: 54]
-                  fontWeight: FontWeight.w600, // [cite: 55]
-                  color: AppColors.getTextColor(context), // [cite: 55]
-                ),
-              ),
+              AccountSwitcher(),
             ],
           ),
           GestureDetector(
@@ -301,7 +294,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
   Widget _buildReportContent(AppState appState) {
     if (selectedDateRange == null) return const SizedBox.shrink(); // [cite: 69]
     Widget content;
-    Key contentKey = ValueKey<String>('$selectedReport-${selectedDateRange.toString()}'); // [cite: 70]
+    Key contentKey = ValueKey<String>('$selectedReport-${selectedDateRange.toString()}-${appState.activeUserId}');
     switch (selectedReport) {
       case 'Tổng Quan':
         content = _buildOverviewReport(appState, key: contentKey); // [cite: 70]

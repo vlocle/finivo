@@ -86,6 +86,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       'total': total,
       'quantity': 1.0, // Default quantity for "other revenue"
       'date': DateTime.now().toIso8601String(),
+      'createdBy': appState.authUserId,
     });
 
     appState.otherRevenueTransactions.value = updatedTransactions;
@@ -289,6 +290,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final bool canEditThisRevenue = appState.hasPermission('canEditRevenue');
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
@@ -336,15 +338,15 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                 key: const ValueKey('otherRevenueInput'),
                 totalController: _totalController,
                 nameController: _nameController,
-                onAddTransaction: () => _addTransaction(appState),
+                onAddTransaction: canEditThisRevenue ? () => _addTransaction(appState) : null,
                 appState: appState, // Not strictly needed if only calling callback
                 inputPriceFormatter: _inputPriceFormatter,
               ),
               TransactionHistorySection(
                 key: const ValueKey('otherRevenueHistory'),
                 transactionsNotifier: appState.otherRevenueTransactions, // MODIFIED: Pass ValueNotifier
-                onEditTransaction: (appStateFromHistory, originalIndex) => _editTransaction(appStateFromHistory, originalIndex), // MODIFIED: Adapt signature
-                onDeleteTransaction: (appStateFromHistory, originalIndex) => _deleteTransaction(appStateFromHistory, originalIndex), // MODIFIED: Adapt signature
+                onEditTransaction: canEditThisRevenue ? _editTransaction : null,
+                onDeleteTransaction: canEditThisRevenue ? _deleteTransaction : null,
                 appState: appState, // Pass appState if needed by callbacks directly
                 currencyFormat: currencyFormat,
                 primaryColor: _primaryColor,
@@ -396,7 +398,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
 class TransactionInputSection extends StatelessWidget {
   final TextEditingController totalController;
   final TextEditingController nameController;
-  final VoidCallback onAddTransaction;
+  final VoidCallback? onAddTransaction;
   final AppState appState; // Keep if needed for other reasons, though not for clearing
   final NumberFormat inputPriceFormatter;
 
@@ -542,8 +544,8 @@ class TransactionInputSection extends StatelessWidget {
 
 class TransactionHistorySection extends StatelessWidget {
   final ValueNotifier<List<Map<String, dynamic>>> transactionsNotifier; // MODIFIED: Changed name for clarity
-  final Function(AppState, int) onEditTransaction;
-  final Function(AppState, int) onDeleteTransaction;
+  final Function(AppState, int)? onEditTransaction;
+  final Function(AppState, int)? onDeleteTransaction;
   final AppState appState; // Passed to be available for callbacks
   final NumberFormat currencyFormat;
   final Color primaryColor;
@@ -629,8 +631,10 @@ class TransactionHistorySection extends StatelessWidget {
                 itemCount: sortedHistory.length,
                 itemBuilder: (context, index) {
                   final transaction = sortedHistory[index];
-                  // Find the original index in the ValueNotifier's list for editing/deleting
+                  final bool isOwner = appState.isOwner();
+                  final bool isCreator = (transaction['createdBy'] ?? "") == appState.authUserId;
                   final originalIndex = currentHistory.indexOf(transaction);
+                  final bool canModifyThisRecord = isOwner || isCreator;
 
                   return Dismissible(
                     key: Key(transaction['date'].toString() + (transaction['name'] ?? '') + index.toString()), // Ensure name is not null
@@ -641,10 +645,15 @@ class TransactionHistorySection extends StatelessWidget {
                       child: const Icon(Icons.delete_sweep_outlined,
                           color: Colors.white, size: 26),
                     ),
-                    direction: DismissDirection.endToStart,
+                    direction: (onDeleteTransaction != null && canModifyThisRecord)
+                        ? DismissDirection.endToStart
+                        : DismissDirection.none,
                     onDismissed: (direction) {
-                      if (originalIndex != -1) { // Check if found
-                        onDeleteTransaction(appState, originalIndex);
+                      // THAY ĐỔI 2: Thêm kiểm tra đầy đủ trước khi thực thi
+                      if (onDeleteTransaction != null && canModifyThisRecord) {
+                        if (originalIndex != -1) {
+                          onDeleteTransaction!(appState, originalIndex);
+                        }
                       }
                     },
                     child: Card(
@@ -704,11 +713,13 @@ class TransactionHistorySection extends StatelessWidget {
                         trailing: IconButton(
                           icon: Icon(Icons.edit_note_outlined,
                               color: primaryColor.withOpacity(0.8), size: 22),
-                          onPressed: () {
-                            if (originalIndex != -1) { // Check if found
-                              onEditTransaction(appState, originalIndex);
+                          onPressed: (onEditTransaction != null && canModifyThisRecord)
+                              ? () {
+                            if (originalIndex != -1) {
+                              onEditTransaction!(appState, originalIndex);
                             }
-                          },
+                          }
+                              : null,
                           splashRadius: 18,
                           padding: EdgeInsets.zero,
                           constraints:

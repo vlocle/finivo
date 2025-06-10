@@ -9,6 +9,7 @@ import 'package:month_picker_dialog/month_picker_dialog.dart';
 import '../state/app_state.dart';
 import '/screens/expense_manager.dart';
 // Ensure this path is correct
+import 'account_switcher.dart';
 import 'update_expense_list_screen.dart';
 import 'edit_fixed_expense_screen.dart';
 import 'edit_variable_expense_screen.dart';
@@ -129,10 +130,25 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     }
   }
 
-  void _navigateToEditExpense(String category) async {
-    final appState = Provider.of<AppState>(context, listen: false);
+  // Thay thế toàn bộ hàm cũ bằng hàm này
+  void _navigateToEditExpense(String category, {required bool hasPermission}) async {
+    // Logic kiểm tra quyền dựa trên tham số được truyền vào
+    if (!hasPermission) {
+      // Dùng ScaffoldMessenger để báo lỗi
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Bạn không có quyền thực hiện chức năng này."),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Logic điều hướng và mở dialog giữ nguyên
     if (category == 'Cố định tháng') {
-      await _showMonthlyFixedExpenseDialog(appState);
+      // Truyền quyền vào dialog
+      await _showMonthlyFixedExpenseDialog(appState, canEdit: hasPermission);
       if (mounted) {
         _resetAnimation();
         _runAnimation();
@@ -260,7 +276,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     );
   }
 
-  Future<void> _showMonthlyFixedExpenseDialog(AppState appState) async {
+  Future<void> _showMonthlyFixedExpenseDialog(AppState appState, {required bool canEdit}) async {
     if (_isDialogOpen) return;
     _isDialogOpen = true;
     DateTime _currentDialogMonth = appState.selectedDate;
@@ -283,8 +299,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               print('Error loading monthly fixed expenses: $e, StackTrace: ${StackTrace.current}');
               // Tải từ Hive nếu Firestore lỗi
               final String monthKey = DateFormat('yyyy-MM').format(_currentDialogMonth);
-              final String hiveFixedListKey = '${appState.userId}-fixedExpenseList-$monthKey';
-              final String hiveAmountsKey = '${appState.userId}-monthlyFixedAmounts-$monthKey';
+              final String hiveFixedListKey = '${appState.activeUserId}-fixedExpenseList-$monthKey';
+              final String hiveAmountsKey = '${appState.activeUserId}-monthlyFixedAmounts-$monthKey';
               final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox');
               final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox');
 
@@ -508,7 +524,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                               SizedBox(width: 8),
                               IconButton(
                                 icon: Icon(Icons.add_circle, color: _headerColor, size: 30),
-                                onPressed: () async {
+                                onPressed: canEdit ? () async {
                                   if (_newExpenseNameController.text.isNotEmpty) {
                                     final newExpenseName = _newExpenseNameController.text;
                                     if (fixedExpensesFromManager.any((exp) => exp['name'] == newExpenseName)) {
@@ -564,7 +580,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                       });
                                     }
                                   }
-                                },
+                                }: null,
                                 tooltip: "Thêm vào danh sách chi phí của tháng",
                               ),
                             ],
@@ -660,7 +676,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                                   ),
                                                   IconButton(
                                                     icon: const Icon(Icons.check_circle, color: Colors.green, size: 28),
-                                                    onPressed: () async {
+                                                    onPressed: canEdit ? () async {
                                                       final amount = double.tryParse(monthlyAmountControllers[index].text) ?? 0.0;
                                                       if (amount > 0) {
                                                         DateTimeRange? rangeToSave = _currentDialogDateRange;
@@ -732,7 +748,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                                           );
                                                         });
                                                       }
-                                                    },
+                                                    }: null,
                                                     tooltip: "Lưu số tiền và phân bổ",
                                                   ),
                                                 ],
@@ -748,7 +764,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                               IconButton(
                                                 icon: Icon(Icons.edit, color: _buttonPrimaryColor, size: 22),
                                                 tooltip: "Chỉnh sửa số tiền tháng",
-                                                onPressed: () async {
+                                                onPressed: canEdit ? () async {
                                                   TextEditingController editAmountController = TextEditingController(
                                                     text: savedMonthlyAmountsFromManager[name]?.toString() ?? '',
                                                   );
@@ -821,11 +837,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                                       );
                                                     }
                                                   }
-                                                },
+                                                }: null,
                                               ),
                                             IconButton(
                                               icon: Icon(Icons.delete_forever, color: _accentColor, size: 22),
-                                              onPressed: () async {
+                                              onPressed: canEdit ? () async {
                                                 bool? confirm = await showDialog(
                                                   context: dialogContext,
                                                   builder: (ctx) => AlertDialog(
@@ -893,7 +909,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                                     });
                                                   }
                                                 }
-                                              },
+                                              }: null,
                                               tooltip: "Xóa khỏi danh sách tháng và các phân bổ",
                                             ),
                                           ],
@@ -1203,7 +1219,10 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final appState = context.watch<AppState>(); // listen:false is fine here as we use ValueListenableBuilders
+    final appState = context.watch<AppState>();
+    final canManageFixed = appState.hasPermission('canManageFixedExpenses');
+    final canManageVariable = appState.hasPermission('canManageVariableExpenses');
+    final canManageTypes = appState.hasPermission('canManageExpenseTypes');
 
     // This callback ensures animations run after the first frame is built and data is ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1226,7 +1245,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-              child: _buildNavigationActions(),
+              child: _buildNavigationActions(
+                canManageFixed: canManageFixed,
+                canManageVariable: canManageVariable,
+                canManageTypes: canManageTypes,
+              ),
             ),
           ),
           SliverToBoxAdapter(
@@ -1300,36 +1323,27 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                       ),
                       const SizedBox(width: 14),
                       Flexible(
-                        child: ValueListenableBuilder<DateTime>( // Listen to selectedDate for updates
-                          valueListenable: appState.selectedDateListenable,
-                          builder: (context, selectedDate, _) => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                "Chào, ${user?.displayName?.split(' ').first ?? 'bạn'}",
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                              const SizedBox(height: 2),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.30),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  DateFormat('dd MMMM, yyyy', 'vi').format(selectedDate), // Corrected date format
-                                  style: const TextStyle(fontSize: 12.5, color: Colors.white, fontWeight: FontWeight.w500),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // WIDGET MỚI ĐẶT Ở ĐÂY
+                            AccountSwitcher(),
+
+                            // Giữ nguyên phần hiển thị ngày
+                            const SizedBox(height: 2),
+                            ValueListenableBuilder<DateTime>(
+                              valueListenable: appState.selectedDateListenable,
+                              builder: (context, selectedDate, _) => Text(
+                                "Ngày ${DateFormat('dd MMMM, yyyy', 'vi').format(selectedDate)}",
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -1407,30 +1421,33 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     );
   }
 
-
-  Widget _buildNavigationActions() {
+  Widget _buildNavigationActions({
+    required bool canManageFixed,
+    required bool canManageVariable,
+    required bool canManageTypes,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
         _buildModernNavigationIcon(
           icon: Icons.account_balance_wallet_outlined,
           label: 'Cố định',
-          onTap: () => _navigateToEditExpense('Cố định ngày'),
+          onTap: () => _navigateToEditExpense('Cố định ngày', hasPermission: canManageFixed),
         ),
         _buildModernNavigationIcon(
           icon: Icons.transform_outlined,
           label: 'Biến đổi',
-          onTap: () => _navigateToEditExpense('Biến đổi ngày'),
+          onTap: () => _navigateToEditExpense('Biến đổi ngày', hasPermission: canManageVariable),
         ),
         _buildModernNavigationIcon(
           icon: Icons.calendar_month_outlined,
           label: 'CĐ Tháng',
-          onTap: () => _navigateToEditExpense('Cố định tháng'),
+          onTap: () => _navigateToEditExpense('Cố định tháng', hasPermission: canManageFixed),
         ),
         _buildModernNavigationIcon(
           icon: Icons.playlist_add_check_outlined,
           label: 'DS BĐổi',
-          onTap: () => _navigateToEditExpense('Danh sách biến đổi'), // Ensure this category is handled
+          onTap: () => _navigateToEditExpense('Danh sách biến đổi', hasPermission: canManageTypes),
         ),
       ],
     );
@@ -1439,7 +1456,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   Widget _buildModernNavigationIcon(
       {required IconData icon,
         required String label,
-        required VoidCallback onTap}) {
+        required VoidCallback? onTap,}) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1531,6 +1548,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 
   Widget _buildExpenseList(AppState appState) {
+    final bool isOwner = appState.authUserId == appState.activeUserId;
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), // Padding for the list
       sliver: ValueListenableBuilder<List<Map<String, dynamic>>>(
@@ -1597,6 +1615,13 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                   expenseItemIcon = Icons.local_fire_department_outlined; //
                   iconColorInList = Colors.orange.shade700; //
                 }
+                final bool isOwner = appState.isOwner();
+
+                final bool isCreator = (expense['createdBy'] ?? "") == appState.authUserId;
+                    final bool hasGeneralPermission = selectedExpenseCategory == 'Chi phí cố định'
+                        ? appState.hasPermission('canManageFixedExpenses')
+                        : appState.hasPermission('canManageVariableExpenses');
+                final bool canModifyThisRecord = appState.isOwner() || (hasGeneralPermission && isCreator);
 
                 // Tìm index gốc để các hàm edit/remove không bị lỗi
                 final originalIndex = expenses.indexOf(expense);
@@ -1606,63 +1631,82 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                   child: Slidable(
                     key: Key(expense['id']?.toString() ?? expense['name']?.toString() ?? UniqueKey().toString()), //
                     endActionPane: isAutoCogs
-                        ? ActionPane( //
-                      motion: const StretchMotion(), //
+                        ? ActionPane( // Nếu là COGS tự động, chỉ hiển thị nút thông tin
+                      motion: const StretchMotion(),
                       children: [
-                        SlidableAction( //
+                        SlidableAction(
                           onPressed: (context) {
-                            ScaffoldMessenger.of(context).showSnackBar( //
+                            ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Đây là giá vốn tự động, quản lý qua giao dịch doanh thu.'), //
-                                backgroundColor: _textColorSecondary, //
+                                content: Text('Đây là giá vốn tự động, quản lý qua giao dịch doanh thu.'),
+                                backgroundColor: _textColorSecondary,
                               ),
                             );
                           },
-                          backgroundColor: Colors.grey.shade300, //
-                          foregroundColor: _textColorPrimary, //
-                          icon: Icons.info_outline, //
-                          label: 'Chi tiết', //
-                          borderRadius: BorderRadius.circular(12), //
+                          backgroundColor: Colors.grey.shade300,
+                          foregroundColor: _textColorPrimary,
+                          icon: Icons.info_outline,
+                          label: 'Chi tiết',
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ],
                     )
-                        : ActionPane( //
-                      motion: const StretchMotion(), //
+                        : (canModifyThisRecord // Ngược lại, kiểm tra quyền sửa đổi
+                        ? ActionPane( // Nếu có quyền, hiển thị nút Sửa/Xóa
+                      motion: const StretchMotion(),
                       children: [
-                        SlidableAction( //
+                        SlidableAction(
                           onPressed: (context) {
                             if (originalIndex != -1) {
                               editExpense(appState, expenses, originalIndex, selectedExpenseCategory);
                             }
                           },
-                          backgroundColor: _buttonPrimaryColor, //
-                          foregroundColor: Colors.white, //
-                          icon: Icons.edit_outlined, //
-                          label: 'Sửa', //
-                          borderRadius: BorderRadius.circular(12), //
+                          backgroundColor: _buttonPrimaryColor,
+                          foregroundColor: Colors.white,
+                          icon: Icons.edit_outlined,
+                          label: 'Sửa',
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        SlidableAction( //
+                        SlidableAction(
                           onPressed: (context) async {
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (dialogCtx) => AlertDialog(
-                                // ... (Giữ nguyên Dialog xác nhận xóa) ...
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                title: Text('Xác nhận xóa', style: TextStyle(color: _textColorPrimary, fontWeight:FontWeight.bold)),
+                                content: Text('Bạn có chắc chắn muốn xóa chi phí "${expense['name']}" không?', style: TextStyle(color: _textColorSecondary)),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dialogCtx, false),
+                                    child: Text('Hủy', style: TextStyle(color: _textColorSecondary)),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                        backgroundColor: _accentColor,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                                    ),
+                                    onPressed: () => Navigator.pop(dialogCtx, true),
+                                    child: Text('Xóa'),
+                                  ),
+                                ],
                               ),
                             );
-                            if (confirm == true) { //
+                            if (confirm == true) {
                               if (originalIndex != -1) {
                                 removeExpense(appState, expenses, originalIndex, selectedExpenseCategory);
                               }
                             }
                           },
-                          backgroundColor: _accentColor.withOpacity(0.9), //
-                          foregroundColor: Colors.white, //
-                          icon: Icons.delete_outline, //
-                          label: 'Xóa', //
-                          borderRadius: BorderRadius.circular(12), //
+                          backgroundColor: _accentColor.withOpacity(0.9),
+                          foregroundColor: Colors.white,
+                          icon: Icons.delete_outline,
+                          label: 'Xóa',
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ],
-                    ),
+                    )
+                        : null),
                     child: Card(
                       elevation: 1.5, //
                       margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 0), //
