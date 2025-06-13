@@ -9,9 +9,30 @@ import 'general_settings_screen.dart'; // Giả sử bạn có màn hình này
 import 'login_screen.dart';
 import 'permissions_screen.dart';
 import 'package:fingrowth/screens/report_screen.dart';
+import 'subscription_screen.dart';
 
 class UserSettingsScreen extends StatelessWidget {
   const UserSettingsScreen({super.key});
+
+  void _showUpgradeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Tính năng Premium"),
+        content: const Text("Bạn cần nâng cấp tài khoản để sử dụng chức năng này."),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text("Để sau")),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop(); // Đóng dialog
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
+            },
+            child: const Text("Nâng Cấp Ngay"),
+          ),
+        ],
+      ),
+    );
+  }
 
   // --- Hàm đăng xuất ---
   Future<void> _signOut(BuildContext context) async {
@@ -405,12 +426,43 @@ class UserSettingsScreen extends StatelessWidget {
               context,
               title: "Tài khoản",
               children: [
+                Consumer<AppState>(
+                  builder: (context, appState, child) {
+                    // Nếu người dùng đã đăng ký Premium, không hiển thị gì cả
+                    if (appState.isSubscribed) {
+                      return const SizedBox.shrink(); // Widget trống
+                    }
+
+                    // Nếu là người dùng miễn phí, hiển thị nút "Nâng Cấp"
+                    return _buildSettingsItem(
+                      context,
+                      icon: Icons.workspace_premium_outlined,
+                      title: "Nâng Cấp lên Premium",
+                      iconColor: Colors.amber[700], // Màu vàng cho nổi bật
+                      textColor: Colors.amber[700],
+                      onTap: () {
+                        // Khi nhấn vào, điều hướng tới màn hình SubscriptionScreen
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+                        );
+                      },
+                    );
+                  },
+                ),
                 _buildSettingsItem(
                   context,
                   icon: Icons.group_add_outlined,
                   title: "Quản lý quyền truy cập",
                   onTap: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
+                    final appState = context.read<AppState>();
+                    // <<< KIỂM TRA TRẠNG THÁI PREMIUM >>>
+                    if (appState.isSubscribed) {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
+                    } else {
+                      // Hiển thị dialog yêu cầu nâng cấp
+                      _showUpgradeDialog(context);
+                    }
                   },
                 ),
                 _buildSettingsItem(

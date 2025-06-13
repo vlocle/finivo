@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fingrowth/screens/report_screen.dart';
+import 'package:fingrowth/screens/subscription_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -643,7 +644,16 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
+    final appState = context.watch<AppState>();
+
+    // <<< KIỂM TRA TRẠNG THÁI PREMIUM NGAY TỪ ĐẦU >>>
+    if (!appState.isSubscribed) {
+      // Nếu không phải Premium, hiển thị giao diện "Paywall"
+      return _buildPaywallWidget();
+    }
+
+    // --- NẾU LÀ PREMIUM USER, HIỂN THỊ NỘI DUNG GỐC CỦA MÀN HÌNH ---
+    // Toàn bộ code giao diện gốc của bạn được đặt ở đây
     final isWideScreen = MediaQuery.of(context).size.width > 600;
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -940,6 +950,62 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  Widget _buildPaywallWidget() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Tính Năng Premium"),
+        backgroundColor: AppColors.primaryBlue,
+        foregroundColor: Colors.white,
+      ),
+      backgroundColor: AppColors.getBackgroundColor(context),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(Icons.workspace_premium_outlined, size: 80, color: Colors.amber[700]),
+              const SizedBox(height: 20),
+              Text(
+                "Mở Khóa Phân Tích Tài Chính Cùng AI",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.getTextColor(context),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "Nâng cấp lên Premium để nhận các phân tích sâu sắc, dự báo xu hướng và những khuyến nghị chiến lược được cá nhân hóa cho doanh nghiệp của bạn.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.getTextSecondaryColor(context),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 30),
+              ElevatedButton(
+                onPressed: () {
+                  // Điều hướng tới màn hình thanh toán
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.amber[700],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text("Nâng Cấp Ngay", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              )
             ],
           ),
         ),

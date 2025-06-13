@@ -1,3 +1,4 @@
+import 'package:fingrowth/screens/subscription_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // [cite: 1]
 import 'package:flutter/material.dart'; // [cite: 1]
 import 'package:fl_chart/fl_chart.dart'; // [cite: 1]
@@ -119,7 +120,22 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
     super.dispose(); // [cite: 35]
   }
 
-  Future<void> _selectDateRange(BuildContext context) async { // [cite: 36]
+  Future<void> _selectDateRange(BuildContext context) async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    if (!appState.isSubscribed) {
+      // Bạn có thể dùng lại hàm _showUpgradeDialog tương tự như trên
+      // Hoặc hiển thị một SnackBar
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text("Nâng cấp Premium để xem báo cáo với khoảng thời gian tùy chọn!"),
+        action: SnackBarAction(
+          label: "Nâng Cấp",
+          onPressed: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
+          },
+        ),
+      ));
+      return; // Dừng hàm tại đây
+    }
     final DateTimeRange? picked = await showDateRangePicker( // [cite: 36, 37]
       context: context, // [cite: 37]
       initialDateRange: selectedDateRange, // [cite: 37]

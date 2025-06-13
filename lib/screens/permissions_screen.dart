@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'edit_permission_screen.dart';
 import 'package:fingrowth/screens/report_screen.dart';
+import 'subscription_screen.dart';
 
 class PermissionsScreen extends StatefulWidget {
   const PermissionsScreen({super.key});
@@ -181,13 +182,80 @@ class _PermissionsScreenState extends State<PermissionsScreen>
     );
   }
 
+  Widget _buildPaywallWidget() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Tính năng Premium"),
+        backgroundColor: AppColors.primaryBlue,
+        foregroundColor: Colors.white,
+      ),
+      backgroundColor: AppColors.getBackgroundColor(context),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(Icons.admin_panel_settings_outlined, size: 80, color: Colors.amber[700]),
+              const SizedBox(height: 20),
+              Text(
+                "Quản lý Cộng tác viên",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.getTextColor(context),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "Nâng cấp lên Premium để thêm thành viên, phân quyền chi tiết và cùng làm việc nhóm hiệu quả trên cùng một dữ liệu kinh doanh.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.getTextSecondaryColor(context),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 30),
+              ElevatedButton(
+                onPressed: () {
+                  // Điều hướng tới màn hình thanh toán
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.amber[700],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text("Nâng Cấp Ngay", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final authUserId = context.watch<AppState>().authUserId;
+    // Lấy AppState để kiểm tra quyền
+    final appState = context.watch<AppState>();
 
+    // <<< KIỂM TRA TRẠNG THÁI PREMIUM NGAY TỪ ĐẦU >>>
+    if (!appState.isSubscribed) {
+      // Nếu không phải Premium, hiển thị giao diện "Paywall"
+      return _buildPaywallWidget();
+    }
+
+    // --- NẾU LÀ PREMIUM USER, HIỂN THỊ NỘI DUNG GỐC CỦA MÀN HÌNH ---
+    // Toàn bộ code giao diện gốc của bạn được đặt ở đây
+    final authUserId = appState.authUserId; // Dùng lại appState đã lấy ở trên
     return Scaffold(
       backgroundColor: AppColors.getBackgroundColor(context),
-      // [LUXURY-UI] Sử dụng CustomScrollView và SliverAppBar
+      // Phần body và floatingActionButton gốc của bạn được giữ nguyên
       body: CustomScrollView(
         slivers: [
           SliverAppBar(

@@ -13,9 +13,13 @@ import 'state/app_state.dart'; // [cite: 367]
 import 'screens/main_screen.dart'; // [cite: 367]
 import 'screens/login_screen.dart'; // [cite: 367]
 import 'screens/device_utils.dart';
+import 'screens/subscription_service.dart';
+final SubscriptionService subscriptionService = SubscriptionService();
+
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized(); // [cite: 367]
+  WidgetsFlutterBinding.ensureInitialized();
+  await subscriptionService.init();
   try {
     int retries = 3; // [cite: 368]
     for (int i = 0; i < retries; i++) { // [cite: 369]
@@ -131,6 +135,8 @@ class AuthWrapper extends StatelessWidget {
               }
 
               final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
+              final appState = Provider.of<AppState>(context, listen: false);
+              appState.updateSubscriptionStatus(userData);
               final storedDeviceId = userData['lastLoginDeviceId'];
 
               // Sử dụng hàm getDeviceId() đã tạo ở bước 1

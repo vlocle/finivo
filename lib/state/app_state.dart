@@ -10,6 +10,10 @@ import '/screens/expense_manager.dart';
 import '/screens/revenue_manager.dart';
 
 class AppState extends ChangeNotifier {
+  bool _isSubscribed = false;
+  DateTime? _subscriptionExpiryDate;
+  bool get isSubscribed => _isSubscribed;
+  DateTime? get subscriptionExpiryDate => _subscriptionExpiryDate;
   int _selectedScreenIndex = 0;
   int get selectedScreenIndex => _selectedScreenIndex;
   String? authUserId;
@@ -282,6 +286,30 @@ class AppState extends ChangeNotifier {
   String getUserDisplayName(String? uid) {
     if (uid == null) return 'Không rõ';
     return _userDisplayNames[uid] ?? 'Đang tải...';
+  }
+
+  // Dán hàm này vào trong class AppState
+  void updateSubscriptionStatus(Map<String, dynamic> userData) {
+    final status = userData['subscriptionStatus'] as String?;
+    final expiryDateTimestamp = userData['subscriptionExpiryDate'] as Timestamp?;
+
+    // Chỉ coi là Premium nếu status là 'active' VÀ ngày hết hạn trong tương lai
+    if (status == 'active' && expiryDateTimestamp != null) {
+      _subscriptionExpiryDate = expiryDateTimestamp.toDate();
+      if (_subscriptionExpiryDate!.isAfter(DateTime.now())) {
+        _isSubscribed = true;
+      } else {
+        // Gói đã hết hạn
+        _isSubscribed = false;
+      }
+    } else {
+      // Các trường hợp còn lại (free, cancelled,...) đều không phải Premium
+      _isSubscribed = false;
+      _subscriptionExpiryDate = null;
+    }
+
+    print("Subscription status updated: isSubscribed = $_isSubscribed");
+    // Không cần notifyListeners() ở đây vì luồng đăng nhập sẽ build lại UI
   }
 
   /// Tải tên của các user nếu chưa có trong cache.

@@ -11,13 +11,22 @@ class FirestoreService {
     try {
       final userDocRef = _db.collection('users').doc(user.uid);
       await userDocRef.set({
+        // --- Các trường hiện có ---
         'email': user.email,
         'displayName': user.displayName ?? user.email?.split('@').first,
         'photoURL': user.photoURL,
-        'lastLoginDeviceId': deviceId, // <-- Thêm dòng này
-        'lastLoginAt': FieldValue.serverTimestamp(), // <-- Thêm dòng này
+        'lastLoginDeviceId': deviceId,
+        'lastLoginAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)); //
+
+        // <<< THÊM CÁC TRƯỜNG SUBSCRIPTION MẶC ĐỊNH TẠI ĐÂY >>>
+        'subscriptionStatus': 'free',
+        'subscriptionTier': 'none',
+        'subscriptionExpiryDate': null,
+        'subscriptionProvider': 'none',
+        'originalTransactionId': 'none',
+
+      }, SetOptions(merge: true));
       print("Đã lưu/cập nhật thông tin và deviceId cho user: ${user.uid}"); //
     } catch (e) {
       print("Lỗi khi lưu thông tin người dùng vào Firestore: $e"); //
