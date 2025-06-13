@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart'; // Giả định đường dẫn này đúng
 import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
+import 'package:fingrowth/screens/report_screen.dart';
 
 class ProductServiceScreen extends StatefulWidget {
   const ProductServiceScreen({Key? key}) : super(key: key);
@@ -27,13 +28,6 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   int _selectedTab = 0;
   late Future<List<Map<String, dynamic>>> _productsFuture;
   late AppState _appState; // Thêm biến để lưu AppState
-
-  static const Color _primaryColor = Color(0xFF2F81D7);
-  static const Color _secondaryColor = Color(0xFFF1F5F9);
-  static const Color _textColorPrimary = Color(0xFF1D2D3A);
-  static const Color _textColorSecondary = Color(0xFF6E7A8A);
-  static const Color _cardBackgroundColor = Colors.white;
-  static const Color _accentColor = Colors.redAccent;
 
   final NumberFormat _inputPriceFormatter = NumberFormat("#,##0", "vi_VN");
 
@@ -82,7 +76,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
-        backgroundColor: isError ? _accentColor : _primaryColor,
+        backgroundColor: isError ? AppColors.chartRed : AppColors.primaryBlue,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(10),
@@ -147,7 +141,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
         throw Exception('User ID không tồn tại');
       }
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      String baseKey = selectedCategory == "Sản phẩm/Dịch vụ chính"
+      String baseKey = selectedCategory == "Doanh thu chính"
           ? 'mainProductList'
           : 'extraProductList';
       String firestoreDocKey = appState.getKey(baseKey);
@@ -252,11 +246,12 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: Text("Chỉnh sửa sản phẩm",
               style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600, color: _textColorPrimary)),
+                  fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildDialogTextField(
+                context: dialogContext,
                 controller: nameController,
                 labelText: "Tên sản phẩm/dịch vụ",
                 prefixIconData: Icons.label_important_outline,
@@ -264,6 +259,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
               ),
               const SizedBox(height: 16),
               _buildDialogTextField(
+                context: dialogContext,
                 controller: priceController,
                 labelText: "Giá tiền",
                 prefixIconData: Icons.price_check_outlined,
@@ -298,12 +294,12 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
               },
               child: Text("Hủy",
                   style: GoogleFonts.poppins(
-                      color: _textColorSecondary,
+                      color: AppColors.getTextSecondaryColor(context),
                       fontWeight: FontWeight.w500)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryColor,
+                backgroundColor: AppColors.primaryBlue,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -372,14 +368,14 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: isSelected ? _cardBackgroundColor : _primaryColor,
+            color: isSelected ? AppColors.getCardColor(context) : AppColors.primaryBlue,
             borderRadius: BorderRadius.only(
               topLeft: isFirst ? const Radius.circular(12) : Radius.zero,
               bottomLeft: isFirst ? const Radius.circular(12) : Radius.zero,
               topRight: isLast ? const Radius.circular(12) : Radius.zero,
               bottomRight: isLast ? const Radius.circular(12) : Radius.zero,
             ),
-            border: isSelected ? Border.all(color: _primaryColor, width:0.5) : null,
+            border: isSelected ? Border.all(color: AppColors.primaryBlue, width:0.5) : null,
             boxShadow: isSelected ? [
               BoxShadow(
                   color: Colors.blue.withOpacity(0.1),
@@ -394,7 +390,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 15.5,
-              color: isSelected ? _primaryColor : Colors.white.withOpacity(0.9),
+              color: isSelected ? AppColors.primaryBlue : Colors.white.withOpacity(0.9),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -405,16 +401,16 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
-    final bool isOwner = appState.authUserId == appState.activeUserId;
-    final bool canManageProducts = appState.hasPermission('canManageProducts');
+    //final appState = Provider.of<AppState>(context);
+    //final bool isOwner = appState.authUserId == appState.activeUserId;
+    final bool canManageProducts = _appState.hasPermission('canManageProducts');
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
       child: Scaffold(
-        backgroundColor: _secondaryColor,
+        backgroundColor: AppColors.getBackgroundColor(context),
         appBar: AppBar(
-          backgroundColor: _primaryColor,
+          backgroundColor: AppColors.primaryBlue,
           elevation: 1,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
@@ -432,7 +428,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 5.0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: _primaryColor,
+                  color: AppColors.primaryBlue,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -451,12 +447,12 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return Center(
-                  child: CircularProgressIndicator(color: _primaryColor));
+                  child: CircularProgressIndicator(color: AppColors.primaryBlue));
             }
             if (snapshot.hasError) {
               return Center(
                   child: Text("Lỗi tải dữ liệu sản phẩm",
-                      style: GoogleFonts.poppins(color: _textColorSecondary)));
+                      style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context))));
             }
             List<Map<String, dynamic>> productList = snapshot.data ?? [];
             return ScaleTransition(
@@ -469,30 +465,30 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
                     nameController: nameController,
                     priceController: priceController,
                     selectedCategory: selectedCategory,
-                    onAddProduct: canManageProducts ? () => addProduct(appState, productList) : null,
+                    onAddProduct: canManageProducts ? () => addProduct(_appState, productList) : null,
                     onCategoryChanged: (newCategory) {
                       if (mounted) {
                         setState(() {
                           selectedCategory = newCategory;
-                          _productsFuture = _loadProducts(appState);
+                          _productsFuture = _loadProducts(_appState);
                         });
                       }
                     },
-                    appState: appState,
+                    appState: _appState,
                     inputPriceFormatter: _inputPriceFormatter,
                   ),
                   ProductListSection(
                     key: ValueKey('productList_${selectedCategory}'),
                     productList: productList,
-                    onEditProduct: canManageProducts ? (index) => editProduct(appState, productList, index) : null,
-                    onDeleteProduct: canManageProducts ? (index) => deleteProduct(appState, productList, index) : null,
-                    appState: appState,
+                    onEditProduct: canManageProducts ? (index) => editProduct(_appState, productList, index) : null,
+                    onDeleteProduct: canManageProducts ? (index) => deleteProduct(_appState, productList, index) : null,
+                    appState: _appState,
                     currencyFormat: currencyFormat,
-                    primaryColor: _primaryColor,
-                    textColorPrimary: _textColorPrimary,
-                    textColorSecondary: _textColorSecondary,
-                    cardBackgroundColor: _cardBackgroundColor,
-                    accentColor: _accentColor,
+                    primaryColor: AppColors.primaryBlue,
+                    textColorPrimary: AppColors.getTextColor(context),
+                    textColorSecondary: AppColors.getTextSecondaryColor(context),
+                    cardBackgroundColor: AppColors.getCardColor(context),
+                    accentColor: AppColors.chartRed,
                     selectedCategoryText: selectedCategory,
                   ),
                 ],
@@ -505,6 +501,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
   }
 
   Widget _buildDialogTextField({
+    required BuildContext context,
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text,
@@ -517,16 +514,16 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       maxLength: maxLength,
-      style: GoogleFonts.poppins(color: _textColorPrimary, fontWeight: FontWeight.w500),
+      style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontWeight: FontWeight.w500),
       decoration: InputDecoration(
         labelText: labelText,
-        labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
-        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: _primaryColor, size: 22) : null,
+        labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: AppColors.primaryBlue, size: 22) : null,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primaryBlue, width: 1.5)),
         filled: true,
-        fillColor: _secondaryColor,
+        fillColor: AppColors.getBackgroundColor(context),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -558,11 +555,6 @@ class ProductInputSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    const Color primaryColor = _ProductServiceScreenState._primaryColor;
-    const Color secondaryColor = _ProductServiceScreenState._secondaryColor;
-    const Color textColorPrimary = _ProductServiceScreenState._textColorPrimary;
-    const Color textColorSecondary = _ProductServiceScreenState._textColorSecondary;
-    const Color cardBackgroundColor = _ProductServiceScreenState._cardBackgroundColor;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -573,7 +565,7 @@ class ProductInputSection extends StatelessWidget {
             elevation: 3,
             shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            color: cardBackgroundColor,
+            color: AppColors.getCardColor(context),
             child: Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
@@ -584,12 +576,12 @@ class ProductInputSection extends StatelessWidget {
                     style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        color: primaryColor),
+                        color: AppColors.primaryBlue),
                   ),
                   const SizedBox(height: 20),
                   Text(
                     "Chọn loại:",
-                    style: GoogleFonts.poppins(fontSize: 16, color: textColorSecondary, fontWeight: FontWeight.w500),
+                    style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextSecondaryColor(context), fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 8),
                   SegmentedButton<String>(
@@ -612,11 +604,11 @@ class ProductInputSection extends StatelessWidget {
                       }
                     },
                     style: SegmentedButton.styleFrom(
-                      foregroundColor: primaryColor,
+                      foregroundColor: AppColors.primaryBlue,
                       selectedForegroundColor: Colors.white,
-                      selectedBackgroundColor: primaryColor,
-                      backgroundColor: primaryColor.withOpacity(0.08),
-                      side: BorderSide(color: primaryColor.withOpacity(0.5)),
+                      selectedBackgroundColor: AppColors.primaryBlue,
+                      backgroundColor: AppColors.primaryBlue.withOpacity(0.08),
+                      side: BorderSide(color: AppColors.primaryBlue.withOpacity(0.5)),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                       textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 13.5),
@@ -626,6 +618,7 @@ class ProductInputSection extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   _buildInputTextField(
+                    context: context,
                     controller: nameController,
                     labelText: 'Tên sản phẩm/dịch vụ',
                     prefixIconData: Icons.label_outline,
@@ -633,6 +626,7 @@ class ProductInputSection extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _buildInputTextField(
+                    context: context,
                     controller: priceController,
                     labelText: 'Giá tiền',
                     prefixIconData: Icons.attach_money_outlined,
@@ -658,7 +652,7 @@ class ProductInputSection extends StatelessWidget {
                   const SizedBox(height: 28),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
+                      backgroundColor: AppColors.primaryBlue,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -683,6 +677,7 @@ class ProductInputSection extends StatelessWidget {
   }
 
   Widget _buildInputTextField({
+    required BuildContext context,
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text,
@@ -691,26 +686,22 @@ class ProductInputSection extends StatelessWidget {
     int maxLines = 1,
     IconData? prefixIconData,
   }) {
-    const Color primaryColor = _ProductServiceScreenState._primaryColor;
-    const Color textColorSecondary = _ProductServiceScreenState._textColorSecondary;
-    // const Color cardBackgroundColor = _ProductServiceScreenState._cardBackgroundColor; // Not used
-    const Color secondaryColor = _ProductServiceScreenState._secondaryColor;
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       maxLength: maxLength,
       maxLines: maxLines,
-      style: GoogleFonts.poppins(color: _ProductServiceScreenState._textColorPrimary, fontWeight: FontWeight.w500),
+      style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontWeight: FontWeight.w500),
       decoration: InputDecoration(
         labelText: labelText,
-        labelStyle: GoogleFonts.poppins(color: textColorSecondary),
-        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: primaryColor, size: 22) : null,
+        labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: AppColors.primaryBlue, size: 22) : null,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor, width: 1.5)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primaryBlue, width: 1.5)),
         filled: true,
-        fillColor: secondaryColor.withOpacity(0.5),
+        fillColor: AppColors.getBackgroundColor(context).withOpacity(0.5),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -774,7 +765,7 @@ class ProductListSection extends StatelessWidget {
                   SizedBox(height: 16),
                   Text(
                     "Chưa có sản phẩm/dịch vụ nào",
-                    style: GoogleFonts.poppins(fontSize: 17, color: textColorSecondary),
+                    style: GoogleFonts.poppins(fontSize: 17, color: AppColors.getTextSecondaryColor(context)),
                   ),
                   SizedBox(height: 4),
                   Text(
@@ -810,7 +801,7 @@ class ProductListSection extends StatelessWidget {
                   margin: const EdgeInsets.symmetric(vertical: 5),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
-                  color: cardBackgroundColor,
+                  color: AppColors.getCardColor(context),
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 8),
@@ -822,7 +813,7 @@ class ProductListSection extends StatelessWidget {
                             ? (product['name'] as String)[0].toUpperCase()
                             : "?",
                         style: GoogleFonts.poppins(
-                            color: primaryColor,
+                            color: AppColors.primaryBlue,
                             fontWeight: FontWeight.w600,
                             fontSize: 18),
                       ),
@@ -840,12 +831,12 @@ class ProductListSection extends StatelessWidget {
                       "Giá: ${currencyFormat.format(product['price'] ?? 0.0)}",
                       style: GoogleFonts.poppins(
                           fontSize: 13.5,
-                          color: textColorSecondary,
+                          color: AppColors.getTextSecondaryColor(context),
                           fontWeight: FontWeight.w500),
                     ),
                     trailing: IconButton(
                       icon: Icon(Icons.edit_note_outlined,
-                          color: primaryColor.withOpacity(0.9), size: 22),
+                          color: AppColors.primaryBlue.withOpacity(0.9), size: 22),
                       onPressed: onEditProduct != null ? () => onEditProduct!(index) : null,
                       splashRadius: 18,
                       padding: EdgeInsets.zero,

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // Class để lưu thông tin tài khoản có thể truy cập
 class AccessibleAccount {
@@ -11,7 +12,11 @@ class AccessibleAccount {
 }
 
 class AccountSwitcher extends StatefulWidget {
-  const AccountSwitcher({super.key});
+  final Color textColor;
+  const AccountSwitcher({
+    super.key,
+    this.textColor = Colors.white, // Thêm dòng này, màu trắng là mặc định
+  });
 
   @override
   State<AccountSwitcher> createState() => _AccountSwitcherState();
@@ -100,12 +105,14 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
     if (_isLoading) {
       return const Padding(
         padding: EdgeInsets.all(8.0),
-        child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white)),
+        child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(color: Colors.white)),
       );
     }
 
-    // Nếu chỉ có 1 tài khoản (của chính mình), không cần hiển thị gì
-    if (_accounts.length <= 1) {
+    if (_accounts.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -115,27 +122,48 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
       orElse: () => _accounts.first,
     );
 
-    return PopupMenuButton<String>(
-      onSelected: (String selectedUserId) {
-        context.read<AppState>().switchActiveUser(selectedUserId);
-      },
-      itemBuilder: (BuildContext context) {
-        return _accounts.map((AccessibleAccount account) {
-          return PopupMenuItem<String>(
-            value: account.uid,
-            child: Text(account.displayName),
-          );
-        }).toList();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-        child: Row(
-          children: [
-            Text(currentAccount.displayName, style: const TextStyle(color: Colors.white)),
-            const Icon(Icons.arrow_drop_down, color: Colors.white),
-          ],
-        ),
+    // Widget hiển thị tên tài khoản với style mới
+    final Widget accountNameText = Text(
+      currentAccount.displayName,
+      style: GoogleFonts.poppins( // Áp dụng font Poppins
+        color: widget.textColor,
+        fontSize: 16, // Tăng kích thước font
+        fontWeight: FontWeight.w600, // In đậm vừa phải
       ),
     );
+
+    if (_accounts.length > 1) {
+      return PopupMenuButton<String>(
+        onSelected: (String selectedUserId) {
+          context.read<AppState>().switchActiveUser(selectedUserId);
+        },
+        itemBuilder: (BuildContext context) {
+          return _accounts.map((AccessibleAccount account) {
+            return PopupMenuItem<String>(
+              value: account.uid,
+              child: Text(account.displayName, style: GoogleFonts.poppins()), // Dùng Poppins cho cả dropdown
+            );
+          }).toList();
+        },
+        // Bọc Row trong Padding để đảm bảo khoảng cách nhất quán
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              accountNameText, // Sử dụng widget đã style ở trên
+              const SizedBox(width: 2), // Giảm khoảng cách nhẹ
+              const Icon(Icons.arrow_drop_down, color: Colors.white),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Nếu chỉ có 1 tài khoản, cũng dùng Padding để căn chỉnh
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+        child: accountNameText,
+      );
+    }
   }
 }

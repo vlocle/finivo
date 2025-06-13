@@ -8,18 +8,10 @@ import '../state/app_state.dart';
 import 'general_settings_screen.dart'; // Giả sử bạn có màn hình này
 import 'login_screen.dart';
 import 'permissions_screen.dart';
+import 'package:fingrowth/screens/report_screen.dart';
 
 class UserSettingsScreen extends StatelessWidget {
   const UserSettingsScreen({super.key});
-
-  // --- Bảng màu hiện đại ---
-  static const Color _primaryColor = Color(0xFF0A7AFF); // Màu xanh dương chủ đạo
-  static const Color _secondaryColor = Color(0xFFF0F4F8); // Màu nền sáng
-  static const Color _textColorPrimary = Color(0xFF1D2D3A); // Màu chữ chính (đậm)
-  static const Color _textColorSecondary = Color(0xFF6E7A8A); // Màu chữ phụ (nhạt hơn)
-  static const Color _cardBackgroundColor = Colors.white;
-  static const Color _dangerColor = Color(0xFFD32F2F); // Màu cho các hành động nguy hiểm (đỏ đậm)
-  static const Color _iconColor = Color(0xFF4A5568); // Màu icon chung
 
   // --- Hàm đăng xuất ---
   Future<void> _signOut(BuildContext context) async {
@@ -27,23 +19,23 @@ class UserSettingsScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.logout_outlined, color: _dangerColor),
+            Icon(Icons.logout_outlined, color: AppColors.chartRed),
             SizedBox(width: 10),
-            Text("Xác nhận đăng xuất", style: TextStyle(color: _textColorPrimary, fontWeight: FontWeight.bold)),
+            Text("Xác nhận đăng xuất", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
           ],
         ),
-        content: const Text("Bạn có chắc muốn đăng xuất không?", style: TextStyle(color: _textColorSecondary)),
+        content: Text("Bạn có chắc muốn đăng xuất không?", style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Hủy", style: TextStyle(color: _textColorSecondary)),
+            child: Text("Hủy", style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: _dangerColor,
+              backgroundColor: AppColors.chartRed,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -81,7 +73,7 @@ class UserSettingsScreen extends StatelessWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Đăng xuất thất bại: $e'),
-              backgroundColor: _dangerColor,
+              backgroundColor: AppColors.chartRed,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -100,7 +92,7 @@ class UserSettingsScreen extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Không tìm thấy thông tin người dùng"),
-            backgroundColor: _dangerColor,
+            backgroundColor: AppColors.chartRed,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -112,25 +104,25 @@ class UserSettingsScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: _dangerColor),
+            Icon(Icons.warning_amber_rounded, color: AppColors.chartRed),
             SizedBox(width: 10),
-            Text("Xác nhận làm mới dữ liệu", style: TextStyle(color: _textColorPrimary, fontWeight: FontWeight.bold)),
+            Text("Xác nhận làm mới dữ liệu", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
           ],
         ),
-        content: const Text(
+        content: Text(
             "Bạn có chắc muốn xóa toàn bộ dữ liệu không? Hành động này không thể hoàn tác.",
-            style: TextStyle(color: _textColorSecondary)),
+            style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Hủy", style: TextStyle(color: _textColorSecondary)),
+            child: Text("Hủy", style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: _dangerColor,
+              backgroundColor: AppColors.chartRed,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -236,7 +228,7 @@ class UserSettingsScreen extends StatelessWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text("Lỗi khi xóa dữ liệu: $e"),
-              backgroundColor: _dangerColor,
+              backgroundColor: AppColors.chartRed,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -251,25 +243,25 @@ class UserSettingsScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.delete_forever_outlined, color: _dangerColor),
+            Icon(Icons.delete_forever_outlined, color: AppColors.chartRed),
             SizedBox(width: 10),
-            Text("Xác nhận xóa tài khoản", style: TextStyle(color: _textColorPrimary, fontWeight: FontWeight.bold)),
+            Text("Xác nhận xóa tài khoản", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
           ],
         ),
-        content: const Text(
+        content: Text(
             "Bạn có chắc muốn xóa tài khoản không? Toàn bộ dữ liệu của bạn sẽ bị mất và hành động này không thể hoàn tác.",
-            style: TextStyle(color: _textColorSecondary)),
+            style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Hủy", style: TextStyle(color: _textColorSecondary)),
+            child: Text("Hủy", style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: _dangerColor,
+              backgroundColor: AppColors.chartRed,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -341,7 +333,7 @@ class UserSettingsScreen extends StatelessWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text("Lỗi khi xóa tài khoản: $e"),
-              backgroundColor: _dangerColor,
+              backgroundColor: AppColors.chartRed,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -355,13 +347,13 @@ class UserSettingsScreen extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: _secondaryColor,
+      backgroundColor: AppColors.getBackgroundColor(context),
       appBar: AppBar(
         title: const Text(
           "Cài đặt",
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: _primaryColor,
+        backgroundColor: AppColors.primaryBlue,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white), // Màu cho nút back
       ),
@@ -425,8 +417,8 @@ class UserSettingsScreen extends StatelessWidget {
                   context,
                   icon: Icons.logout_outlined,
                   title: "Đăng xuất",
-                  textColor: _dangerColor,
-                  iconColor: _dangerColor,
+                  textColor: AppColors.chartRed,
+                  iconColor: AppColors.chartRed,
                   onTap: () async {
                     await _signOut(context);
                   },
@@ -447,8 +439,8 @@ class UserSettingsScreen extends StatelessWidget {
                   context,
                   icon: Icons.delete_forever_outlined,
                   title: "Xóa tài khoản",
-                  textColor: _dangerColor,
-                  iconColor: _dangerColor,
+                  textColor: AppColors.chartRed,
+                  iconColor: AppColors.chartRed,
                   onTap: () => _deleteAccount(context),
                 ),
               ],
@@ -465,7 +457,7 @@ class UserSettingsScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(24.0),
       decoration: const BoxDecoration(
-        color: _primaryColor,
+        color: AppColors.primaryBlue,
         // borderRadius: BorderRadius.only(
         //   bottomLeft: Radius.circular(30),
         //   bottomRight: Radius.circular(30),
@@ -480,7 +472,7 @@ class UserSettingsScreen extends StatelessWidget {
             backgroundImage:
             user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
             child: user?.photoURL == null
-                ? Icon(Icons.person_outline, size: 60, color: _primaryColor.withOpacity(0.8))
+                ? Icon(Icons.person_outline, size: 60, color: AppColors.primaryBlue.withOpacity(0.8))
                 : null,
           ),
           const SizedBox(height: 16),
@@ -526,18 +518,18 @@ class UserSettingsScreen extends StatelessWidget {
             padding: const EdgeInsets.only(left: 8.0, bottom: 12.0),
             child: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: _textColorPrimary,
+                color: AppColors.getTextColor(context),
               ),
             ),
           ),
           Material( // Sử dụng Material để có hiệu ứng ripple khi nhấn
-            color: _cardBackgroundColor,
+            color: AppColors.getCardColor(context),
             borderRadius: BorderRadius.circular(12),
             elevation: 1.5, // Độ nổi nhẹ cho card
-            shadowColor: Colors.grey.withOpacity(0.15),
+            shadowColor: Colors.black.withOpacity(0.05),
             child: Column(
               children: children,
             ),
@@ -558,8 +550,8 @@ class UserSettingsScreen extends StatelessWidget {
     return InkWell( // Sử dụng InkWell để có hiệu ứng ripple
       onTap: onTap,
       borderRadius: BorderRadius.circular(12), // Cần khớp với borderRadius của Material ở trên nếu đây là item cuối/đầu
-      splashColor: _primaryColor.withOpacity(0.1),
-      highlightColor: _primaryColor.withOpacity(0.05),
+      splashColor: AppColors.primaryBlue.withOpacity(0.1),
+      highlightColor: AppColors.primaryBlue.withOpacity(0.05),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -567,10 +559,10 @@ class UserSettingsScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: (iconColor ?? _iconColor).withOpacity(0.1),
+                color: (iconColor ?? AppColors.getTextSecondaryColor(context)).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: iconColor ?? _iconColor, size: 22),
+              child: Icon(icon, color: iconColor ?? AppColors.getTextSecondaryColor(context), size: 22),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -579,11 +571,11 @@ class UserSettingsScreen extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
-                  color: textColor ?? _textColorPrimary,
+                  color: textColor ?? AppColors.getTextColor(context),
                 ),
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, size: 16, color: _textColorSecondary),
+            Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.getTextSecondaryColor(context)),
           ],
         ),
       ),

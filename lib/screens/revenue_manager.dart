@@ -191,9 +191,6 @@ class RevenueManager {
         print('Lỗi khi lưu vào Hive: $e');
         throw Exception('Không thể lưu vào Hive: $e');
       });
-
-      // Cập nhật tổng doanh thu
-      await updateTotalRevenue(appState, category, standardizedTransactions);
     } catch (e) {
       print('Lỗi khi lưu giao dịch: $e');
     }
@@ -225,7 +222,6 @@ class RevenueManager {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      await appState.setRevenue(main, secondary, other);
     } catch (e) {
       print('Lỗi khi cập nhật doanh thu: $e');
     }
@@ -339,7 +335,6 @@ class RevenueManager {
       var transactionsBox = Hive.box('transactionsBox');
       await transactionsBox.put(hiveKey, standardizedTransactions);
 
-      await updateTotalRevenue(appState, 'Doanh thu khác', standardizedTransactions);
     } catch (e) {
       print('Lỗi khi lưu giao dịch Doanh thu khác vào Firestore: $e');
       throw Exception('Không thể lưu giao dịch: $e');

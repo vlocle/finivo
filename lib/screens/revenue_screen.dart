@@ -1,3 +1,4 @@
+import 'package:fingrowth/screens/report_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,13 +36,6 @@ class _RevenueScreenState extends State<RevenueScreen>
   final PageController _pageController = PageController();
   AppState? _appState; // Biến để lưu tham chiếu đến AppState
 
-  // Define a modern color palette
-  static const Color _primaryColor = Color(0xFF0A7AFF); // A vibrant blue
-  static const Color _secondaryColor = Color(0xFFF0F4F8); // Light background
-  static const Color _accentColor = Color(0xFF34C759); // Green for positive actions
-  static const Color _textColorPrimary = Color(0xFF1D2D3A); // Dark text
-  static const Color _textColorSecondary = Color(0xFF6E7A8A); // Lighter text
-  static const Color _cardBackgroundColor = Colors.white;
 
   @override
   void initState() {
@@ -115,13 +109,19 @@ class _RevenueScreenState extends State<RevenueScreen>
       lastDate: DateTime(2030),
       builder: (context, child) {
         return Theme(
-          data: ThemeData.light().copyWith(
-            colorScheme: ColorScheme.light(
-              primary: _primaryColor,
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: AppColors.primaryBlue,
               onPrimary: Colors.white,
-              onSurface: _textColorPrimary,
+              surface: AppColors.getCardColor(context),
+              onSurface: AppColors.getTextColor(context),
             ),
-            dialogBackgroundColor: Colors.white,
+            dialogBackgroundColor: AppColors.getCardColor(context),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryBlue,
+              ),
+            ),
           ),
           child: child!,
         );
@@ -183,7 +183,7 @@ class _RevenueScreenState extends State<RevenueScreen>
         return Container(
           padding: EdgeInsets.symmetric(vertical: 20, horizontal: 16),
           decoration: BoxDecoration(
-              color: _cardBackgroundColor,
+              color: AppColors.getCardColor(context),
               borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
               boxShadow: [
                 BoxShadow(
@@ -204,7 +204,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: _textColorPrimary,
+                      color: AppColors.getTextColor(context)
                   ),
                 ),
               ),
@@ -215,11 +215,11 @@ class _RevenueScreenState extends State<RevenueScreen>
                     category,
                     style: TextStyle(
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected ? _primaryColor : _textColorPrimary,
+                      color: isSelected ? AppColors.primaryBlue : AppColors.getTextColor(context),
                     ),
                   ),
                   trailing: isSelected
-                      ? Icon(Icons.check_circle, color: _primaryColor)
+                      ? Icon(Icons.check_circle, color: AppColors.primaryBlue)
                       : null,
                   onTap: () {
                     if (mounted) {
@@ -235,7 +235,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)
                   ),
-                  tileColor: isSelected ? _primaryColor.withOpacity(0.1) : Colors.transparent,
+                  tileColor: isSelected ? AppColors.primaryBlue.withOpacity(0.1) : Colors.transparent,
                 );
               }).toList(),
             ],
@@ -245,94 +245,74 @@ class _RevenueScreenState extends State<RevenueScreen>
     );
   }
 
-  void _removeTransaction(AppState appState,
-      List<Map<String, dynamic>> transactions, int index, String category) {
+  // Dán để thay thế hàm _removeTransaction cũ trong class _RevenueScreenState
+
+  void _removeTransaction(
+      AppState appState,
+      List<Map<String, dynamic>> transactions,
+      int index,
+      String category,
+      ) {
+    // Kiểm tra chỉ số hợp lệ
     if (index < 0 || index >= transactions.length) return;
 
+    // Lấy thông tin giao dịch cần xóa để hiển thị thông báo
     final transactionToRemove = transactions[index];
-    final String? salesTransactionId = transactionToRemove['id'] as String?;
-    final String removedItemName = transactionToRemove['name'] as String? ?? "Giao dịch không rõ";
+    final removedItemName =
+        transactionToRemove['name'] as String? ?? "Giao dịch không rõ";
 
-    // Tạo bản sao để thao tác an toàn
-    List<Map<String, dynamic>> modifiableTransactions = List.from(transactions);
-
-    // ----- BẮT ĐẦU LOGIC XỬ LÝ XÓA COGS LIÊN QUAN -----
-    List<Map<String, dynamic>> currentDailyVariableExpenses = List.from(appState.variableExpenseList.value);
-    int initialVariableExpenseCount = currentDailyVariableExpenses.length;
-
-    if (salesTransactionId != null) {
-      if (category == 'Doanh thu chính') {
-        currentDailyVariableExpenses.removeWhere((expense) =>
-        expense['sourceSalesTransactionId'] == salesTransactionId &&
-            (expense['source'] == 'AUTO_COGS_OVERRIDE' ||
-                expense['source'] == 'AUTO_COGS_COMPONENT' ||
-                expense['source'] == 'AUTO_COGS_ESTIMATED'));
-      } else if (category == 'Doanh thu phụ') {
-        currentDailyVariableExpenses.removeWhere((expense) =>
-        expense['sourceSalesTransactionId'] == salesTransactionId &&
-            (expense['source'] == 'AUTO_COGS_OVERRIDE_SECONDARY' ||
-                expense['source'] == 'AUTO_COGS_COMPONENT_SECONDARY' ||
-                expense['source'] == 'AUTO_COGS_ESTIMATED_SECONDARY'));
+    // THAY ĐỔI CỐT LÕI:
+    // Toàn bộ logic xóa COGS, xóa doanh thu, cập nhật notifier...
+    // đã được chuyển vào hàm removeTransactionAndUpdateState trong AppState.
+    // Giờ đây, chúng ta chỉ cần gọi một hàm duy nhất.
+    appState
+        .removeTransactionAndUpdateState(
+      category: category,
+      transactionToRemove: transactionToRemove,
+    )
+        .then((_) {
+      // Chỉ hiển thị thông báo sau khi logic đã chạy xong
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã xóa giao dịch: $removedItemName'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: EdgeInsets.all(10),
+          ),
+        );
       }
-      // "Doanh thu khác" thường không có COGS tự động, nên không cần xử lý ở đây
-
-      if (currentDailyVariableExpenses.length < initialVariableExpenseCount) {
-        appState.variableExpenseList.value = List.from(currentDailyVariableExpenses);
-        ExpenseManager.saveVariableExpenses(appState, currentDailyVariableExpenses)
-            .then((_) {
-          double newTotalVariableExpense = currentDailyVariableExpenses.fold(0.0, (sum, item) => sum + (item['amount'] as num? ?? 0.0));
-          appState.setExpenses(appState.fixedExpense, newTotalVariableExpense);
-        })
-            .catchError((e) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Lỗi khi cập nhật chi phí sau khi xóa COGS: $e'), backgroundColor: _accentColor),
-          );
-        });
+    }).catchError((e) {
+      // Xử lý nếu có lỗi xảy ra trong quá trình cập nhật
+      if (mounted) {
+        _showStyledSnackBar("Lỗi khi xóa giao dịch: $e", isError: true);
       }
-    } else {
-      print("Cảnh báo: Giao dịch ($category - $removedItemName) không có ID, không thể tự động xóa COGS liên quan.");
-      // Có thể hiển thị SnackBar thông báo cho người dùng nếu cần
-    }
-    // ----- KẾT THÚC LOGIC XỬ LÝ XÓA COGS -----
-
-    // Xóa giao dịch doanh thu khỏi danh sách cục bộ
-    modifiableTransactions.removeAt(index);
-
-    // Lưu lại danh sách giao dịch doanh thu đã cập nhật
-    RevenueManager.saveTransactionHistory(appState, category, modifiableTransactions);
-    // Cập nhật ValueNotifier để UI tự động rebuild
-    _updateTransactionNotifier(appState, category, modifiableTransactions);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã xóa giao dịch: $removedItemName'),
-        backgroundColor: Colors.redAccent, // Giữ màu gốc hoặc _accentColor
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: EdgeInsets.all(10),
-      ),
-    );
+    });
   }
 
   // Bên trong class _RevenueScreenState
 
   // Thêm hàm này vào trong class _RevenueScreenState
-  void _editTransaction(AppState appState, List<Map<String, dynamic>> transactions, int index, String category) {
-    // Kiểm tra chỉ số hợp lệ
+  // Dành cho file revenue_screen.docx
+
+  void _editTransaction(AppState appState,
+      List<Map<String, dynamic>> transactions, int index, String category) {
     if (index < 0 || index >= transactions.length) return;
 
     final transactionToEdit = transactions[index];
     final String? salesTransactionId = transactionToEdit['id'] as String?;
-    final String originalProductName = transactionToEdit['name'] as String? ?? "Giao dịch không rõ";
-    final String originalTransactionDate = transactionToEdit['date'] as String? ?? DateTime.now().toIso8601String();
+    final String originalProductName =
+        transactionToEdit['name'] as String? ?? "Giao dịch không rõ";
+    final String originalTransactionDate =
+        transactionToEdit['date'] as String? ?? DateTime.now().toIso8601String();
 
-    // Khởi tạo các controller cho dialog
-    final TextEditingController editQuantityController =
-    TextEditingController(text: (transactionToEdit['quantity'] as num? ?? 1).toString());
+    final TextEditingController editQuantityController = TextEditingController(
+        text: (transactionToEdit['quantity'] as num? ?? 1).toString());
     final NumberFormat internalPriceFormatter = NumberFormat("#,##0", "vi_VN");
-
-    // Chỉ cho phép sửa logic giá vốn nếu là Doanh thu chính hoặc phụ
-    bool canHandleCogs = (category == 'Doanh thu chính' || category == 'Doanh thu phụ');
+    bool canHandleCogs =
+    (category == 'Doanh thu chính' || category == 'Doanh thu phụ');
 
     showDialog(
       context: context,
@@ -342,7 +322,8 @@ class _RevenueScreenState extends State<RevenueScreen>
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: Text("Chỉnh sửa: $originalProductName",
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: _textColorPrimary)),
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -352,155 +333,144 @@ class _RevenueScreenState extends State<RevenueScreen>
                   controller: editQuantityController,
                   decoration: InputDecoration(
                       labelText: "Nhập số lượng mới",
-                      labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      labelStyle:
+                      GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       filled: true,
-                      fillColor: _secondaryColor,
-                      prefixIcon: Icon(Icons.production_quantity_limits_outlined, color: _primaryColor)),
+                      fillColor: AppColors.getBackgroundColor(context),
+                      prefixIcon: Icon(
+                          Icons.production_quantity_limits_outlined,
+                          color: AppColors.primaryBlue)),
                   maxLines: 1,
                   maxLength: 5,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly
+                  ],
                 ),
-                // Chỉ hiển thị trường giá vốn nếu có thể xử lý
                 if (canHandleCogs) ...[
                   const SizedBox(height: 16),
                   TextField(
-                    // Trường này chỉ để hiển thị, không cho sửa
                     enabled: false,
                     controller: TextEditingController(
-                        text: internalPriceFormatter.format(transactionToEdit['unitVariableCost'] ?? 0.0)),
+                        text: internalPriceFormatter
+                            .format(transactionToEdit['unitVariableCost'] ?? 0.0)),
                     decoration: InputDecoration(
                         labelText: "Chi phí biến đổi/ĐV (Không đổi)",
-                        labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        labelStyle:
+                        GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         filled: true,
                         fillColor: Colors.grey.shade200,
-                        prefixIcon: Icon(Icons.local_atm_outlined, color: _primaryColor)),
+                        prefixIcon: Icon(Icons.local_atm_outlined,
+                            color: AppColors.primaryBlue)),
                     maxLines: 1,
                   ),
                 ]
               ],
             ),
           ),
-          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          actionsPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: Text("Hủy", style: GoogleFonts.poppins(color: _textColorSecondary, fontWeight: FontWeight.w500)),
+              child: Text("Hủy",
+                  style: GoogleFonts.poppins(
+                      color: AppColors.getTextSecondaryColor(context),
+                      fontWeight: FontWeight.w500)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryColor,
+                backgroundColor: AppColors.primaryBlue,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               onPressed: () {
+                // PHẦN 1: CHUẨN BỊ DỮ LIỆU
                 int newQuantity = int.tryParse(editQuantityController.text) ??
                     (transactionToEdit['quantity'] as int? ?? 1);
-
                 if (newQuantity <= 0) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(
-                      content: Text("Số lượng phải lớn hơn 0", style: GoogleFonts.poppins(color: Colors.white)),
-                      backgroundColor: _accentColor,
+                      content: Text("Số lượng phải lớn hơn 0",
+                          style: GoogleFonts.poppins(color: Colors.white)),
+                      backgroundColor: AppColors.chartGreen,
                       behavior: SnackBarBehavior.floating));
                   return;
                 }
 
-                // Lấy các giá trị gốc để tính toán lại
-                double price = (transactionToEdit['price'] as num? ?? 0.0).toDouble();
-                double unitVariableCost = (transactionToEdit['unitVariableCost'] as double? ?? 0.0);
+                Map<String, dynamic> updatedTransaction =
+                Map.from(transactionToEdit);
+                List<Map<String, dynamic>> newAutoGeneratedCogs = [];
 
-                // Tạo bản sao của danh sách chi phí và doanh thu để chỉnh sửa
-                List<Map<String, dynamic>> currentDailyVariableExpenses = List.from(appState.variableExpenseList.value);
-                List<Map<String, dynamic>> modifiableTransactions = List.from(transactions);
-                Map<String, dynamic> updatedTransaction = Map<String, dynamic>.from(transactionToEdit);
+                double price =
+                (transactionToEdit['price'] as num? ?? 0.0).toDouble();
+                double unitVariableCost =
+                (transactionToEdit['unitVariableCost'] as double? ?? 0.0);
 
-                // *** LOGIC CỐT LÕI: XÓA VÀ TẠO LẠI GIÁ VỐN ***
-                if (salesTransactionId != null && canHandleCogs) {
-                  // 1. XÓA GIÁ VỐN (COGS) CŨ
-                  // Xác định các loại source cần xóa dựa trên category
-                  List<String> cogsSourcesToRemove = [];
-                  if (category == 'Doanh thu chính') {
-                    cogsSourcesToRemove = ['AUTO_COGS_OVERRIDE', 'AUTO_COGS_COMPONENT', 'AUTO_COGS_ESTIMATED', 'AUTO_COGS_COMPONENT_OVERRIDE'];
-                  } else if (category == 'Doanh thu phụ') {
-                    cogsSourcesToRemove = ['AUTO_COGS_OVERRIDE_SECONDARY', 'AUTO_COGS_COMPONENT_SECONDARY', 'AUTO_COGS_ESTIMATED_SECONDARY', 'AUTO_COGS_COMPONENT_OVERRIDE_SECONDARY'];
-                  }
-                  currentDailyVariableExpenses.removeWhere((expense) =>
-                  expense['sourceSalesTransactionId'] == salesTransactionId &&
-                      cogsSourcesToRemove.contains(expense['source']));
-                }
-
-                // 2. CẬP NHẬT GIAO DỊCH DOANH THU
                 updatedTransaction['quantity'] = newQuantity;
                 updatedTransaction['total'] = price * newQuantity;
-                if (canHandleCogs) {
-                  updatedTransaction['totalVariableCost'] = unitVariableCost * newQuantity;
-                }
+                updatedTransaction['totalVariableCost'] =
+                    unitVariableCost * newQuantity;
 
-                // 3. TẠO LẠI GIÁ VỐN (COGS) MỚI VỚI SỐ LƯỢNG MỚI
-                List<Map<String, dynamic>> newAutoGeneratedCogs = [];
-                if (salesTransactionId != null && canHandleCogs && unitVariableCost > 0) {
-                  // Lấy thông tin về cách giá vốn được tạo ban đầu
-                  final String? originalCogsSourceType = updatedTransaction['cogsSourceType'] as String?;
-                  final List<dynamic>? rawOriginalCogsComponents = updatedTransaction['cogsComponentsUsed'] as List<dynamic>?;
-                  final List<Map<String, dynamic>>? originalCogsComponents = rawOriginalCogsComponents?.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+                if (salesTransactionId != null && canHandleCogs) {
+                  final String? originalCogsSourceType = (category ==
+                      'Doanh thu phụ'
+                      ? updatedTransaction['cogsSourceType_Secondary']
+                      : updatedTransaction['cogsSourceType']) as String?;
+                  final List<dynamic>? rawCogs = (category == 'Doanh thu phụ'
+                      ? updatedTransaction['cogsComponentsUsed_Secondary']
+                      : updatedTransaction['cogsComponentsUsed']) as List<dynamic>?;
+                  final List<Map<String, dynamic>>? components = rawCogs
+                      ?.map((i) => Map<String, dynamic>.from(i as Map))
+                      .toList();
 
-                  // Nếu giá vốn được tạo từ các thành phần chi tiết
-                  if (originalCogsComponents != null && originalCogsComponents.isNotEmpty) {
-                    double totalNewCost = 0;
-                    for (var component in originalCogsComponents) {
-                      double componentCost = (component['cost'] as num? ?? 0.0).toDouble();
-                      double newComponentAmount = componentCost * newQuantity;
-                      totalNewCost += newComponentAmount;
-                      if (newComponentAmount > 0) {
-                        newAutoGeneratedCogs.add({
-                          "name": "${component['name']} (Cho: $originalProductName)",
-                          "amount": newComponentAmount,
-                          "date": originalTransactionDate,
-                          "source": originalCogsSourceType, // Giữ lại source type gốc
-                          "sourceSalesTransactionId": salesTransactionId
-                        });
-                      }
+                  if (components != null && components.isNotEmpty) {
+                    for (var component in components) {
+                      // SỬA LỖI Ở ĐÂY: Thêm .toDouble()
+                      double cost = (component['cost'] as num? ?? 0.0).toDouble();
+                      newAutoGeneratedCogs.add({
+                        "name":
+                        "${component['name']} (Cho: $originalProductName)",
+                        "amount": cost * newQuantity,
+                        "date": originalTransactionDate,
+                        "source": originalCogsSourceType,
+                        "sourceSalesTransactionId": salesTransactionId
+                      });
                     }
-                    // Cập nhật lại tổng chi phí biến đổi cho chính xác
-                    updatedTransaction['totalVariableCost'] = totalNewCost;
-
-                  } else { // Nếu giá vốn được tạo từ một con số tổng ước tính/ghi đè
-                    double totalNewVariableCostForSale = unitVariableCost * newQuantity;
+                  } else if (unitVariableCost > 0) {
                     newAutoGeneratedCogs.add({
                       "name": "Giá vốn hàng bán: $originalProductName",
-                      "amount": totalNewVariableCostForSale,
+                      "amount": unitVariableCost * newQuantity,
                       "date": originalTransactionDate,
-                      "source": originalCogsSourceType, // Giữ lại source type gốc
+                      "source": originalCogsSourceType,
                       "sourceSalesTransactionId": salesTransactionId
                     });
                   }
                 }
 
-                // 4. LƯU TẤT CẢ THAY ĐỔI
-                // Thêm COGS mới vào danh sách chi phí
-                currentDailyVariableExpenses.addAll(newAutoGeneratedCogs);
-                // Cập nhật giao dịch trong danh sách doanh thu
-                modifiableTransactions[index] = updatedTransaction;
-
-                // Lưu chi phí biến đổi
-                ExpenseManager.saveVariableExpenses(appState, currentDailyVariableExpenses)
+                // PHẦN 2: GỌI HÀM CẬP NHẬT TẬP TRUNG
+                appState
+                    .editTransactionAndUpdateState(
+                  category: category,
+                  updatedTransaction: updatedTransaction,
+                  newCogsTransactions: newAutoGeneratedCogs,
+                )
                     .then((_) {
-                  double newTotalVariableExpense = currentDailyVariableExpenses.fold(
-                      0.0, (sum, item) => sum + (item['amount'] as num? ?? 0.0));
-                  appState.setExpenses(appState.fixedExpense, newTotalVariableExpense);
+                  if (mounted) {
+                    _showStyledSnackBar("Đã cập nhật: $originalProductName");
+                  }
                 }).catchError((e) {
-                  _showStyledSnackBar("Lỗi khi cập nhật chi phí biến đổi: $e", isError: true);
+                  if (mounted) {
+                    _showStyledSnackBar("Lỗi khi cập nhật: $e", isError: true);
+                  }
                 });
 
-                // Lưu lịch sử doanh thu
-                RevenueManager.saveTransactionHistory(appState, category, modifiableTransactions);
-                _updateTransactionNotifier(appState, category, modifiableTransactions);
-
-                // Đóng dialog và hiển thị thông báo
                 Navigator.pop(dialogContext);
-                _showStyledSnackBar("Đã cập nhật: $originalProductName");
               },
               child: Text("Lưu", style: GoogleFonts.poppins()),
             ),
@@ -516,7 +486,7 @@ class _RevenueScreenState extends State<RevenueScreen>
       SnackBar(
         content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
         // Sử dụng màu đỏ cho lỗi và màu chính của màn hình cho các thông báo khác
-        backgroundColor: isError ? Colors.redAccent : _primaryColor,
+        backgroundColor: isError ? Colors.redAccent : AppColors.primaryBlue,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(10),
@@ -559,7 +529,7 @@ class _RevenueScreenState extends State<RevenueScreen>
     final bool canManageProducts = appState.hasPermission('canManageProducts');
 
     return Scaffold(
-      backgroundColor: _secondaryColor,
+      backgroundColor: AppColors.getBackgroundColor(context),
       body: CustomScrollView(
         slivers: [
           _buildSliverAppBar(user, appState),
@@ -593,12 +563,12 @@ class _RevenueScreenState extends State<RevenueScreen>
       floating: false,
       pinned: true,
       elevation: 2,
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.primaryBlue,
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_primaryColor.withOpacity(0.9), _primaryColor.withOpacity(0.7)],
+              colors: [AppColors.primaryBlue.withOpacity(0.9), AppColors.primaryBlue.withOpacity(0.7)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -645,7 +615,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                                 : null,
                             child: user?.photoURL == null
                                 ? Icon(Icons.person_outline,
-                                size: 32, color: _primaryColor.withOpacity(0.9))
+                                size: 32, color: AppColors.primaryBlue.withOpacity(0.9))
                                 : null,
                           ),
                         ),
@@ -657,15 +627,15 @@ class _RevenueScreenState extends State<RevenueScreen>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             // WIDGET MỚI ĐẶT Ở ĐÂY
-                            AccountSwitcher(),
+                            AccountSwitcher(textColor: Colors.white),
 
                             // Giữ nguyên phần hiển thị ngày
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 4),
                             ValueListenableBuilder<DateTime>(
                               valueListenable: appState.selectedDateListenable,
                               builder: (context, selectedDate, _) => Text(
                                 "Ngày ${DateFormat('dd MMMM, yyyy', 'vi').format(selectedDate)}",
-                                style: TextStyle(
+                                style: GoogleFonts.poppins(
                                   fontSize: 13,
                                   color: Colors.white.withOpacity(0.9),
                                   fontWeight: FontWeight.w500,
@@ -723,7 +693,7 @@ class _RevenueScreenState extends State<RevenueScreen>
             controller: _pageController,
             count: 2,
             effect: ExpandingDotsEffect(
-              activeDotColor: _primaryColor,
+              activeDotColor: AppColors.primaryBlue,
               dotColor: Colors.grey.shade300,
               dotHeight: 8,
               dotWidth: 8,
@@ -746,7 +716,7 @@ class _RevenueScreenState extends State<RevenueScreen>
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _cardBackgroundColor, // [cite: 113]
+        color: AppColors.getCardColor(context), // [cite: 113]
         borderRadius: BorderRadius.circular(20), // [cite: 113]
         boxShadow: [ // [cite: 113]
           BoxShadow( // [cite: 114]
@@ -764,14 +734,14 @@ class _RevenueScreenState extends State<RevenueScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.center, // [cite: 115]
             children: [
-              Icon(icon, color: isProfit ? _accentColor : _primaryColor, size: 22), // [cite: 115]
+              Icon(icon, color: isProfit ? AppColors.chartGreen : AppColors.primaryBlue, size: 22), // [cite: 115]
               SizedBox(width: 8), // [cite: 115]
               Text( // [cite: 116]
                 title, // [cite: 116]
                 style: TextStyle( // [cite: 116]
                   fontSize: 16, // [cite: 116]
                   fontWeight: FontWeight.w600, // [cite: 116]
-                  color: _textColorSecondary, // [cite: 116]
+                  color: AppColors.getTextSecondaryColor(context), // [cite: 116]
                 ),
               ),
             ],
@@ -785,10 +755,10 @@ class _RevenueScreenState extends State<RevenueScreen>
                 if (value < 0) {
                   valueColor = Colors.red; // Màu đỏ cho số tiền âm
                 } else {
-                  valueColor = _accentColor; // Màu xanh lá cho số tiền dương [cite: 7, 119]
+                  valueColor = AppColors.chartGreen; // Màu xanh lá cho số tiền dương [cite: 7, 119]
                 }
               } else {
-                valueColor = _textColorPrimary; // [cite: 8, 119]
+                valueColor = AppColors.getTextColor(context); // [cite: 8, 119]
               }
               return Text(
                 currencyFormat.format(value), // [cite: 118]
@@ -846,7 +816,7 @@ class _RevenueScreenState extends State<RevenueScreen>
           child: Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _cardBackgroundColor,
+              color: AppColors.getCardColor(context),
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
@@ -860,14 +830,14 @@ class _RevenueScreenState extends State<RevenueScreen>
             child: Icon(
               icon,
               size: 28,
-              color: _primaryColor,
+              color: AppColors.primaryBlue,
             ),
           ),
         ),
         const SizedBox(height: 8),
         Text(
           label,
-          style: TextStyle(color: _textColorSecondary, fontSize: 13, fontWeight: FontWeight.w500),
+          style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13, fontWeight: FontWeight.w500),
         ),
       ],
     );
@@ -880,7 +850,7 @@ class _RevenueScreenState extends State<RevenueScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
         decoration: BoxDecoration(
-          color: _cardBackgroundColor,
+          color: AppColors.getCardColor(context),
           borderRadius: BorderRadius.circular(15),
           boxShadow: [
             BoxShadow(
@@ -901,7 +871,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.bold,
-                    color: _textColorPrimary,
+                      color: AppColors.getTextColor(context)
                   ),
                 ),
                 SizedBox(height: 4),
@@ -911,7 +881,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                     'Tổng: ${currencyFormat.format(_calculateTotal(transactions))}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: _primaryColor,
+                      color: AppColors.primaryBlue,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -920,7 +890,7 @@ class _RevenueScreenState extends State<RevenueScreen>
             ),
             Icon(
               Icons.keyboard_arrow_down_rounded,
-              color: _textColorSecondary,
+              color: AppColors.getTextSecondaryColor(context),
               size: 28,
             ),
           ],
@@ -936,6 +906,21 @@ class _RevenueScreenState extends State<RevenueScreen>
       sliver: ValueListenableBuilder<List<Map<String, dynamic>>>(
         valueListenable: _getCurrentCategoryTransactions(appState),
         builder: (context, transactions, _) {
+          if (transactions.isNotEmpty) {
+            // Thu thập tất cả các UID duy nhất từ danh sách giao dịch
+            final uids = transactions
+                .map((t) => t['createdBy'] as String?)
+                .whereType<String>() // <-- SỬA LẠI DÙNG whereType<String>()
+                .toSet();
+
+            // Yêu cầu AppState tải tên của các UID này (nếu chưa có trong cache)
+            if (uids.isNotEmpty) {
+              // Dùng WidgetsBinding để tránh gọi setState trong lúc build
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                context.read<AppState>().fetchDisplayNames(uids);
+              });
+            }
+          }
           if (transactions.isEmpty) {
             return SliverFillRemaining(
               hasScrollBody: false,
@@ -949,7 +934,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                       SizedBox(height: 16),
                       Text(
                         'Không có giao dịch nào',
-                        style: TextStyle(fontSize: 17, color: _textColorSecondary),
+                        style: TextStyle(fontSize: 17, color: AppColors.getTextSecondaryColor(context)),
                       ),
                       SizedBox(height: 8),
                       Text(
@@ -978,13 +963,15 @@ class _RevenueScreenState extends State<RevenueScreen>
                 final double totalRevenue = (transaction['total'] as num? ?? 0.0).toDouble();
                 final double totalVariableCost = (transaction['totalVariableCost'] as num? ?? 0.0).toDouble();
                 final double grossProfit = totalRevenue - totalVariableCost;
-                final List<dynamic>? cogsComponents = transaction['cogsComponentsUsed'] as List<dynamic>?;
+                final List<dynamic>? cogsComponents = _selectedTransactionCategory == 'Doanh thu phụ'
+                    ? transaction['cogsComponentsUsed_Secondary'] as List<dynamic>?
+                    : transaction['cogsComponentsUsed'] as List<dynamic>?;
 
                 IconData transactionIcon;
                 Color iconColor;
                 if (_selectedTransactionCategory == 'Doanh thu chính') {
                   transactionIcon = Icons.business_center_outlined;
-                  iconColor = _primaryColor;
+                  iconColor = AppColors.primaryBlue;
                 } else if (_selectedTransactionCategory == 'Doanh thu phụ') {
                   transactionIcon = Icons.work_outline_outlined;
                   iconColor = Colors.orange.shade700;
@@ -993,6 +980,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                   iconColor = Colors.purple.shade600;
                 }
 
+                final String? creatorUid = transaction['createdBy'] as String?;
                 return FadeTransition(
                   opacity: _fadeAnimation,
                   child: Slidable(
@@ -1019,11 +1007,11 @@ class _RevenueScreenState extends State<RevenueScreen>
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                                 title: Text(
                                   'Xác nhận xóa',
-                                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: _textColorPrimary),
+                                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
                                 ),
                                 content: Text(
                                   'Bạn có chắc chắn muốn xóa giao dịch "${transaction['name']}" không? Hành động này không thể hoàn tác.',
-                                  style: GoogleFonts.poppins(color: _textColorSecondary),
+                                  style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
                                 ),
                                 actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 actions: [
@@ -1031,7 +1019,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                                     onPressed: () => Navigator.pop(context, false),
                                     child: Text(
                                         'Hủy',
-                                        style: GoogleFonts.poppins(color: _textColorSecondary, fontWeight: FontWeight.w500)
+                                        style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context), fontWeight: FontWeight.w500)
                                     ),
                                   ),
                                   ElevatedButton(
@@ -1064,7 +1052,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(15)),
-                      color: _cardBackgroundColor,
+                      color: AppColors.getCardColor(context),
                       // <<< MỚI: Thay thế ListTile bằng ExpansionTile >>>
                       child: ExpansionTile(
                         leading: Container(
@@ -1083,16 +1071,38 @@ class _RevenueScreenState extends State<RevenueScreen>
                           style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 16,
-                              color: _textColorPrimary),
+                              color: AppColors.getTextColor(context)),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(
-                          'Tổng DT: ${currencyFormat.format(totalRevenue)}',
-                          style: TextStyle(
-                              fontSize: 14,
-                              color: _textColorSecondary,
-                              fontWeight: FontWeight.w500),
-                          overflow: TextOverflow.ellipsis,
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Dòng tổng doanh thu
+                            Text(
+                              'Tổng DT: ${currencyFormat.format(totalRevenue)}',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  color: AppColors.getTextSecondaryColor(context),
+                                  fontWeight: FontWeight.w500),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            // Dòng hiển thị người tạo mới được thêm vào
+                            if (creatorUid != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3.0),
+                                child: Consumer<AppState>( // Dùng Consumer để UI tự cập nhật khi tên được tải về
+                                  builder: (context, appStateConsumer, child) {
+                                    return Text(
+                                      "Tạo bởi: ${appStateConsumer.getUserDisplayName(creatorUid)}",
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 11.5,
+                                          color: AppColors.getTextSecondaryColor(context).withOpacity(0.8),
+                                          fontStyle: FontStyle.italic),
+                                    );
+                                  },
+                                ),
+                              ),
+                          ],
                         ),
                         trailing: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -1103,7 +1113,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                                   ? 'SL: ${transaction['quantity']}'
                                   : '',
                               style: TextStyle(
-                                  fontSize: 13, color: _textColorSecondary),
+                                  fontSize: 13, color: AppColors.getTextSecondaryColor(context)),
                             ),
                             SizedBox(height: 4),
                             Text(
@@ -1141,7 +1151,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                                     padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
                                     child: Text(
                                       'Chi tiết giá vốn:',
-                                      style: TextStyle(fontWeight: FontWeight.w600, color: _textColorSecondary),
+                                      style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.getTextSecondaryColor(context)),
                                     ),
                                   ),
                                   ...cogsComponents.map((component) {
@@ -1152,8 +1162,8 @@ class _RevenueScreenState extends State<RevenueScreen>
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text('  • $name', style: TextStyle(color: _textColorSecondary)),
-                                          Text(currencyFormat.format(cost), style: TextStyle(color: _textColorSecondary)),
+                                          Text('  • $name', style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
+                                          Text(currencyFormat.format(cost), style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
                                         ],
                                       ),
                                     );
@@ -1185,7 +1195,7 @@ class _RevenueScreenState extends State<RevenueScreen>
           label,
           style: TextStyle(
             fontSize: 14,
-            color: _textColorSecondary,
+            color: AppColors.getTextSecondaryColor(context),
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -1246,8 +1256,8 @@ class RevenueCategoryItem extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w600, color: _RevenueScreenState._textColorPrimary),
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
                       ),
                       const SizedBox(height: 5),
                       Text(

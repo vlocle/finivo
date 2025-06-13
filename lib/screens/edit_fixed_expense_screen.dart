@@ -6,6 +6,7 @@ import 'package:marquee/marquee.dart'; // Kept from original
 import '../state/app_state.dart';
 import '/screens/expense_manager.dart'; // Ensure this path is correct
 import 'package:google_fonts/google_fonts.dart';
+import 'package:fingrowth/screens/report_screen.dart';
 
 class EditFixedExpenseScreen extends StatefulWidget {
   const EditFixedExpenseScreen({Key? key}) : super(key: key);
@@ -25,15 +26,6 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
   late Animation<double> _fadeAnimation;
   late Animation<double> _totalFadeAnimation;
   late Animation<double> _buttonScaleAnimation;
-
-  // Updated Color Palette
-  static const Color _appBarColor = Color(0xFFD32F2F); // Original AppBar color, now used for top section
-  static const Color _accentColor = Color(0xFFD32F2F); // Deep Red for emphasis/delete
-  static const Color _secondaryColor = Color(0xFFF1F5F9); // Light background
-  static const Color _textColorPrimary = Color(0xFF1D2D3A);
-  static const Color _textColorSecondary = Color(0xFF6E7A8A);
-  static const Color _cardBackgroundColor = Colors.white;
-  static const Color _editButtonColor = Color(0xFF0A7AFF); // Blue for edit actions
 
 
   @override
@@ -72,7 +64,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
-        backgroundColor: isError ? _accentColor : _appBarColor,
+        backgroundColor: isError ? AppColors.chartRed : AppColors.chartRed,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(10),
@@ -93,7 +85,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
           "Chỉnh sửa: ${expenseToEdit['name']}",
           overflow: TextOverflow.ellipsis,
           maxLines: 1,
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: _textColorPrimary),
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
         ),
         content: TextField(
           controller: amountController,
@@ -116,11 +108,11 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
           ],
           decoration: InputDecoration(
               labelText: "Nhập số tiền",
-              labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
+              labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.0)),
               filled: true,
-              fillColor: _secondaryColor.withOpacity(0.7),
-              prefixIcon: Icon(Icons.monetization_on_outlined, color: _appBarColor)
+              fillColor: AppColors.getBackgroundColor(context).withOpacity(0.7),
+              prefixIcon: Icon(Icons.monetization_on_outlined, color: AppColors.chartRed)
           ),
           maxLines: 1,
           maxLength: 15,
@@ -132,11 +124,11 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
               amountController.clear();
               Navigator.pop(dialogContext);
             },
-            child: Text("Hủy", style: GoogleFonts.poppins(color: _textColorSecondary, fontWeight: FontWeight.w500)),
+            child: Text("Hủy", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context), fontWeight: FontWeight.w500)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: _appBarColor,
+              backgroundColor: AppColors.chartRed,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -172,27 +164,27 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
 
   Future<void> deleteExpenseItem(int index, AppState appState) async {
     if (index < 0 || index >= appState.fixedExpenseList.value.length) return;
-    final expenseName = appState.fixedExpenseList.value[index]['name'];
 
+    final expenseName = appState.fixedExpenseList.value[index]['name'];
     bool? confirm = await showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
-        title: Text("Xác nhận xóa", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: _textColorPrimary)),
+        title: Text("Xác nhận xóa", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
         content: Text(
           "Bạn có chắc muốn xóa '$expenseName' không?",
           overflow: TextOverflow.ellipsis,
           maxLines: 2,
-          style: GoogleFonts.poppins(color: _textColorSecondary),
+          style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
         ),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text("Hủy", style: GoogleFonts.poppins(color: _textColorSecondary, fontWeight: FontWeight.w500)),
+            child: Text("Hủy", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context), fontWeight: FontWeight.w500)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _accentColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0))),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.chartRed, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0))),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text("Xóa", style: GoogleFonts.poppins()),
           ),
@@ -204,10 +196,14 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
       try {
         final updatedExpenses = List<Map<String, dynamic>>.from(appState.fixedExpenseList.value);
         updatedExpenses.removeAt(index);
-        //appState.fixedExpenseList.value = updatedExpenses;
 
+        // LƯU Ý: Dòng code dưới đây đã được bỏ comment.
+        // Đây là dòng code quan trọng nhất, nó báo cho UI biết rằng danh sách đã thay đổi và cần vẽ lại.
+        appState.fixedExpenseList.value = updatedExpenses;
+
+        // Sau khi cập nhật UI, gửi lệnh lưu lên server ở chế độ nền
         await ExpenseManager.saveFixedExpenses(appState, updatedExpenses);
-        //await appState.loadExpenseValues();
+
         _showStyledSnackBar("Đã xóa khoản chi phí: $expenseName");
       } catch (e) {
         _showStyledSnackBar("Lỗi khi xóa: $e", isError: true);
@@ -221,12 +217,12 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
     // final screenWidth = MediaQuery.of(context).size.width; // Kept from original, not directly used in current build
 
     return Scaffold(
-      backgroundColor: _secondaryColor,
+      backgroundColor: AppColors.getBackgroundColor(context),
       body: Stack(
         children: [
           Container(
             height: MediaQuery.of(context).size.height * 0.25,
-            color: _appBarColor.withOpacity(0.9),
+            color: AppColors.chartRed.withOpacity(0.9),
           ),
           SafeArea(
             child: Column(
@@ -290,11 +286,11 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.receipt_long_outlined, size: 60, color: Colors.grey.shade400),
+                                Icon(Icons.receipt_long_outlined, size: 60, color: AppColors.getTextSecondaryColor(context)),
                                 SizedBox(height: 16),
                                 Text(
                                   "Chưa có chi phí cố định",
-                                  style: GoogleFonts.poppins(fontSize: 17, color: _textColorSecondary),
+                                  style: GoogleFonts.poppins(fontSize: 17, color: AppColors.getTextSecondaryColor(context)),
                                 ),
                               ],
                             ),
@@ -307,7 +303,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                               child: Card(
                                 elevation: 4,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
-                                color: _cardBackgroundColor,
+                                color: AppColors.getCardColor(context),
                                 child: Padding(
                                   padding: const EdgeInsets.all(16.0),
                                   child: Row(
@@ -315,7 +311,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                                     children: [
                                       Text(
                                         'Tổng chi phí cố định',
-                                        style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w600, color: _textColorPrimary ),
+                                        style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.getTextColor(context) ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       Flexible(
@@ -328,7 +324,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                                               style: GoogleFonts.poppins(
                                                 fontSize: 20,
                                                 fontWeight: FontWeight.bold,
-                                                color: _accentColor,
+                                                color: AppColors.chartRed,
                                               ),
                                               overflow: TextOverflow.ellipsis,
                                               textAlign: TextAlign.end,
@@ -357,13 +353,13 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                                         elevation: 2,
                                         margin: const EdgeInsets.symmetric(vertical: 6.0),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                                        color: _cardBackgroundColor,
+                                        color: AppColors.getCardColor(context),
                                         child: ListTile(
                                           contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
                                           visualDensity: VisualDensity.adaptivePlatformDensity,
                                           leading: CircleAvatar(
-                                            backgroundColor: _appBarColor.withOpacity(0.15),
-                                            child: Icon(Icons.shield_outlined, color: _appBarColor, size: 22),
+                                            backgroundColor: AppColors.chartRed.withOpacity(0.15),
+                                            child: Icon(Icons.shield_outlined, color: AppColors.chartRed, size: 22),
                                             radius: 20,
                                           ),
                                           title: Text(
@@ -371,7 +367,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                                             style: GoogleFonts.poppins(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
-                                                color: _textColorPrimary),
+                                                color: AppColors.getTextColor(context)),
                                             overflow: TextOverflow.ellipsis,
                                             maxLines: 1,
                                           ),
@@ -380,7 +376,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                                             style: GoogleFonts.poppins(
                                               fontSize: 14.5,
                                               fontWeight: FontWeight.w500,
-                                              color: _textColorSecondary.withOpacity(0.9),
+                                              color: AppColors.getTextSecondaryColor(context).withOpacity(0.9),
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -391,7 +387,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                                                 scale: _buttonScaleAnimation,
                                                 child: IconButton(
                                                   icon: Icon(Icons.edit_note_outlined,
-                                                      color: _editButtonColor, size: 22),
+                                                      color: AppColors.primaryBlue, size: 22),
                                                   onPressed: () => showEditAmountDialog(index, appState),
                                                   splashRadius: 20,
                                                   tooltip: "Chỉnh sửa",
@@ -401,7 +397,7 @@ class _EditFixedExpenseScreenState extends State<EditFixedExpenseScreen>
                                                 scale: _buttonScaleAnimation,
                                                 child: IconButton(
                                                   icon: Icon(Icons.delete_outline_rounded,
-                                                      color: _accentColor, size: 22),
+                                                      color: AppColors.chartRed, size: 22),
                                                   onPressed: () => deleteExpenseItem(index, appState),
                                                   splashRadius: 20,
                                                   tooltip: "Xóa",

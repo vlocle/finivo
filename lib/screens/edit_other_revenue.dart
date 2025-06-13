@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart'; // Ensure this path is correct
-import '/screens/revenue_manager.dart'; // Ensure this path is correct
+import 'package:fingrowth/screens/report_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class EditOtherRevenueScreen extends StatefulWidget {
@@ -25,12 +25,6 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
   late Animation<double> _scaleAnimation;
   int _selectedTab = 0;
 
-  static const Color _primaryColor = Color(0xFF2F81D7);
-  static const Color _secondaryColor = Color(0xFFF1F5F9);
-  static const Color _textColorPrimary = Color(0xFF1D2D3A);
-  static const Color _textColorSecondary = Color(0xFF6E7A8A);
-  static const Color _cardBackgroundColor = Colors.white;
-  static const Color _accentColor = Colors.redAccent;
   final NumberFormat _inputPriceFormatter = NumberFormat("#,##0", "vi_VN");
 
   @override
@@ -56,13 +50,15 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
-        backgroundColor: isError ? _accentColor : _primaryColor,
+        backgroundColor: isError ? AppColors.chartRed : AppColors.primaryBlue,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(10),
       ),
     );
   }
+
+  // Thay thế hàm _addTransaction [14] trong file edit_other_revenue.docx
 
   void _addTransaction(AppState appState) {
     double total = double.tryParse(
@@ -79,36 +75,39 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       return;
     }
 
-    List<Map<String, dynamic>> updatedTransactions =
-    List.from(appState.otherRevenueTransactions.value);
-    updatedTransactions.add({
+    // Chuẩn bị giao dịch mới
+    final newTransaction = {
       'name': name,
       'total': total,
-      'quantity': 1.0, // Default quantity for "other revenue"
+      'quantity': 1.0,
       'date': DateTime.now().toIso8601String(),
       'createdBy': appState.authUserId,
+    };
+
+    // THAY ĐỔI CỐT LÕI: Gọi hàm tập trung của AppState
+    appState.addOtherRevenueAndUpdateState(newTransaction).then((_) {
+      _showStyledSnackBar('Đã thêm giao dịch: $name');
+      _totalController.clear();
+      _nameController.clear();
+      FocusScope.of(context).unfocus();
+      widget.onUpdate();
+    }).catchError((e) {
+      _showStyledSnackBar('Lỗi khi thêm giao dịch: $e', isError: true);
     });
-
-    appState.otherRevenueTransactions.value = updatedTransactions;
-    RevenueManager.saveOtherRevenueTransactions(
-        appState, appState.otherRevenueTransactions.value);
-    _showStyledSnackBar('Đã thêm giao dịch: $name');
-
-    // Clear fields after adding - This fulfills the user's request
-    _totalController.clear();
-    _nameController.clear();
-    FocusScope.of(context).unfocus();
-    widget.onUpdate(); // Callback to update parent widget if needed
   }
 
+  // Dành cho file edit_other_revenue.docx
+
   void _editTransaction(AppState appState, int originalIndexInValueNotifier) {
-    // Get the actual transaction from the ValueNotifier using the original index
-    final transactionToEdit = appState.otherRevenueTransactions.value[originalIndexInValueNotifier];
+    // Lấy giao dịch cần sửa từ ValueNotifier bằng chỉ mục gốc
+    final transactionToEdit =
+    appState.otherRevenueTransactions.value[originalIndexInValueNotifier];
 
-    // Create temporary controllers for the dialog to avoid modifying main controllers directly
-    final TextEditingController editNameController = TextEditingController(text: transactionToEdit['name']?.toString() ?? '');
-    final TextEditingController editTotalController = TextEditingController(text: _inputPriceFormatter.format(transactionToEdit['total'] ?? 0.0));
-
+    // Tạo các controller tạm thời cho dialog
+    final TextEditingController editNameController =
+    TextEditingController(text: transactionToEdit['name']?.toString() ?? '');
+    final TextEditingController editTotalController = TextEditingController(
+        text: _inputPriceFormatter.format(transactionToEdit['total'] ?? 0.0));
 
     showDialog(
       context: context,
@@ -120,18 +119,20 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: Text('Chỉnh sửa giao dịch',
               style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600, color: _textColorPrimary)),
+                  fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDialogTextField( // Using a helper for dialog fields
+              _buildDialogTextField(
+                context: dialogContext,
                 controller: editNameController,
                 labelText: 'Tên giao dịch',
                 prefixIconData: Icons.description_outlined,
                 maxLength: 100,
               ),
               const SizedBox(height: 16),
-              _buildDialogTextField( // Using a helper for dialog fields
+              _buildDialogTextField(
+                context: dialogContext,
                 controller: editTotalController,
                 labelText: 'Số tiền',
                 prefixIconData: Icons.monetization_on_outlined,
@@ -165,17 +166,16 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
           actions: [
             TextButton(
               onPressed: () {
-                // No need to clear main controllers here, dialog controllers are local
                 Navigator.pop(dialogContext);
               },
               child: Text('Hủy',
                   style: GoogleFonts.poppins(
-                      color: _textColorSecondary,
+                      color: AppColors.getTextSecondaryColor(context),
                       fontWeight: FontWeight.w500)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryColor,
+                backgroundColor: AppColors.primaryBlue,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -183,15 +183,17 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               onPressed: () {
+                // Chuẩn bị dữ liệu từ dialog
                 double newTotal = double.tryParse(editTotalController.text
                     .replaceAll('.', '')
                     .replaceAll(',', '')) ??
                     0.0;
                 String newName = editNameController.text.trim();
 
+                // Validate dữ liệu
                 if (newName.isEmpty) {
                   _showStyledSnackBar('Tên giao dịch không được để trống!',
-                      isError: true); // Consider showing snackbar on dialogContext if possible
+                      isError: true);
                   return;
                 }
                 if (newTotal <= 0) {
@@ -199,25 +201,28 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                   return;
                 }
 
-                List<Map<String, dynamic>> updatedTransactions =
-                List.from(appState.otherRevenueTransactions.value);
-
-                updatedTransactions[originalIndexInValueNotifier] = {
-                  ...updatedTransactions[originalIndexInValueNotifier], // Preserve other fields like date
+                // Chuẩn bị map giao dịch đã cập nhật
+                final updatedTransaction = {
+                  ...transactionToEdit, // Giữ lại các trường cũ như date, createdBy...
                   'name': newName,
                   'total': newTotal,
-                  // 'quantity' remains 1.0 as per _addTransaction
-                  // 'date' is preserved from original transaction
                 };
 
-                appState.otherRevenueTransactions.value = updatedTransactions;
-                RevenueManager.saveOtherRevenueTransactions(
-                    appState, appState.otherRevenueTransactions.value);
-
-                // No need to clear main controllers here after edit
-                Navigator.pop(dialogContext);
-                _showStyledSnackBar('Đã cập nhật giao dịch: $newName');
-                widget.onUpdate();
+                // THAY ĐỔI CỐT LÕI: Gọi hàm tập trung của AppState
+                appState
+                    .editOtherRevenueAndUpdateState(
+                    originalIndexInValueNotifier, updatedTransaction)
+                    .then((_) {
+                  // Các hành động sau khi thành công
+                  Navigator.pop(dialogContext);
+                  _showStyledSnackBar('Đã cập nhật giao dịch: $newName');
+                  widget.onUpdate();
+                })
+                    .catchError((e) {
+                  // Xử lý nếu có lỗi
+                  Navigator.pop(dialogContext);
+                  _showStyledSnackBar('Lỗi khi cập nhật: $e', isError: true);
+                });
               },
               child: Text('Lưu', style: GoogleFonts.poppins()),
             ),
@@ -229,15 +234,16 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
 
   void _deleteTransaction(AppState appState, int originalIndexInValueNotifier) {
     final transactionName = appState.otherRevenueTransactions.value[originalIndexInValueNotifier]['name'];
-    List<Map<String, dynamic>> updatedTransactions =
-    List.from(appState.otherRevenueTransactions.value);
-    updatedTransactions.removeAt(originalIndexInValueNotifier);
 
-    appState.otherRevenueTransactions.value = updatedTransactions;
-    RevenueManager.saveOtherRevenueTransactions(
-        appState, appState.otherRevenueTransactions.value);
-    _showStyledSnackBar('Đã xóa giao dịch: $transactionName');
-    widget.onUpdate();
+    // THAY ĐỔI CỐT LÕI: Gọi hàm tập trung của AppState
+    appState
+        .deleteOtherRevenueAndUpdateState(originalIndexInValueNotifier)
+        .then((_) {
+      _showStyledSnackBar('Đã xóa giao dịch: $transactionName');
+      widget.onUpdate();
+    }).catchError((e) {
+      _showStyledSnackBar('Lỗi khi xóa: $e', isError: true);
+    });
   }
 
 
@@ -253,7 +259,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: isSelected ? _cardBackgroundColor : _primaryColor,
+            color: isSelected ? AppColors.getCardColor(context) : AppColors.primaryBlue,
             borderRadius: BorderRadius.only(
               topLeft: isFirst ? const Radius.circular(12) : Radius.zero,
               bottomLeft: isFirst ? const Radius.circular(12) : Radius.zero,
@@ -261,7 +267,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
               bottomRight: isLast ? const Radius.circular(12) : Radius.zero,
             ),
             border: isSelected
-                ? Border.all(color: _primaryColor, width: 0.5)
+                ? Border.all(color: AppColors.primaryBlue, width: 0.5)
                 : null,
             boxShadow: isSelected
                 ? [
@@ -278,7 +284,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 15.5,
-              color: isSelected ? _primaryColor : Colors.white.withOpacity(0.9),
+              color: isSelected ? AppColors.primaryBlue : Colors.white.withOpacity(0.9),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -295,9 +301,9 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
       child: Scaffold(
-        backgroundColor: _secondaryColor,
+        backgroundColor: AppColors.getBackgroundColor(context),
         appBar: AppBar(
-          backgroundColor: _primaryColor,
+          backgroundColor: AppColors.primaryBlue,
           elevation: 1,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
@@ -316,7 +322,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
               const EdgeInsets.symmetric(horizontal: 12.0, vertical: 5.0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: _primaryColor,
+                  color: AppColors.primaryBlue,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -349,11 +355,11 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                 onDeleteTransaction: canEditThisRevenue ? _deleteTransaction : null,
                 appState: appState, // Pass appState if needed by callbacks directly
                 currencyFormat: currencyFormat,
-                primaryColor: _primaryColor,
-                textColorPrimary: _textColorPrimary,
-                textColorSecondary: _textColorSecondary,
-                cardBackgroundColor: _cardBackgroundColor,
-                accentColor: _accentColor,
+                primaryColor: AppColors.primaryBlue,
+                textColorPrimary: AppColors.getTextColor(context),
+                textColorSecondary: AppColors.getTextSecondaryColor(context),
+                cardBackgroundColor: AppColors.getCardColor(context),
+                accentColor: AppColors.chartRed,
               ),
             ],
           ),
@@ -364,6 +370,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
 
   // Helper method for TextFields in Dialogs to maintain consistency
   Widget _buildDialogTextField({
+    required BuildContext context,
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text,
@@ -378,16 +385,16 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       inputFormatters: inputFormatters,
       maxLength: maxLength,
       maxLines: maxLines,
-      style: GoogleFonts.poppins(color: _textColorPrimary, fontWeight: FontWeight.w500),
+      style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontWeight: FontWeight.w500),
       decoration: InputDecoration(
         labelText: labelText,
-        labelStyle: GoogleFonts.poppins(color: _textColorSecondary),
-        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: _primaryColor, size: 22) : null,
+        labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: AppColors.primaryBlue, size: 22) : null,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _primaryColor, width: 1.5)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primaryBlue, width: 1.5)),
         filled: true,
-        fillColor: _secondaryColor, // Dialog fields might have a slightly different background
+        fillColor: AppColors.getBackgroundColor(context), // Dialog fields might have a slightly different background
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -414,10 +421,6 @@ class TransactionInputSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    // Use static colors from parent state for consistency
-    const Color primaryColor = _EditOtherRevenueScreenState._primaryColor;
-    const Color cardBackgroundColor = _EditOtherRevenueScreenState._cardBackgroundColor;
-
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -428,7 +431,7 @@ class TransactionInputSection extends StatelessWidget {
             elevation: 3,
             shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            color: cardBackgroundColor,
+            color: AppColors.getCardColor(context),
             child: Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
@@ -439,10 +442,11 @@ class TransactionInputSection extends StatelessWidget {
                     style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        color: primaryColor),
+                        color: AppColors.primaryBlue),
                   ),
                   const SizedBox(height: 24),
                   _buildInputTextField( // Uses local helper
+                    context: context,
                     controller: nameController,
                     labelText: 'Tên giao dịch',
                     prefixIconData: Icons.description_outlined,
@@ -451,6 +455,7 @@ class TransactionInputSection extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _buildInputTextField( // Uses local helper
+                    context: context,
                     controller: totalController,
                     labelText: 'Số tiền',
                     prefixIconData: Icons.monetization_on_outlined,
@@ -480,7 +485,7 @@ class TransactionInputSection extends StatelessWidget {
                   const SizedBox(height: 28),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
+                      backgroundColor: AppColors.primaryBlue,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -506,6 +511,7 @@ class TransactionInputSection extends StatelessWidget {
 
   // Helper for TextFields within TransactionInputSection for consistency
   Widget _buildInputTextField({
+    required BuildContext context,
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text,
@@ -514,10 +520,6 @@ class TransactionInputSection extends StatelessWidget {
     int maxLines = 1,
     IconData? prefixIconData,
   }) {
-    const Color primaryColor = _EditOtherRevenueScreenState._primaryColor;
-    const Color textColorPrimary = _EditOtherRevenueScreenState._textColorPrimary;
-    const Color textColorSecondary = _EditOtherRevenueScreenState._textColorSecondary;
-    const Color secondaryColor = _EditOtherRevenueScreenState._secondaryColor; // For fill color
 
     return TextField(
       controller: controller,
@@ -525,16 +527,16 @@ class TransactionInputSection extends StatelessWidget {
       inputFormatters: inputFormatters,
       maxLength: maxLength,
       maxLines: maxLines,
-      style: GoogleFonts.poppins(color: textColorPrimary, fontWeight: FontWeight.w500),
+      style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontWeight: FontWeight.w500),
       decoration: InputDecoration(
         labelText: labelText,
-        labelStyle: GoogleFonts.poppins(color: textColorSecondary),
-        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: primaryColor, size: 22) : null,
+        labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: AppColors.primaryBlue, size: 22) : null,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor, width: 1.5)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primaryBlue, width: 1.5)),
         filled: true,
-        fillColor: secondaryColor.withOpacity(0.5), // Consistent fill color for inputs
+        fillColor: AppColors.getBackgroundColor(context).withOpacity(0.5), // Consistent fill color for inputs
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -661,7 +663,7 @@ class TransactionHistorySection extends StatelessWidget {
                       margin: const EdgeInsets.symmetric(vertical: 5),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
-                      color: cardBackgroundColor,
+                      color: AppColors.getCardColor(context),
                       child: ListTile(
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 8),
@@ -676,7 +678,7 @@ class TransactionHistorySection extends StatelessWidget {
                                 .toUpperCase()
                                 : "?",
                             style: GoogleFonts.poppins(
-                                color: primaryColor,
+                                color: AppColors.primaryBlue,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 18),
                           ),
@@ -697,7 +699,7 @@ class TransactionHistorySection extends StatelessWidget {
                               "Tổng: ${currencyFormat.format(transaction['total'] ?? 0.0)}",
                               style: GoogleFonts.poppins(
                                   fontSize: 13.0,
-                                  color: primaryColor, // Emphasize total
+                                  color: AppColors.primaryBlue, // Emphasize total
                                   fontWeight: FontWeight.w500),
                             ),
                             if (transaction['date'] != null)
@@ -712,7 +714,7 @@ class TransactionHistorySection extends StatelessWidget {
                         ),
                         trailing: IconButton(
                           icon: Icon(Icons.edit_note_outlined,
-                              color: primaryColor.withOpacity(0.8), size: 22),
+                              color: AppColors.primaryBlue.withOpacity(0.8), size: 22),
                           onPressed: (onEditTransaction != null && canModifyThisRecord)
                               ? () {
                             if (originalIndex != -1) {

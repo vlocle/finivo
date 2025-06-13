@@ -8,6 +8,7 @@ import '../state/app_state.dart'; // [cite: 1105]
 import '/screens/expense_manager.dart'; // [cite: 1105]
 import '/screens/revenue_manager.dart'; // Cần import để tải sản phẩm
 import 'package:google_fonts/google_fonts.dart'; // [cite: 1106]
+import 'package:fingrowth/screens/report_screen.dart';
 
 class UpdateExpenseListScreen extends StatefulWidget {
   final String category; // [cite: 1106]
@@ -36,13 +37,6 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
   bool _isLoading = true; // [cite: 1109]
   bool hasError = false; // [cite: 1110]
   final NumberFormat _inputPriceFormatter = NumberFormat("#,##0", "vi_VN"); // [cite: 1110]
-
-  static const Color _appBarColor = Color(0xFFE53935); // [cite: 1110]
-  static const Color _accentColor = Color(0xFFD32F2F); // [cite: 1111]
-  static const Color _secondaryColor = Color(0xFFF1F5F9); // [cite: 1112]
-  static const Color _textColorPrimary = Color(0xFF1D2D3A); // [cite: 1113]
-  static const Color _textColorSecondary = Color(0xFF6E7A8A); // [cite: 1113]
-  static const Color _cardBackgroundColor = Colors.white; // [cite: 1114]
 
   @override
   void initState() {
@@ -250,7 +244,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
     ScaffoldMessenger.of(context).showSnackBar( // [cite: 1143]
       SnackBar(
         content: Text(message, style: GoogleFonts.poppins(color: Colors.white)), // [cite: 1144]
-        backgroundColor: isError ? _accentColor : _appBarColor, // [cite: 1144]
+        backgroundColor: isError ? AppColors.chartRed : AppColors.chartRed, // [cite: 1144]
         behavior: SnackBarBehavior.floating, // [cite: 1144]
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // [cite: 1144]
         margin: const EdgeInsets.all(10), // [cite: 1144]
@@ -314,10 +308,10 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
               borderRadius: BorderRadius.circular(15)), // [cite: 1152]
           content: Row(
             children: [ // [cite: 1152]
-              CircularProgressIndicator(color: _appBarColor), // [cite: 1152]
+              CircularProgressIndicator(color: AppColors.chartRed), // [cite: 1152]
               const SizedBox(width: 20), // [cite: 1153]
               Text("Đang lưu...", // [cite: 1153]
-                  style: GoogleFonts.poppins(color: _textColorSecondary)), // [cite: 1153]
+                  style: GoogleFonts.poppins(color: AppColors.getTextColor(context))), // [cite: 1153]
             ],
           ),
         ));
@@ -373,12 +367,12 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
       onTap: () => FocusScope.of(context).unfocus(), // [cite: 1172]
       behavior: HitTestBehavior.opaque, // [cite: 1172]
       child: Scaffold(
-        backgroundColor: _secondaryColor, // [cite: 1172]
+        backgroundColor: AppColors.getBackgroundColor(context), // [cite: 1172]
         body: Stack( // [cite: 1172]
           children: [
             Container( // [cite: 1172]
               height: MediaQuery.of(context).size.height * 0.22, // [cite: 1172]
-              color: _appBarColor.withOpacity(0.95), // [cite: 1173]
+              color: AppColors.chartRed.withOpacity(0.95), // [cite: 1173]
             ),
             SafeArea( // [cite: 1173]
               child: Column( // [cite: 1173]
@@ -455,16 +449,16 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                       padding:
                       const EdgeInsets.symmetric(horizontal: 16.0), // [cite: 1197]
                       child: _isLoading
-                          ? Center(child: CircularProgressIndicator(color: _appBarColor)) // [cite: 1198]
+                          ? Center(child: CircularProgressIndicator(color: AppColors.chartRed)) // [cite: 1198]
                           : hasError
-                          ? Center(child: Text("Không thể tải danh sách.", style: GoogleFonts.poppins(color: _textColorSecondary))) // [cite: 1199]
+                          ? Center(child: Text("Không thể tải danh sách.", style: GoogleFonts.poppins(color: AppColors.getTextColor(context)))) // [cite: 1199]
                           : nameControllers.isEmpty && !_isLoading
                           ? Center( // [cite: 1199]
                           child: Text( // [cite: 1199]
                             "Nhấn (+) để thêm mục chi phí biến đổi.", // [cite: 1200]
                             textAlign: TextAlign.center, // [cite: 1200]
                             style: GoogleFonts.poppins( // [cite: 1200]
-                                fontSize: 16, color: _textColorSecondary), // [cite: 1201]
+                                fontSize: 16, color: AppColors.getTextColor(context)), // [cite: 1201]
                           ))
                           : SlideTransition( // [cite: 1201]
                         position: _slideAnimation, // [cite: 1202]
@@ -485,16 +479,16 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                                       child: TextField(
                                         controller: nameControllers[index], // [cite: 1206]
                                         focusNode: nameFocusNodes[index], // [cite: 1206]
-                                        style: GoogleFonts.poppins(color: _textColorPrimary, fontWeight: FontWeight.w500), // [cite: 1207]
+                                        style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontWeight: FontWeight.w500), // [cite: 1207]
                                         decoration: InputDecoration( // [cite: 1207]
                                           hintText: "Tên khoản chi ${index + 1}", // [cite: 1208]
-                                          hintStyle: GoogleFonts.poppins(color: _textColorSecondary.withOpacity(0.7)), // [cite: 1209]
-                                          prefixIcon: Icon(Icons.edit_note_outlined, color: _appBarColor.withOpacity(0.8), size: 22), // [cite: 1209]
-                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), // [cite: 1210]
-                                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), // [cite: 1212]
-                                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _appBarColor, width: 1.5)), // [cite: 1213]
+                                          hintStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context).withOpacity(0.7)), // [cite: 1209]
+                                          prefixIcon: Icon(Icons.edit_note_outlined, color: AppColors.chartRed.withOpacity(0.8), size: 22), // [cite: 1209]
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.getBorderColor(context))),
+                                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.getBorderColor(context))),
+                                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.chartRed, width: 1.5)), // [cite: 1213]
                                           filled: true, // [cite: 1215]
-                                          fillColor: _cardBackgroundColor, // [cite: 1216]
+                                          fillColor: AppColors.getCardColor(context), // [cite: 1216]
                                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), // [cite: 1216]
                                           counterText: "", // [cite: 1217]
                                         ),
@@ -526,15 +520,15 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                                           ),
                                         ],
                                         textAlign: TextAlign.right, // [cite: 1223]
-                                        style: GoogleFonts.poppins(color: _textColorPrimary, fontWeight: FontWeight.w500), // [cite: 1223]
+                                        style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontWeight: FontWeight.w500), // [cite: 1223]
                                         decoration: InputDecoration( // [cite: 1224]
                                           hintText: "Giá", // [cite: 1224]
-                                          hintStyle: GoogleFonts.poppins(color: _textColorSecondary.withOpacity(0.7)), // [cite: 1224]
-                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), // [cite: 1225]
-                                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), // [cite: 1225]
-                                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _appBarColor, width: 1.5)), // [cite: 1226]
+                                          hintStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context).withOpacity(0.7)), // [cite: 1224]
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.getBorderColor(context))),
+                                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.getBorderColor(context))),
+                                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.chartRed, width: 1.5)), // [cite: 1226]
                                           filled: true, // [cite: 1226]
-                                          fillColor: _cardBackgroundColor, // [cite: 1227]
+                                          fillColor: AppColors.getCardColor(context), // [cite: 1227]
                                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14), // [cite: 1227]
                                           counterText: "", // [cite: 1228]
                                         ),
@@ -546,26 +540,26 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                                     Expanded(
                                       flex: 3, // Điều chỉnh flex cho phù hợp
                                       child: isLoadingProducts
-                                          ? Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _appBarColor,)))
+                                          ? Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.chartRed,)))
                                           : DropdownButtonFormField<String>(
                                         isExpanded: true,
                                         decoration: InputDecoration(
                                           hintText: "Gắn SP",
-                                          hintStyle: GoogleFonts.poppins(fontSize: 13, color: _textColorSecondary.withOpacity(0.7)),
-                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _appBarColor, width: 1.5)),
+                                          hintStyle: GoogleFonts.poppins(fontSize: 13, color: AppColors.getTextSecondaryColor(context).withOpacity(0.7)),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.getBorderColor(context))),
+                                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.getBorderColor(context))),
+                                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.chartRed, width: 1.5)),
                                           filled: true,
-                                          fillColor: _cardBackgroundColor,
+                                          fillColor: AppColors.getCardColor(context),
                                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11), // Adjusted padding
                                           isDense: true,
                                         ),
                                         value: selectedProductIdForExpense[index],
-                                        style: GoogleFonts.poppins(color: _textColorPrimary, fontSize: 14),
+                                        style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontSize: 14),
                                         items: [
                                           DropdownMenuItem<String>(
                                             value: null,
-                                            child: Text("Không gắn", style: GoogleFonts.poppins(fontStyle: FontStyle.italic, fontSize: 13, color: _textColorSecondary)),
+                                            child: Text("Không gắn", style: GoogleFonts.poppins(fontStyle: FontStyle.italic, fontSize: 13, color: AppColors.getTextSecondaryColor(context))),
                                           ),
                                           ...availableProductsForDropdown.map((product) {
                                             return DropdownMenuItem<String>(
@@ -588,7 +582,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                                     ScaleTransition( // [cite: 1219]
                                       scale: _buttonScaleAnimation, // [cite: 1220]
                                       child: IconButton( // [cite: 1220]
-                                        icon: Icon(Icons.remove_circle_outline, color: _accentColor, size: 26), // [cite: 1221]
+                                        icon: Icon(Icons.remove_circle_outline, color: AppColors.chartRed, size: 26), // [cite: 1221]
                                         onPressed: canManageTypes ? () => removeController(index) : null,
                                         tooltip: "Xóa mục này", // [cite: 1221]
                                         splashRadius: 20, // [cite: 1133]
@@ -612,7 +606,7 @@ class _UpdateExpenseListScreenState extends State<UpdateExpenseListScreen>
                         scale: _buttonScaleAnimation, // [cite: 1226]
                         child: ElevatedButton.icon( // [cite: 1226]
                           style: ElevatedButton.styleFrom( // [cite: 1226]
-                            backgroundColor: _appBarColor, // [cite: 1227]
+                            backgroundColor: AppColors.chartRed, // [cite: 1227]
                             foregroundColor: Colors.white, // [cite: 1227]
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // [cite: 1228]
                             minimumSize: Size(screenWidth, 52), // [cite: 1228]

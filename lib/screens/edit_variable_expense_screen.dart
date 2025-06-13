@@ -6,6 +6,7 @@ import 'package:intl/intl.dart'; //
 import 'package:provider/provider.dart'; //
 import '../state/app_state.dart'; //
 import '/screens/expense_manager.dart'; //
+import 'package:fingrowth/screens/report_screen.dart';
 
 class EditVariableExpenseScreen extends StatefulWidget {
   const EditVariableExpenseScreen({Key? key}) : super(key: key); //
@@ -38,14 +39,6 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   List<Map<String, dynamic>> availableExpenses = []; //
   bool isLoading = true; //
   bool hasError = false; //
-
-  static const Color _appBarColor = Color(0xFFE53935); //
-  static const Color _accentColor = Color(0xFFD32F2F); //
-  static const Color _secondaryColor = Color(0xFFF1F5F9); //
-  static const Color _textColorPrimary = Color(0xFF1D2D3A); //
-  static const Color _textColorSecondary = Color(0xFF6E7A8A); //
-  static const Color _cardBackgroundColor = Colors.white; //
-  static const Color _editButtonColor = Color(0xFF0A7AFF); //
 
   @override
   void didChangeDependencies() {
@@ -228,8 +221,8 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
     if (!mounted) return; //
     ScaffoldMessenger.of(context).showSnackBar( //
       SnackBar(
-        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)), //
-        backgroundColor: isError ? _accentColor : _appBarColor, //
+        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: isError ? AppColors.chartRed : AppColors.chartRed,
         behavior: SnackBarBehavior.floating, //
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), //
         margin: const EdgeInsets.all(10), //
@@ -326,7 +319,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
             overflow: TextOverflow.ellipsis, //
             maxLines: 1, //
             style: GoogleFonts.poppins( //
-                fontWeight: FontWeight.w600, color: _textColorPrimary),
+                fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
           ),
           content: TextField( //
             controller: editAmountController,
@@ -352,13 +345,13 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
             ],
             decoration: InputDecoration( //
                 labelText: "Nhập số tiền mới", //
-                labelStyle: GoogleFonts.poppins(color: _textColorSecondary), //
+                labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)), //
                 border: OutlineInputBorder( //
                     borderRadius: BorderRadius.circular(12.0)),
                 filled: true, //
-                fillColor: _secondaryColor.withOpacity(0.7), //
+                fillColor: AppColors.getBackgroundColor(context).withOpacity(0.7), //
                 prefixIcon: Icon(Icons.monetization_on_outlined, //
-                    color: _appBarColor)), //
+                    color: AppColors.chartRed)), //
             maxLines: 1, //
             maxLength: 15, //
           ),
@@ -371,12 +364,12 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
               },
               child: Text("Hủy", //
                   style: GoogleFonts.poppins( //
-                      color: _textColorSecondary,
+                      color: AppColors.getTextSecondaryColor(context),
                       fontWeight: FontWeight.w500)),
             ),
             ElevatedButton( //
               style: ElevatedButton.styleFrom( //
-                backgroundColor: _appBarColor, //
+                backgroundColor: AppColors.chartRed, //
                 foregroundColor: Colors.white, //
                 shape: RoundedRectangleBorder( //
                     borderRadius: BorderRadius.circular(10.0)),
@@ -392,7 +385,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                   ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(
                       content: Text("Số tiền phải lớn hơn 0!",
                           style: GoogleFonts.poppins()),
-                      backgroundColor: _accentColor)); //
+                      backgroundColor: AppColors.chartRed)); //
                 } else { //
                   if (!mounted) return; //
                   setState(() { //
@@ -504,18 +497,18 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12.0),
-          side: BorderSide(color: _accentColor.withOpacity(0.4), width: 1)),
+          side: BorderSide(color: AppColors.chartRed.withOpacity(0.4), width: 1)),
       child: ExpansionTile(
         leading: CircleAvatar(
-          backgroundColor: _appBarColor.withOpacity(0.15),
+          backgroundColor: AppColors.chartRed.withOpacity(0.15),
           radius: 20,
-          child: Icon(Icons.link, color: _appBarColor.withOpacity(0.8), size: 20),
+          child: Icon(Icons.link, color: AppColors.chartRed.withOpacity(0.8), size: 20),
         ),
         title: Text(
           title,
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
-            color: _textColorPrimary,
+            color: AppColors.getTextColor(context),
             fontSize: 16,
           ),
         ),
@@ -524,7 +517,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
           style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: _textColorSecondary),
+              color: AppColors.getTextSecondaryColor(context)),
         ),
         childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
         expandedAlignment: Alignment.centerLeft,
@@ -555,22 +548,22 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
       elevation: 1.5,
       margin: const EdgeInsets.symmetric(vertical: 6.0), //
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)), //
-      color: _cardBackgroundColor, //
+      color: AppColors.getCardColor(context), //
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0), //
         leading: CircleAvatar( //
-          backgroundColor: _appBarColor.withOpacity(0.15), //
+          backgroundColor: AppColors.chartRed.withOpacity(0.15), //
           radius: 20, //
           child: isAutoCogs
-              ? Icon(Icons.link, color: _appBarColor.withOpacity(0.7), size: 20)
-              : Icon(Icons.flare_outlined, color: _appBarColor, size: 22), //
+              ? Icon(Icons.link, color: AppColors.chartRed.withOpacity(0.7), size: 20)
+              : Icon(Icons.flare_outlined, color: AppColors.chartRed, size: 22), //
         ),
         title: Text(
           expense['name'] ?? 'Không có tên', //
           style: GoogleFonts.poppins(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: _textColorPrimary), //
+              color: AppColors.getTextColor(context)), //
           overflow: TextOverflow.ellipsis, //
         ),
         subtitle: Text( //
@@ -578,18 +571,18 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
           style: GoogleFonts.poppins(
               fontSize: 14.5,
               fontWeight: FontWeight.w500,
-              color: _textColorSecondary.withOpacity(0.9)),
+              color: AppColors.getTextSecondaryColor(context).withOpacity(0.9)),
         ),
         trailing: isAutoCogs
             ? Tooltip(
           message: "Giá vốn tự động, quản lý qua giao dịch doanh thu",
-          child: Icon(Icons.info_outline, color: Colors.grey.shade400, size: 22),
+          child: Icon(Icons.info_outline, color: AppColors.getTextSecondaryColor(context), size: 22),
         )
             : Row( //
           mainAxisSize: MainAxisSize.min, //
           children: [
             IconButton( //
-              icon: Icon(Icons.edit_note_outlined, color: _editButtonColor, size: 22), //
+              icon: Icon(Icons.edit_note_outlined, color: AppColors.primaryBlue, size: 22), //
               onPressed: () {
                 if (originalIndex != -1) {
                   editExpense(originalIndex, appState);
@@ -599,7 +592,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
               tooltip: "Chỉnh sửa", //
             ),
             IconButton( //
-              icon: Icon(Icons.delete_outline_rounded, color: _accentColor, size: 22), //
+              icon: Icon(Icons.delete_outline_rounded, color: AppColors.chartRed, size: 22), //
               onPressed: () {
                 if (originalIndex != -1) {
                   removeExpense(originalIndex, appState);
@@ -622,12 +615,12 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
       onTap: () => FocusScope.of(context).unfocus(), //
       behavior: HitTestBehavior.opaque, //
       child: Scaffold(
-        backgroundColor: _secondaryColor, //
+        backgroundColor: AppColors.getBackgroundColor(context), //
         body: Stack( //
           children: [
             Container( //
               height: MediaQuery.of(context).size.height * 0.25, //
-              color: _appBarColor.withOpacity(0.9), //
+              color: AppColors.chartRed.withOpacity(0.9), //
             ),
             SafeArea( //
               child: SingleChildScrollView( //
@@ -689,7 +682,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                           child: Padding(
                               padding: const EdgeInsets.all(20.0),
                               child: CircularProgressIndicator(
-                                  color: _appBarColor))) //
+                                  color: AppColors.chartRed))) //
                           : hasError //
                           ? Center(
                           child: Padding(
@@ -697,7 +690,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                               child: Text(
                                   "Có lỗi xảy ra khi tải dữ liệu",
                                   style: GoogleFonts.poppins(
-                                      color: _textColorSecondary)))) //
+                                      color: AppColors.getTextSecondaryColor(context))))) //
                           : Column( //
                         children: [
                           FadeTransition( //
@@ -707,7 +700,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                               shape: RoundedRectangleBorder( //
                                   borderRadius:
                                   BorderRadius.circular(15)),
-                              color: _cardBackgroundColor, //
+                              color: AppColors.getCardColor(context), //
                               child: Padding( //
                                 padding: const EdgeInsets.all(16.0), //
                                 child: Row( //
@@ -719,7 +712,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                       style: GoogleFonts.poppins( //
                                           fontSize: 17, //
                                           fontWeight: FontWeight.w600, //
-                                          color: _textColorPrimary),
+                                          color: AppColors.getTextColor(context)),
                                     ),
                                     Flexible( //
                                       child: Text( //
@@ -728,7 +721,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                         style: GoogleFonts.poppins( //
                                           fontSize: 20, //
                                           fontWeight: FontWeight.bold, //
-                                          color: _accentColor, //
+                                          color: AppColors.chartRed, //
                                         ),
                                         overflow:
                                         TextOverflow.ellipsis, //
@@ -745,7 +738,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                             shape: RoundedRectangleBorder( //
                                 borderRadius:
                                 BorderRadius.circular(16)),
-                            color: _cardBackgroundColor, //
+                            color: AppColors.getCardColor(context), //
                             child: Padding( //
                               padding: const EdgeInsets.all(20.0), //
                               child: Column( //
@@ -757,7 +750,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                     style: GoogleFonts.poppins( //
                                         fontSize: 18, //
                                         fontWeight: FontWeight.w700, //
-                                        color: _appBarColor), //
+                                        color: AppColors.chartRed), //
                                   ),
                                   const SizedBox(height: 16), //
                                   DropdownButtonFormField<String>( //
@@ -765,19 +758,27 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                     hint: Text("Chọn khoản chi phí",
                                         style: GoogleFonts.poppins(
                                             color:
-                                            _textColorSecondary)), //
+                                            AppColors.getTextSecondaryColor(context))), //
                                     isExpanded: true, //
                                     decoration: InputDecoration( //
                                       prefixIcon: Icon(
                                           Icons.category_outlined,
-                                          color: _appBarColor,
+                                          color: AppColors.chartRed,
                                           size: 22), //
                                       border: OutlineInputBorder(
-                                          borderRadius:
-                                          BorderRadius.circular(
-                                              12)), //
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: AppColors.getBorderColor(context))
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: AppColors.getBorderColor(context))
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: AppColors.chartRed, width: 1.5)
+                                      ),
                                       filled: true, //
-                                      fillColor: _secondaryColor
+                                      fillColor: AppColors.getBackgroundColor(context)
                                           .withOpacity(0.5), //
                                       contentPadding:
                                       const EdgeInsets.symmetric(
@@ -811,7 +812,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                                   style: GoogleFonts
                                                       .poppins(
                                                       color:
-                                                      _textColorPrimary)), //
+                                                      AppColors.getTextColor(context)))
                                             )).toList(), //
                                     onChanged: (String? newValue) { //
                                       setState(() {
@@ -821,16 +822,17 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                       });
                                     },
                                     style: GoogleFonts.poppins(
-                                        color: _textColorPrimary,
+                                        color: AppColors.getTextColor(context),
                                         fontSize: 16), //
                                     icon: Icon(Icons
                                         .arrow_drop_down_circle_outlined,
-                                        color: _appBarColor), //
+                                        color: AppColors.chartRed), //
                                     borderRadius:
                                     BorderRadius.circular(12), //
                                   ),
                                   const SizedBox(height: 16),
                                   _buildModernTextField( //
+                                    context: context,
                                     controller: amountController, //
                                     labelText: "Nhập số tiền", //
                                     prefixIconData: Icons
@@ -883,7 +885,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                         style: ElevatedButton
                                             .styleFrom( //
                                           backgroundColor:
-                                          _appBarColor, //
+                                          AppColors.chartRed, //
                                           foregroundColor:
                                           Colors.white, //
                                           shape:
@@ -925,7 +927,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                 style: GoogleFonts.poppins(
                                     fontSize: 19,
                                     fontWeight: FontWeight.w700,
-                                    color: _textColorPrimary), //
+                                    color: AppColors.getTextColor(context)), //
                               ),
                             ),
                           // <<<< PHẦN CODE ĐƯỢC CẬP NHẬT >>>>
@@ -945,8 +947,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                           Icons
                                               .hourglass_empty_rounded,
                                           size: 50,
-                                          color: Colors
-                                              .grey.shade400), //
+                                          color: AppColors.getTextSecondaryColor(context)), //
                                       const SizedBox(
                                           height: 10), //
                                       Text( //
@@ -957,7 +958,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                             .poppins(
                                             fontSize: 16,
                                             color:
-                                            _textColorSecondary), //
+                                            AppColors.getTextSecondaryColor(context)), //
                                       ),
                                     ],
                                   ),
@@ -1017,6 +1018,7 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   }
 
   Widget _buildModernTextField({
+    required BuildContext context,
     required TextEditingController controller,
     required String labelText,
     TextInputType keyboardType = TextInputType.text, //
@@ -1034,28 +1036,28 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
       enabled: enabled,
       focusNode: focusNode,
       style: GoogleFonts.poppins( //
-          color: _textColorPrimary,
+          color: AppColors.getTextColor(context),
           fontWeight: FontWeight.w500,
           fontSize: 16),
       decoration: InputDecoration( //
         labelText: labelText, //
-        labelStyle: GoogleFonts.poppins(color: _textColorSecondary), //
+        labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)), //
         prefixIcon: prefixIconData != null //
-            ? Icon(prefixIconData, color: _appBarColor, size: 22) //
+            ? Icon(prefixIconData, color: AppColors.chartRed, size: 22) //
             : null,
         border: OutlineInputBorder( //
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300)),
+            borderSide: BorderSide(color: AppColors.getBorderColor(context))),
         enabledBorder: OutlineInputBorder( //
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300)),
+            borderSide: BorderSide(color: AppColors.getBorderColor(context))),
         focusedBorder: OutlineInputBorder( //
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: _appBarColor, width: 1.5)),
+            borderSide: BorderSide(color: AppColors.chartRed, width: 1.5)),
         filled: true, //
         fillColor: enabled
-            ? _secondaryColor.withOpacity(0.5)
-            : Colors.grey.shade200, //
+            ? AppColors.getBackgroundColor(context).withOpacity(0.5)
+            : AppColors.getBorderColor(context),
         contentPadding:
         const EdgeInsets.symmetric(horizontal: 16, vertical: 14), //
         counterText: "", //

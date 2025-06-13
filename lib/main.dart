@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'state/app_state.dart'; // [cite: 367]
 import 'screens/main_screen.dart'; // [cite: 367]
 import 'screens/login_screen.dart'; // [cite: 367]
+import 'screens/device_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // [cite: 367]
@@ -104,27 +105,70 @@ class MyApp extends StatelessWidget {
 class AuthWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    //
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(), // [cite: 386]
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) { // [cite: 386]
+      stream: FirebaseAuth.instance.authStateChanges(), //
+      builder: (context, authSnapshot) {
+        if (authSnapshot.connectionState == ConnectionState.waiting) { //
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()), // [cite: 386]
+              body: Center(child: CircularProgressIndicator())); //
+        }
+
+        if (authSnapshot.hasData && authSnapshot.data != null) {
+          final user = authSnapshot.data!;
+          return StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+            builder: (context, userDocSnapshot) {
+              if (userDocSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()));
+              }
+
+              if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) {
+                // Hiếm khi xảy ra nếu logic đăng nhập đúng, nhưng vẫn nên xử lý
+                FirebaseAuth.instance.signOut();
+                return LoginScreen();
+              }
+
+              final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
+              final storedDeviceId = userData['lastLoginDeviceId'];
+
+              // Sử dụng hàm getDeviceId() đã tạo ở bước 1
+              return FutureBuilder<String?>(
+                future: getDeviceId(),
+                builder: (context, deviceIdSnapshot) {
+                  if (deviceIdSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Scaffold(
+                        body: Center(child: CircularProgressIndicator()));
+                  }
+
+                  final currentDeviceId = deviceIdSnapshot.data;
+
+                  // So sánh ID
+                  if (storedDeviceId != null && currentDeviceId != null && storedDeviceId == currentDeviceId) {
+                    // Mọi thứ đều ổn, cho phép vào app
+                    final appState = Provider.of<AppState>(context, listen: false); //
+                    if (appState.activeUserId != user.uid) { //
+                      appState.setUserId(user.uid); //
+                    }
+                    return MainScreen(); //
+                  } else {
+                    Future.delayed(Duration.zero, () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')),
+                      );
+                      FirebaseAuth.instance.signOut();
+                    });
+                    return LoginScreen();
+                  }
+                },
+              );
+            },
           );
         }
-        if (snapshot.hasError) { // [cite: 387]
-          return Scaffold(
-            body: Center(child: Text('Lỗi: ${snapshot.error}')), // [cite: 387]
-          );
-        }
-        if (snapshot.hasData) {
-          final appState = Provider.of<AppState>(context, listen: false);
-          if (appState.activeUserId != snapshot.data!.uid) {
-            appState.setUserId(snapshot.data!.uid);
-          }
-          return MainScreen();
-        }
-        return LoginScreen(); // [cite: 388]
+
+        // Người dùng chưa đăng nhập
+        return LoginScreen(); //
       },
     );
   }

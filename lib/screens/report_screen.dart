@@ -217,7 +217,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(width: 12), // [cite: 53]
-              AccountSwitcher(),
+              AccountSwitcher(textColor: AppColors.getTextColor(context)),
             ],
           ),
           GestureDetector(

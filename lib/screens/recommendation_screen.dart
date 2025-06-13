@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fingrowth/screens/report_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -16,12 +17,6 @@ class AnalysisScreen extends StatefulWidget {
 
 class _AnalysisScreenState extends State<AnalysisScreen>
     with SingleTickerProviderStateMixin {
-  // Define a modern color palette
-  static const Color _primaryColor = Color(0xFF0A7AFF);
-  static const Color _secondaryColor = Color(0xFFF0F4F8);
-  static const Color _textColorPrimary = Color(0xFF1D2D3A);
-  static const Color _textColorSecondary = Color(0xFF6E7A8A);
-  static const Color _cardBackgroundColor = Colors.white;
 
   bool isLoading = false;
   String industry = '';
@@ -613,15 +608,19 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
       locale: const Locale('vi', 'VN'),
       builder: (context, child) {
         return Theme(
-          data: ThemeData.light().copyWith(
-            colorScheme: ColorScheme.light(
-              primary: _primaryColor,
+          // SỬA Ở ĐÂY: Bắt đầu từ theme hiện tại của context
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: AppColors.primaryBlue, // Màu chính cho vùng ngày được chọn
               onPrimary: Colors.white,
-              onSurface: _textColorPrimary,
+              surface: AppColors.getCardColor(context),
+              onSurface: AppColors.getTextColor(context),
             ),
-            dialogBackgroundColor: _cardBackgroundColor,
+            dialogBackgroundColor: AppColors.getCardColor(context),
             textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(foregroundColor: _primaryColor),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryBlue,
+              ),
             ),
           ),
           child: child!,
@@ -652,7 +651,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
         appBar: AppBar(
           flexibleSpace: Container(
             decoration: const BoxDecoration(
-              color: _primaryColor,
+              color: AppColors.primaryBlue,
             ),
           ),
           title: Text(
@@ -666,7 +665,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
           ),
         ),
         body: Container(
-          color: _secondaryColor,
+          color: AppColors.getBackgroundColor(context),
           child: Column(
             children: [
               Expanded(
@@ -682,7 +681,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                               vertical: 8, horizontal: 12),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: _cardBackgroundColor,
+                            color: AppColors.getCardColor(context),
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
@@ -695,7 +694,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                           child: Text(
                             "Chào mừng bạn! Hãy nhập ngành nghề và chọn khoảng thời gian để nhận phân tích tài chính từ AI.",
                             style: TextStyle(
-                                fontSize: 16, color: _textColorSecondary),
+                                fontSize: 16, color: AppColors.getTextSecondaryColor(context)),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -705,7 +704,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                               vertical: 8, horizontal: 12),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: _cardBackgroundColor,
+                            color: AppColors.getCardColor(context),
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
@@ -721,13 +720,13 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                               const CircularProgressIndicator(
                                   strokeWidth: 2,
                                   valueColor: AlwaysStoppedAnimation<Color>(
-                                      _primaryColor)),
+                                      AppColors.primaryBlue)),
                               const SizedBox(width: 12),
                               Text(
                                 "AI đang phân tích...",
                                 style: TextStyle(
                                     fontSize: isWideScreen ? 16 : 14,
-                                    color: _primaryColor,
+                                    color: AppColors.primaryBlue,
                                     fontWeight: FontWeight.w600),
                               ),
                             ],
@@ -741,7 +740,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                                 vertical: 8, horizontal: 12),
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: _cardBackgroundColor,
+                              color: AppColors.getCardColor(context),
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
@@ -761,7 +760,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                                   style: TextStyle(
                                     fontSize: isWideScreen ? 18 : 16,
                                     fontWeight: FontWeight.bold,
-                                    color: _primaryColor,
+                                    color: AppColors.primaryBlue,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -771,14 +770,14 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                                   styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
                                     p: TextStyle( // 'p' là viết tắt của paragraph, tương đương với style cũ của bạn
                                       fontSize: isWideScreen ? 16 : 14,
-                                      color: _textColorPrimary,
+                                      color: AppColors.getTextColor(context),
                                       height: 1.4,
                                     ),
                                     // Bạn cũng có thể tùy chỉnh style cho các thẻ khác như h1, h2, strong (in đậm)...
                                     h2: TextStyle(
                                       fontSize: isWideScreen ? 20 : 18,
                                       fontWeight: FontWeight.bold,
-                                      color: _primaryColor, // Sử dụng màu primary cho tiêu đề
+                                      color: AppColors.primaryBlue, // Sử dụng màu primary cho tiêu đề
                                     ),
                                     strong: TextStyle(
                                       fontWeight: FontWeight.bold,
@@ -789,7 +788,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                                 Text(
                                   "Phân tích lúc: ${DateFormat('HH:mm, dd/MM/yyyy').format(DateTime.now())}",
                                   style: TextStyle(
-                                      fontSize: 12, color: _textColorSecondary),
+                                      fontSize: 12, color: AppColors.getTextSecondaryColor(context)),
                                 ),
                               ],
                             ),
@@ -802,7 +801,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
               Container(
                 padding: EdgeInsets.all(isWideScreen ? 24.0 : 16.0),
                 decoration: BoxDecoration(
-                  color: _cardBackgroundColor,
+                  color: AppColors.getCardColor(context),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
@@ -836,20 +835,20 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                           decoration: InputDecoration(
                             hintText: "Nhập ngành nghề (ví dụ: Bán lẻ, F&B)",
                             filled: true,
-                            fillColor: _secondaryColor,
+                            fillColor: AppColors.getBackgroundColor(context),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
                             ),
                             prefixIcon: const Icon(Icons.business,
-                                color: _primaryColor),
+                                color: AppColors.primaryBlue),
                             hintStyle: TextStyle(
-                                color: _textColorSecondary,
+                                color: AppColors.getTextSecondaryColor(context),
                                 fontSize: isWideScreen ? 16 : 14),
                           ),
                           style: TextStyle(
                               fontSize: isWideScreen ? 16 : 14,
-                              color: _textColorPrimary),
+                              color: AppColors.getTextColor(context)),
                           onChanged: (value) {
                             setState(() {
                               industry = value;
@@ -870,13 +869,13 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 14),
                               decoration: BoxDecoration(
-                                color: _secondaryColor,
+                                color: AppColors.getBackgroundColor(context) ,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Row(
                                 children: [
                                   const Icon(Icons.calendar_today,
-                                      color: _primaryColor,
+                                      color: AppColors.primaryBlue,
                                       size: 20),
                                   const SizedBox(width: 8),
                                   Expanded(
@@ -886,7 +885,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                                           : "Từ ${DateFormat('dd/MM/yyyy').format(selectedRange!.start)} đến ${DateFormat('dd/MM/yyyy').format(selectedRange!.end)}",
                                       style: TextStyle(
                                           fontSize: isWideScreen ? 16 : 14,
-                                          color: _textColorPrimary),
+                                          color: AppColors.getTextColor(context)),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
@@ -897,7 +896,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                         ),
                         const SizedBox(width: 8),
                         IconButton(
-                          icon: const Icon(Icons.refresh, color: _primaryColor),
+                          icon: const Icon(Icons.refresh, color: AppColors.primaryBlue),
                           onPressed: _resetInputs,
                           tooltip: "Xóa dữ liệu",
                         ),
@@ -922,7 +921,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
                         },
                         child: Container(
                           decoration: BoxDecoration(
-                            color: _primaryColor,
+                            color: AppColors.primaryBlue,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           alignment: Alignment.center,

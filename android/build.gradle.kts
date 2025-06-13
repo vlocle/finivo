@@ -3,6 +3,12 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    //noinspection WrongGradleMethod
+    tasks.withType<JavaCompile> {
+        sourceCompatibility = "1.8"
+        targetCompatibility = "1.8"
+    }
 }
 
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()

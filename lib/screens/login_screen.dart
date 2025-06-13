@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import '/screens/firestore_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '/screens/device_utils.dart';
 
 import '../state/app_state.dart';
 import 'main_screen.dart';
@@ -43,8 +43,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       final User? user = userCredential.user;
 
       if (user != null) {
+        final deviceId = await getDeviceId();
         // GỌI HÀM LƯU THÔNG TIN VÀO FIRESTORE
-        await FirestoreService().saveUserInfoToFirestore(user);
+        await FirestoreService().saveUserInfoToFirestore(user, deviceId);
 
         if (mounted) {
           Provider.of<AppState>(context, listen: false).setUserId(user.uid); // Dùng user.uid từ đối tượng đã có

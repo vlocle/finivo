@@ -36,6 +36,7 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<List<Map<String, dynamic>>> mainRevenueTransactions = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> secondaryRevenueTransactions = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> otherRevenueTransactions = ValueNotifier([]);
+  final Map<String, String> _userDisplayNames = {};
   final ValueNotifier<bool> productsUpdated = ValueNotifier(false);
   bool _notificationsEnabled = true;
   String _currentLanguage = 'vi';
@@ -215,6 +216,16 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    if (authUserId != null) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(authUserId!).update({
+          'lastLoginDeviceId': null, // <-- Đặt trường này về null
+        });
+      } catch (e) {
+        // Ghi lại lỗi nếu có, nhưng không ngăn cản quá trình đăng xuất
+        print('Lỗi khi xóa device ID lúc đăng xuất: $e');
+      }
+    }
     authUserId = null;
     activeUserId = null;
     mainRevenue = 0.0;
@@ -263,6 +274,61 @@ class AppState extends ChangeNotifier {
 
   String getKey(String baseKey) {
     return activeUserId != null ? '${activeUserId}_$baseKey' : baseKey;
+  }
+
+  // Thêm các hàm này vào trong class AppState
+
+  /// Lấy tên hiển thị từ cache. Nếu không có, trả về một chuỗi tạm thời.
+  String getUserDisplayName(String? uid) {
+    if (uid == null) return 'Không rõ';
+    return _userDisplayNames[uid] ?? 'Đang tải...';
+  }
+
+  /// Tải tên của các user nếu chưa có trong cache.
+  Future<void> fetchDisplayNames(Set<String> uids) async {
+    // Lọc ra những UID chưa có trong cache
+    final uidsToFetch = uids.where((uid) => !_userDisplayNames.containsKey(uid)).toSet();
+
+    // Nếu không có UID nào mới cần tải, thì không làm gì cả
+    if (uidsToFetch.isEmpty) {
+      return;
+    }
+
+    print("Đang tải tên cho các UID: $uidsToFetch");
+
+    // Chia nhỏ để tránh giới hạn 10 của mệnh đề 'whereIn' nếu cần
+    List<Future<QuerySnapshot>> futures = [];
+    List<String> uidsList = uidsToFetch.toList();
+    for (var i = 0; i < uidsList.length; i += 10) {
+      var sublist = uidsList.sublist(i, i + 10 > uidsList.length ? uidsList.length : i + 10);
+      if (sublist.isNotEmpty) {
+        futures.add(FirebaseFirestore.instance
+            .collection('users')
+            .where(FieldPath.documentId, whereIn: sublist)
+            .get());
+      }
+    }
+
+    // Thực hiện tất cả các truy vấn
+    final snapshots = await Future.wait(futures);
+
+    bool hasNewNames = false;
+    for (var snapshot in snapshots) {
+      for (var doc in snapshot.docs) {
+        // Lấy dữ liệu một cách an toàn vào một biến tạm
+        final data = doc.data() as Map<String, dynamic>?;
+
+        // Sử dụng toán tử ?. để truy cập an toàn và ?? để cung cấp giá trị mặc định
+        _userDisplayNames[doc.id] = data?['displayName'] as String? ?? 'Người dùng ẩn danh';
+
+        hasNewNames = true;
+      }
+    }
+
+    // Nếu có tên mới được tải về, thông báo cho UI để cập nhật
+    if (hasNewNames) {
+      notifyListeners();
+    }
   }
 
   void setSelectedDate(DateTime date) {
@@ -385,23 +451,26 @@ class AppState extends ChangeNotifier {
     _variableExpenseSubscription = null;
   }
 
+  // Dành cho file appstate.docx
   void _subscribeToFixedExpenses() {
     if (!_isFirebaseInitialized || activeUserId == null) return;
     _cancelFixedExpenseSubscription();
     final firestore = FirebaseFirestore.instance;
     String monthKey = DateFormat('yyyy-MM').format(_selectedDate);
     _fixedExpenseSubscription = firestore
-        .collection('users')
-        .doc(activeUserId)
-        .collection('expenses')
-        .doc('fixed')
-        .collection('monthly')
-        .doc(monthKey)
+        .collection('users').doc(activeUserId)
+        .collection('expenses').doc('fixed')
+        .collection('monthly').doc(monthKey)
         .snapshots()
         .listen((snapshot) async {
+
+      // <<< THÊM DÒNG KIỂM TRA NÀY VÀO ĐÂY
+      if (snapshot.metadata.hasPendingWrites) {
+        return;
+      }
+
       if (snapshot.exists) {
         var data = snapshot.data()!;
-        // Kiểm tra xem dữ liệu có thực sự thay đổi không
         var currentFixedExpenses = fixedExpenseList.value;
         var newFixedExpenses = List<Map<String, dynamic>>.from(data['products'] ?? []);
         if (!_areListsEqual(currentFixedExpenses, newFixedExpenses)) {
@@ -413,33 +482,29 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  // Thêm hàm này vào trong AppState
+  // Dành cho file appstate.docx
   void _subscribeToDailyData() {
     if (!_isFirebaseInitialized || activeUserId == null) return;
-
-    // Hủy listener cũ trước khi tạo cái mới
     _dailyDataSubscription?.cancel();
-
     final firestore = FirebaseFirestore.instance;
     String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
     String dailyDocPath = 'users/$activeUserId/daily_data/${getKey(dateKey)}';
-
     _dailyDataSubscription = firestore.doc(dailyDocPath).snapshots().listen((snapshot) {
+
+      // <<< THÊM DÒNG KIỂM TRA NÀY VÀO ĐÂY
+      if (snapshot.metadata.hasPendingWrites) {
+        return;
+      }
+
       if (snapshot.exists && snapshot.data() != null) {
         final data = snapshot.data()!;
-
-        // Cập nhật các biến doanh thu trong AppState
         mainRevenue = (data['mainRevenue'] as num?)?.toDouble() ?? 0.0;
         secondaryRevenue = (data['secondaryRevenue'] as num?)?.toDouble() ?? 0.0;
         otherRevenue = (data['otherRevenue'] as num?)?.toDouble() ?? 0.0;
-
-        // Cập nhật các ValueNotifier để UI tự rebuild
         mainRevenueTransactions.value = List<Map<String, dynamic>>.from(data['mainRevenueTransactions'] ?? []);
         secondaryRevenueTransactions.value = List<Map<String, dynamic>>.from(data['secondaryRevenueTransactions'] ?? []);
         otherRevenueTransactions.value = List<Map<String, dynamic>>.from(data['otherRevenueTransactions'] ?? []);
-
       } else {
-        // Nếu không có document cho ngày đó, reset tất cả giá trị doanh thu
         mainRevenue = 0.0;
         secondaryRevenue = 0.0;
         otherRevenue = 0.0;
@@ -447,14 +512,10 @@ class AppState extends ChangeNotifier {
         secondaryRevenueTransactions.value = [];
         otherRevenueTransactions.value = [];
       }
-
-      // Gọi hàm cập nhật lợi nhuận và thông báo cho UI
       _updateProfitAndRelatedListenables();
       notifyListeners();
-
     }, onError: (error) {
       print("Lỗi lắng nghe daily_data: $error");
-      // Có thể thêm logic reset giá trị ở đây nếu cần
     });
   }
 
@@ -463,47 +524,35 @@ class AppState extends ChangeNotifier {
     _dailyDataSubscription = null;
   }
 
+  // Dành cho file appstate.docx
   void _subscribeToVariableExpenses() {
     if (!_isFirebaseInitialized || activeUserId == null) return;
-
-    _cancelVariableExpenseSubscription(); // Hủy subscription cũ nếu có
-
+    _cancelVariableExpenseSubscription();
     final firestore = FirebaseFirestore.instance;
     String dateKeyForDoc = DateFormat('yyyy-MM-dd').format(_selectedDate);
     String dailyVariableExpenseDocId = getKey('variableTransactionHistory_$dateKeyForDoc');
-
     _variableExpenseSubscription = firestore
-        .collection('users')
-        .doc(activeUserId)
-        .collection('expenses')
-        .doc('variable') // Document 'variable'
-        .collection('daily') // Subcollection 'daily'
-        .doc(dailyVariableExpenseDocId) // Document cho ngày cụ thể
+        .collection('users').doc(activeUserId)
+        .collection('expenses').doc('variable')
+        .collection('daily').doc(dailyVariableExpenseDocId)
         .snapshots()
         .listen((snapshot) async {
 
+      // <<< THÊM DÒNG KIỂM TRA NÀY VÀO ĐÂY
       if (snapshot.metadata.hasPendingWrites) {
-        // Thay đổi này đến từ chính client này, AppState có thể đã được cập nhật.
-        // Có thể bỏ qua hoặc chỉ cập nhật Hive để đảm bảo.
-        // print("Variable expense update from local write, might skip AppState update from snapshot.");
-        // return; // Cân nhắc việc return sớm ở đây
+        return;
       }
 
       if (snapshot.exists && snapshot.data() != null) {
         var data = snapshot.data()!;
         List<Map<String, dynamic>> newExpenses = List<Map<String, dynamic>>.from(data['variableExpenses'] ?? []);
         double newTotal = (data['total'] as num?)?.toDouble() ?? 0.0;
-
-        // So sánh sâu để tránh cập nhật không cần thiết
         if (!_areListsEqual(variableExpenseList.value, newExpenses) || variableExpense != newTotal) {
           variableExpenseList.value = newExpenses;
           this.variableExpense = newTotal;
-
-          // Cập nhật Hive
           final String hiveKey = '$activeUserId-variableExpenses-$dailyVariableExpenseDocId';
           final variableExpensesBox = Hive.box('variableExpensesBox');
           await variableExpensesBox.put(hiveKey, newExpenses);
-
           _updateProfitAndRelatedListenables();
           notifyListeners();
         }
@@ -511,41 +560,33 @@ class AppState extends ChangeNotifier {
         if (variableExpenseList.value.isNotEmpty || variableExpense != 0.0) {
           variableExpenseList.value = [];
           this.variableExpense = 0.0;
-          notifyListeners(); // Cập nhật UI nếu dữ liệu bị xóa hoặc không có
+          notifyListeners();
           _updateProfitAndRelatedListenables();
         }
       }
     }, onError: (error) {
       print('Error listening to variable expenses: $error');
-      // Có thể thêm xử lý lỗi ở đây, ví dụ: thử lại sau một khoảng thời gian
     });
-    // print('Subscribed to daily variable expenses for $_selectedDate');
   }
 
-  // Trong file appstate.docx, sửa lại hàm _subscribeToDailyFixedExpenses
+  // Dành cho file appstate.docx
   void _subscribeToDailyFixedExpenses() {
     if (!_isFirebaseInitialized || activeUserId == null) return;
-
     _dailyFixedExpenseSubscription?.cancel();
-
     final firestore = FirebaseFirestore.instance;
     String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
     String dailyFixedExpenseDocId = getKey('fixedExpenseList_$dateKey');
-
-    // THÊM MỚI: Chuẩn bị key cho Hive
     final String hiveKey = '$activeUserId-fixedExpenses-$dailyFixedExpenseDocId';
     final fixedExpensesBox = Hive.box('fixedExpensesBox');
 
     _dailyFixedExpenseSubscription = firestore
-        .collection('users')
-        .doc(activeUserId)
-        .collection('expenses')
-        .doc('fixed')
-        .collection('daily')
-        .doc(dailyFixedExpenseDocId)
+        .collection('users').doc(activeUserId)
+        .collection('expenses').doc('fixed')
+        .collection('daily').doc(dailyFixedExpenseDocId)
         .snapshots()
-        .listen((snapshot) async { // Thêm async
+        .listen((snapshot) async {
 
+      // <<< THÊM DÒNG KIỂM TRA NÀY VÀO ĐÂY
       if (snapshot.metadata.hasPendingWrites) {
         return;
       }
@@ -554,15 +595,11 @@ class AppState extends ChangeNotifier {
         var data = snapshot.data()!;
         List<Map<String, dynamic>> newExpenses = List<Map<String, dynamic>>.from(data['fixedExpenses'] ?? []);
         double newTotal = (data['total'] as num?)?.toDouble() ?? 0.0;
-
         if (!_areListsEqual(fixedExpenseList.value, newExpenses) || _fixedExpense != newTotal) {
           fixedExpenseList.value = newExpenses;
           _fixedExpense = newTotal;
           fixedExpenseListenable.value = newTotal;
-
-          // THÊM MỚI: Lưu vào Hive
           await fixedExpensesBox.put(hiveKey, newExpenses);
-
           _updateProfitAndRelatedListenables();
           notifyListeners();
         }
@@ -571,10 +608,7 @@ class AppState extends ChangeNotifier {
           fixedExpenseList.value = [];
           _fixedExpense = 0.0;
           fixedExpenseListenable.value = 0.0;
-
-          // THÊM MỚI: Xóa khỏi Hive
           await fixedExpensesBox.delete(hiveKey);
-
           _updateProfitAndRelatedListenables();
           notifyListeners();
         }
@@ -1112,6 +1146,261 @@ class AppState extends ChangeNotifier {
       return await ExpenseManager.loadAvailableVariableExpenses(this);
     } catch (e) {
       return [];
+    }
+  }
+
+  // Dán hàm mới này vào trong class AppState (appstate.docx)
+
+  Future<void> addTransactionAndUpdateState({
+    required String category, // 'Doanh thu chính' hoặc 'Doanh thu phụ'
+    required Map<String, dynamic> newSalesTransaction,
+    required List<Map<String, dynamic>> autoGeneratedCogs,
+  }) async {
+    // 1. CẬP NHẬT TRẠNG THÁI LOCAL (OPTIMISTIC UPDATE)
+    // Thêm giao dịch vào đúng danh sách
+    if (category == 'Doanh thu chính') {
+      mainRevenueTransactions.value.add(newSalesTransaction);
+      // Phải gán lại list mới để ValueNotifier nhận biết sự thay đổi
+      mainRevenueTransactions.value = List.from(mainRevenueTransactions.value);
+    } else if (category == 'Doanh thu phụ') {
+      secondaryRevenueTransactions.value.add(newSalesTransaction);
+      secondaryRevenueTransactions.value = List.from(secondaryRevenueTransactions.value);
+    }
+
+    // Thêm giá vốn vào danh sách chi phí biến đổi
+    if (autoGeneratedCogs.isNotEmpty) {
+      variableExpenseList.value.addAll(autoGeneratedCogs);
+      variableExpenseList.value = List.from(variableExpenseList.value);
+    }
+
+// 2. TÍNH TOÁN LẠI TẤT CẢ CÁC TỔNG
+    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+
+    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    // 3. CẬP NHẬT TẤT CẢ VALUE NOTIFIER VÀ GỌI NOTIFYLISTENERS() MỘT LẦN
+    _updateProfitAndRelatedListenables(); // Hàm này sẽ cập nhật các ValueNotifier về doanh thu, lợi nhuận...
+    notifyListeners(); // <-- CHỈ GỌI 1 LẦN DUY NHẤT Ở ĐÂY
+
+    // 4. LƯU DỮ LIỆU LÊN FIRESTORE (KHÔNG CẦN AWAIT VÀ KHÔNG GỌI NOTIFIER NỮA)
+    // Các hàm save này bây giờ chỉ có nhiệm vụ lưu, không cập nhật state nữa
+    await _saveAllDailyDataToFirestore();
+    if (autoGeneratedCogs.isNotEmpty) {
+      ExpenseManager.saveVariableExpenses(this, variableExpenseList.value);
+    }
+  }
+
+  // Dán hàm mới này vào trong class AppState (appstate.docx)
+
+  Future<void> removeTransactionAndUpdateState({
+    required String category,
+    required Map<String, dynamic> transactionToRemove,
+  }) async {
+    final String? transactionId = transactionToRemove['id'] as String?;
+
+    // 1. CẬP NHẬT TRẠNG THÁI LOCAL (OPTIMISTIC UPDATE)
+
+    // Xác định danh sách doanh thu cần cập nhật
+    ValueNotifier<List<Map<String, dynamic>>>? targetRevenueList;
+    if (category == 'Doanh thu chính') {
+      targetRevenueList = mainRevenueTransactions;
+    } else if (category == 'Doanh thu phụ') {
+      targetRevenueList = secondaryRevenueTransactions;
+    } else if (category == 'Doanh thu khác') {
+      targetRevenueList = otherRevenueTransactions;
+    }
+
+    // Xóa giao dịch doanh thu
+    targetRevenueList?.value.removeWhere((t) => t['id'] == transactionId);
+    targetRevenueList?.value = List.from(targetRevenueList.value);
+
+    // Xóa giá vốn (COGS) liên quan nếu có
+    if (transactionId != null) {
+      variableExpenseList.value.removeWhere((expense) => expense['sourceSalesTransactionId'] == transactionId);
+      variableExpenseList.value = List.from(variableExpenseList.value);
+    }
+
+    // 2. TÍNH TOÁN LẠI TẤT CẢ CÁC TỔNG
+    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+
+    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    // 3. CẬP NHẬT VALUE NOTIFIER VÀ GỌI NOTIFYLISTENERS() MỘT LẦN
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // 4. LƯU TRỮ DỮ LIỆU LÊN FIRESTORE
+    // Các hàm save này chỉ lưu, không cập nhật state nữa
+    await _saveAllDailyDataToFirestore();
+    if (transactionId != null) {
+      ExpenseManager.saveVariableExpenses(this, variableExpenseList.value);
+    }
+  }
+
+  // Dán hàm mới này vào trong class AppState (appstate.docx)
+
+  Future<void> editTransactionAndUpdateState({
+    required String category,
+    required Map<String, dynamic> updatedTransaction,
+    required List<Map<String, dynamic>> newCogsTransactions,
+  }) async {
+    final String? transactionId = updatedTransaction['id'] as String?;
+    if (transactionId == null) {
+      throw Exception("Không thể sửa giao dịch không có ID.");
+    }
+
+    // 1. CẬP NHẬT TRẠNG THÁI LOCAL (OPTIMISTIC UPDATE)
+
+    // Xác định và cập nhật danh sách doanh thu
+    ValueNotifier<List<Map<String, dynamic>>>? targetRevenueList;
+    if (category == 'Doanh thu chính') {
+      targetRevenueList = mainRevenueTransactions;
+    } else if (category == 'Doanh thu phụ') {
+      targetRevenueList = secondaryRevenueTransactions;
+    } else if (category == 'Doanh thu khác') {
+      targetRevenueList = otherRevenueTransactions;
+    }
+
+    final index = targetRevenueList!.value.indexWhere((t) => t['id'] == transactionId);
+    if (index != -1) {
+      targetRevenueList.value[index] = updatedTransaction;
+      targetRevenueList.value = List.from(targetRevenueList.value);
+    }
+
+    // Xóa COGS cũ và thêm COGS mới
+    variableExpenseList.value.removeWhere((expense) => expense['sourceSalesTransactionId'] == transactionId);
+    variableExpenseList.value.addAll(newCogsTransactions);
+    variableExpenseList.value = List.from(variableExpenseList.value);
+
+    // 2. TÍNH TOÁN LẠI TẤT CẢ CÁC TỔNG
+    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+
+    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    // 3. CẬP NHẬT VALUE NOTIFIER VÀ GỌI NOTIFYLISTENERS() MỘT LẦN
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // 4. LƯU TRỮ DỮ LIỆU LÊN FIRESTORE
+    await _saveAllDailyDataToFirestore();
+    ExpenseManager.saveVariableExpenses(this, variableExpenseList.value);
+  }
+
+  // Dán 3 hàm mới này vào trong class AppState (appstate.docx)
+
+// Hàm thêm giao dịch "Doanh thu khác"
+  Future<void> addOtherRevenueAndUpdateState(Map<String, dynamic> newTransaction) async {
+    // 1. Cập nhật danh sách local
+    otherRevenueTransactions.value.add(newTransaction);
+    otherRevenueTransactions.value = List.from(otherRevenueTransactions.value);
+
+    // 2. Tính toán lại TOÀN BỘ các giá trị tổng
+    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    // 3. Cập nhật Notifier và giao diện một lần
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // 4. Lưu lên server
+    await _saveAllDailyDataToFirestore();
+  }
+
+// Hàm sửa giao dịch "Doanh thu khác"
+  Future<void> editOtherRevenueAndUpdateState(int originalIndex, Map<String, dynamic> updatedTransaction) async {
+    if (originalIndex < 0 || originalIndex >= otherRevenueTransactions.value.length) return;
+
+    // 1. Cập nhật danh sách local
+    otherRevenueTransactions.value[originalIndex] = updatedTransaction;
+    otherRevenueTransactions.value = List.from(otherRevenueTransactions.value);
+
+    // 2. Tính toán lại TOÀN BỘ các giá trị tổng
+    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    // 3. Cập nhật Notifier và giao diện một lần
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // 4. Lưu lên server
+    await _saveAllDailyDataToFirestore();
+  }
+
+// Hàm xóa giao dịch "Doanh thu khác"
+  Future<void> deleteOtherRevenueAndUpdateState(int originalIndex) async {
+    if (originalIndex < 0 || originalIndex >= otherRevenueTransactions.value.length) return;
+
+    // 1. Cập nhật danh sách local
+    otherRevenueTransactions.value.removeAt(originalIndex);
+    otherRevenueTransactions.value = List.from(otherRevenueTransactions.value);
+
+    // 2. Tính toán lại TOÀN BỘ các giá trị tổng
+    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    // 3. Cập nhật Notifier và giao diện một lần
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // 4. Lưu lên server
+    await _saveAllDailyDataToFirestore();
+  }
+
+  // Dán hàm mới này vào trong class AppState (appstate.docx)
+
+  Future<void> _saveAllDailyDataToFirestore() async {
+    if (activeUserId == null) return;
+
+    try {
+      final firestore = FirebaseFirestore.instance;
+      String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      String docPath = 'users/$activeUserId/daily_data/${getKey(dateKey)}';
+
+      // Chuẩn bị MỘT LẦN DUY NHẤT tất cả dữ liệu cần lưu
+      final Map<String, dynamic> dataToSave = {
+        // Doanh thu
+        'mainRevenue': mainRevenue,
+        'secondaryRevenue': secondaryRevenue,
+        'otherRevenue': otherRevenue,
+        'totalRevenue': getTotalRevenue(),
+
+        // Lợi nhuận
+        'profit': getProfit(),
+        'profitMargin': getProfitMargin(),
+
+        // Danh sách giao dịch chi tiết
+        'mainRevenueTransactions': mainRevenueTransactions.value,
+        'secondaryRevenueTransactions': secondaryRevenueTransactions.value,
+        'otherRevenueTransactions': otherRevenueTransactions.value,
+
+        // Dấu thời gian
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Ghi toàn bộ dữ liệu lên Firestore
+      await firestore.doc(docPath).set(dataToSave);
+
+    } catch (e) {
+      print("Lỗi nghiêm trọng khi lưu daily_data lên Firestore: $e");
+      // Bạn có thể thêm xử lý lỗi ở đây nếu cần
     }
   }
 

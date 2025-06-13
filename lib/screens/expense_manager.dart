@@ -127,51 +127,44 @@ class ExpenseManager {
     }
   }
 
-  // Save fixed expenses
   static Future<void> saveFixedExpenses(AppState appState, List<Map<String, dynamic>> expenses) async {
-    final String? userId = appState.activeUserId; // [cite: 888]
-    if (userId == null) return; // [cite: 889]
-    final String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate); // [cite: 889]
-    final String firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); // [cite: 889]
+    final String? userId = appState.activeUserId;
+    if (userId == null) return;
+
+    final String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate);
+    final String firestoreDocId = appState.getKey('fixedExpenseList_$dateKey');
     final String hiveKey = '$userId-fixedExpenses-$firestoreDocId';
+
     if (!Hive.isBoxOpen('fixedExpensesBox')) {
       await Hive.openBox('fixedExpensesBox');
     }
-    final fixedExpensesBox = Hive.box('fixedExpensesBox'); // [cite: 890]
+    final fixedExpensesBox = Hive.box('fixedExpensesBox');
+
     try {
-      final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 890]
-      double total = expenses.fold(0.0, (sum, item) => sum + (item['amount']?.toDouble() ?? 0.0)); // [cite: 891]
-      final docRef = firestore // [cite: 892]
-          .collection('users') // [cite: 892]
-          .doc(userId) // [cite: 892]
-          .collection('expenses') // [cite: 892]
-          .doc('fixed') // [cite: 892]
-          .collection('daily') // [cite: 892]
-          .doc(firestoreDocId); // [cite: 892]
-      final doc = await docRef.get(); // [cite: 893]
-      List<Map<String, dynamic>> mergedExpenses = expenses; // [cite: 893]
-      if (doc.exists && doc.data()?['fixedExpenses'] != null) { // [cite: 894]
-        final existingExpenses = List<Map<String, dynamic>>.from(doc.data()!['fixedExpenses']); // [cite: 894]
-        final Map<String, Map<String, dynamic>> expenseMap = {}; // [cite: 895]
-        for (var exp in existingExpenses) { // [cite: 896]
-          expenseMap[exp['name']] = exp; // [cite: 896]
-        }
-        for (var exp in expenses) { // [cite: 897]
-          expenseMap[exp['name']] = exp; // [cite: 897]
-        }
-        mergedExpenses = expenseMap.values.toList(); // [cite: 898]
-        total = mergedExpenses.fold(0.0, (sum, item) => sum + (item['amount']?.toDouble() ?? 0.0)); // [cite: 899]
-      }
-      await docRef.set({ // [cite: 900]
-        'fixedExpenses': mergedExpenses, // [cite: 900]
-        'total': total, // [cite: 900]
-        'updatedAt': FieldValue.serverTimestamp(), // [cite: 900]
-      }, SetOptions(merge: true)); // [cite: 900]
-      await fixedExpensesBox.put(hiveKey, mergedExpenses); // [cite: 901]
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      final docRef = firestore
+          .collection('users')
+          .doc(userId)
+          .collection('expenses')
+          .doc('fixed')
+          .collection('daily')
+          .doc(firestoreDocId);
+
+      double total = expenses.fold(0.0, (sum, item) => sum + (item['amount']?.toDouble() ?? 0.0));
+
+      await docRef.set({
+        'fixedExpenses': expenses,
+        'total': total,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Cập nhật lại cache trên Hive
+      await fixedExpensesBox.put(hiveKey, expenses);
+
     } catch (e) {
-      print("Error saving fixed expenses: $e"); // [cite: 902]
-      await fixedExpensesBox.put(hiveKey, expenses); // [cite: 903]
-      rethrow; // [cite: 903]
+      print("Error saving fixed expenses: $e");
+      await fixedExpensesBox.put(hiveKey, expenses);
+      rethrow;
     }
   }
 
@@ -490,167 +483,99 @@ class ExpenseManager {
     }
   }
 
-  static Future<void> saveMonthlyFixedAmount(AppState appState, String name, double amount, DateTime month, {DateTimeRange? dateRange}) async {
-    final String? userId = appState.activeUserId; // [cite: 979]
-    if (userId == null) return; // [cite: 980]
-    final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 980]
-    final String hiveKey = '$userId-monthlyFixedAmounts-$monthKey'; // [cite: 980]
-    if (!Hive.isBoxOpen('monthlyFixedAmountsBox')) {
-      await Hive.openBox('monthlyFixedAmountsBox');
-    }
-    final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox'); // [cite: 981]
-    try {
-      final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 981]
-      final amounts = await loadMonthlyFixedAmounts(appState, month); // [cite: 982]
-      amounts[name] = amount; // [cite: 982]
-      await firestore // [cite: 983]
-          .collection('users') // [cite: 983]
-          .doc(userId) // [cite: 983]
-          .collection('expenses') // [cite: 983]
-          .doc('fixed') // [cite: 983]
-          .collection('monthly') // [cite: 983]
-          .doc(monthKey) // [cite: 983]
-          .set({ // [cite: 983]
-        'amounts': amounts, // [cite: 983]
-        'updatedAt': FieldValue.serverTimestamp(), // [cite: 983]
-      }, SetOptions(merge: true)); // [cite: 983]
-      final DateTimeRange range = dateRange ?? DateTimeRange( // [cite: 984]
-        start: DateTime(month.year, month.month, 1), // [cite: 984]
-        end: DateTime(month.year, month.month + 1, 0), // [cite: 984]
-      );
-      final int days = range.end.difference(range.start).inDays + 1; // [cite: 985]
-      final double dailyAmount = amount / days; // [cite: 985]
-      List<Future<void>> saveFutures = []; // [cite: 985]
-      for (int i = 0; i < days; i++) { // [cite: 986]
-        final DateTime currentDate = range.start.add(Duration(days: i)); // [cite: 986]
-        saveFutures.add(_saveDailyFixedExpense(appState, currentDate, name, dailyAmount)); // [cite: 987]
+  static Future<void> saveOrUpdateMonthlyFixedAmount(
+      AppState appState,
+      String name,
+      double newAmount, // Số tiền mới người dùng nhập
+      double? oldMonthlyAmount, // Số tiền cũ, null nếu là lưu mới
+      DateTime month,
+      {required DateTimeRange dateRange} // Bắt buộc phải có dateRange
+      ) async {
+    final String? userId = appState.activeUserId; //
+    if (userId == null) return;
+
+    final firestore = FirebaseFirestore.instance; //
+    final batch = firestore.batch();
+
+    // Thao tác 1: Cập nhật tài liệu của tháng (metadata)
+    final monthKey = DateFormat('yyyy-MM').format(month); //
+    final monthlyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('monthly').doc(monthKey); //
+    batch.set(
+        monthlyDocRef,
+        { 'amounts': { name: newAmount }, 'updatedAt': FieldValue.serverTimestamp() }, //
+        SetOptions(merge: true) // Dùng merge để không ghi đè các amounts khác
+    );
+
+    // Thao tác 2: Phân bổ chi phí cho các ngày
+    final daysInRange = dateRange.end.difference(dateRange.start).inDays + 1; //
+    final newDailyAmount = (daysInRange > 0) ? newAmount / daysInRange : 0.0; //
+    final oldDailyAmount = (oldMonthlyAmount != null && daysInRange > 0) ? oldMonthlyAmount / daysInRange : 0.0;
+
+    for (int i = 0; i < daysInRange; i++) {
+      final currentDate = dateRange.start.add(Duration(days: i)); //
+      final dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
+      final firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); //
+      final dailyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('daily').doc(firestoreDocId); //
+
+      // Nếu là chỉnh sửa, trước tiên phải xóa mục cũ đi
+      if (oldMonthlyAmount != null && oldDailyAmount > 0) {
+        // Dữ liệu cần xóa phải khớp 100% với dữ liệu trên server
+        final expenseToRemove = {'name': name, 'amount': oldDailyAmount};
+        batch.update(dailyDocRef, {'fixedExpenses': FieldValue.arrayRemove([expenseToRemove])});
       }
-      await Future.wait(saveFutures); // [cite: 987]
-      await monthlyFixedAmountsBox.put(hiveKey, amounts); // [cite: 987]
-      await appState.loadExpenseValues(); // [cite: 987]
-    } catch (e) {
-      print("Error saving monthly fixed amount: $e"); // [cite: 988]
-      final amounts = await loadMonthlyFixedAmounts(appState, month); // [cite: 989]
-      amounts[name] = amount; // [cite: 989]
-      await monthlyFixedAmountsBox.put(hiveKey, amounts); // [cite: 989]
-      throw e; // [cite: 989]
+
+      // Luôn thêm mục mới vào
+      final expenseToAdd = {'name': name, 'amount': newDailyAmount};
+      // Dùng set + merge để tự tạo doc nếu chưa có, và arrayUnion để thêm vào mảng một cách an toàn
+      batch.set(
+          dailyDocRef,
+          {'fixedExpenses': FieldValue.arrayUnion([expenseToAdd])},
+          SetOptions(merge: true) // Rất quan trọng!
+      );
     }
+
+    // Gửi tất cả lên server một lần duy nhất
+    await batch.commit();
   }
 
-  static Future<void> deleteMonthlyFixedExpense(AppState appState, String name,
-      DateTime month, {DateTimeRange? dateRange}) async {
-    final String? userId = appState.activeUserId; // [cite: 990]
-    if (userId == null) { // [cite: 991]
-      print("User ID is null, cannot delete monthly fixed expense."); // [cite: 991]
-      return; // [cite: 992]
-    }
-    final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 992]
-    final String hiveMonthlyAmountsKey = '$userId-monthlyFixedAmounts-$monthKey'; // [cite: 993]
-    if (!Hive.isBoxOpen('monthlyFixedAmountsBox')) {
-      await Hive.openBox('monthlyFixedAmountsBox');
-    }
-    if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) {
-      await Hive.openBox('monthlyFixedExpensesBox');
-    }
-    if (!Hive.isBoxOpen('fixedExpensesBox')) {
-      await Hive.openBox('fixedExpensesBox');
-    }
-    final monthlyFixedAmountsBox = Hive.box('monthlyFixedAmountsBox'); // [cite: 994]
-    final String hiveFixedExpenseListKey = '$userId-fixedExpenseList-$monthKey'; // [cite: 994]
-    final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox'); // [cite: 994]
+  static Future<void> deleteMonthlyFixedExpense(
+      AppState appState,
+      String name,
+      double monthlyAmount, // Số tiền của tháng đang bị xóa
+      DateTime month
+      ) async {
+    final String? userId = appState.activeUserId; //
+    if (userId == null) return; //
 
-    try {
-      final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 995]
-      final amounts = await loadMonthlyFixedAmounts(appState, month); // [cite: 996]
-      if (amounts.containsKey(name)) { // [cite: 997]
-        amounts.remove(name); // [cite: 997]
-        await firestore // [cite: 998]
-            .collection('users') // [cite: 998]
-            .doc(userId) // [cite: 998]
-            .collection('expenses') // [cite: 998]
-            .doc('fixed') // [cite: 998]
-            .collection('monthly') // [cite: 998]
-            .doc(monthKey) // [cite: 998]
-            .set({ // [cite: 998]
-          'amounts': amounts, // [cite: 998]
-          'updatedAt': FieldValue.serverTimestamp(), // [cite: 999]
-        }, SetOptions(merge: true)); // [cite: 999]
-        await monthlyFixedAmountsBox.put(hiveMonthlyAmountsKey, amounts); // [cite: 1000]
-        print("Updated monthlyFixedAmounts in Firestore and Hive for $monthKey after removing $name."); // [cite: 1001]
-      } else {
-        print("Expense '$name' not found in monthlyFixedAmounts for $monthKey. Skipping update."); // [cite: 1002]
-      }
+    final firestore = FirebaseFirestore.instance; //
+    final batch = firestore.batch();
 
-      final fixedExpensesListForMonth = await loadFixedExpenseList(appState, month); // [cite: 1003]
-      final originalLength = fixedExpensesListForMonth.length; // [cite: 1004]
-      final updatedFixedExpensesListForMonth = fixedExpensesListForMonth.where((e) => e['name'] != name).toList(); // [cite: 1004]
-      if (updatedFixedExpensesListForMonth.length < originalLength) { // [cite: 1005]
-        await saveFixedExpenseList(appState, updatedFixedExpensesListForMonth, month); // [cite: 1005]
-        print("Updated fixedExpenseList in Firestore and Hive for $monthKey after removing $name."); // [cite: 1006]
-      } else {
-        print("Expense '$name' not found in fixedExpenseList for $monthKey. Skipping update."); // [cite: 1007]
-      }
+    // Thao tác 1: Xóa trong tài liệu của tháng (metadata)
+    final monthKey = DateFormat('yyyy-MM').format(month); //
+    final monthlyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('monthly').doc(monthKey); //
+    batch.update(monthlyDocRef, {
+      'amounts.$name': FieldValue.delete(), // Xóa một key trong map
+      'products': FieldValue.arrayRemove([{'name': name}]),
+      'updatedAt': FieldValue.serverTimestamp()
+    });
 
-      final DateTimeRange range = dateRange ?? // [cite: 1008]
-          DateTimeRange( // [cite: 1009]
-            start: DateTime(month.year, month.month, 1), // [cite: 1009]
-            end: DateTime(month.year, month.month + 1, 0), // [cite: 1009]
-          );
-      List<Future<void>> dailyUpdateFutures = []; // [cite: 1010]
-      final fixedExpensesBox = Hive.box('fixedExpensesBox'); // [cite: 1010]
-      for (int i = 0; i <= range.end.difference(range.start).inDays; i++) { // [cite: 1010]
-        final DateTime currentDate = range.start.add(Duration(days: i)); // [cite: 1010]
-        final String dailyDateKey = DateFormat('yyyy-MM-dd').format(currentDate); // [cite: 1011]
-        final String firestoreDailyDocId = appState.getKey('fixedExpenseList_$dailyDateKey'); // [cite: 1011]
-        final String hiveDailyFixedKey = '$userId-fixedExpenses-$firestoreDailyDocId'; // [cite: 1011]
+    // Thao tác 2: Xóa khỏi tất cả các ngày trong tháng
+    // Giả định rằng một khoản chi tháng được phân bổ đều cho tất cả các ngày
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day; //
+    final dailyAmount = (daysInMonth > 0) ? monthlyAmount / daysInMonth : 0.0;
+    final expenseToRemove = {'name': name, 'amount': dailyAmount};
 
-        dailyUpdateFutures.add( // [cite: 1012]
-          Future(() async { // [cite: 1012]
-            try {
-              final List<Map<String, dynamic>> dailyExpenses = await loadFixedExpenses(appState, currentDate); // [cite: 1012]
-              final updatedDailyExpenses = dailyExpenses.where((e) => e['name'] != name).toList(); // [cite: 1012]
-              if (updatedDailyExpenses.length < dailyExpenses.length || (dailyExpenses.isNotEmpty && updatedDailyExpenses.isEmpty)) { // [cite: 1013]
-                final docRef = firestore // [cite: 1013]
-                    .collection('users') // [cite: 1013]
-                    .doc(userId) // [cite: 1013]
-                    .collection('expenses') // [cite: 1013]
-                    .doc('fixed') // [cite: 1014]
-                    .collection('daily') // [cite: 1014]
-                    .doc(firestoreDailyDocId); // [cite: 1014]
-                if (updatedDailyExpenses.isEmpty) { // [cite: 1014]
-                  await docRef.delete(); // [cite: 1014]
-                  await fixedExpensesBox.delete(hiveDailyFixedKey); // [cite: 1015]
-                  print('Deleted daily fixed expense document $firestoreDailyDocId and Hive key $hiveDailyFixedKey for $name.'); // [cite: 1015]
-                } else {
-                  double total = updatedDailyExpenses.fold(0.0, // [cite: 1016]
-                          (sum, item) => sum + (item['amount']?.toDouble() ?? 0.0)); // [cite: 1016]
-                  await docRef.set({ // [cite: 1017]
-                    'fixedExpenses': updatedDailyExpenses, // [cite: 1017]
-                    'total': total, // [cite: 1017]
-                    'updatedAt': FieldValue.serverTimestamp(), // [cite: 1017]
-                  }, SetOptions(merge: true)); // [cite: 1017]
-                  await fixedExpensesBox.put(hiveDailyFixedKey, updatedDailyExpenses); // [cite: 1018]
-                  print('Updated daily fixed expense document $firestoreDailyDocId and Hive key $hiveDailyFixedKey for $name.'); // [cite: 1018]
-                }
-              } else {
-                print('No changes needed for daily fixed expenses on $dailyDateKey for $name.'); // [cite: 1019]
-              }
-            } catch (e) {
-              print('Error processing daily fixed expenses for $dailyDateKey when deleting $name: $e, Stacktrace: ${StackTrace.current}'); // [cite: 1020]
-            }
-          }),
-        );
-      }
-      await Future.wait(dailyUpdateFutures.map((future) => future.catchError((e) { // [cite: 1022]
-        print('An unexpected error occurred in dailyUpdateFutures during deleteMonthlyFixedExpense: $e'); // [cite: 1022]
-        return Future.value(); // [cite: 1022]
-      })));
-      print("Finished processing daily fixed expense entries for deletion of $name."); // [cite: 1023]
-      await appState.loadExpenseValues(); // [cite: 1024]
-      print("Reloaded expense values in AppState after deleting $name."); // [cite: 1025]
-    } catch (e) {
-      print("Error deleting monthly fixed expense '$name' for month $monthKey: $e, Stacktrace: ${StackTrace.current}"); // [cite: 1025]
-      rethrow; // [cite: 1027]
+    for (int i = 1; i <= daysInMonth; i++) {
+      final currentDate = DateTime(month.year, month.month, i);
+      final dateKey = DateFormat('yyyy-MM-dd').format(currentDate); //
+      final firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); //
+      final dailyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('daily').doc(firestoreDocId); //
+
+      // Thêm lệnh xóa vào batch
+      batch.update(dailyDocRef, {'fixedExpenses': FieldValue.arrayRemove([expenseToRemove])});
     }
+
+    // Gửi tất cả lên server một lần duy nhất
+    await batch.commit();
   }
 }
