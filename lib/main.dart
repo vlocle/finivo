@@ -1,5 +1,6 @@
-import 'dart:async';
+// main.dart
 
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,51 +10,58 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
-import 'state/app_state.dart'; // [cite: 367]
-import 'screens/main_screen.dart'; // [cite: 367]
-import 'screens/login_screen.dart'; // [cite: 367]
-import 'screens/device_utils.dart';
-import 'screens/subscription_service.dart';
-final SubscriptionService subscriptionService = SubscriptionService();
 
+// <<< THÊM CÁC IMPORT CẦN THIẾT >>>
+import 'state/app_state.dart';
+import 'screens/main_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/device_utils.dart';
+import 'screens/subscription_service.dart'; // Import service mới
 
 void main() async {
+  // Đảm bảo các binding đã được khởi tạo
   WidgetsFlutterBinding.ensureInitialized();
-  await subscriptionService.init();
+
+  // Khởi tạo các dịch vụ nền tảng
   try {
-    int retries = 3; // [cite: 368]
-    for (int i = 0; i < retries; i++) { // [cite: 369]
+    int retries = 3;
+    for (int i = 0; i < retries; i++) {
       try {
-        await Firebase.initializeApp(); // [cite: 369, 370]
-        break; // [cite: 370]
+        await Firebase.initializeApp();
+        break;
       } catch (e) {
-        if (i == retries - 1) throw e; // [cite: 370]
-        await Future.delayed(Duration(seconds: 1)); // [cite: 371]
+        if (i == retries - 1) throw e;
+        await Future.delayed(Duration(seconds: 1));
       }
     }
-    FirebaseFirestore.instance.settings = const Settings( // [cite: 371, 372]
-      persistenceEnabled: true, // [cite: 372]
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED, // [cite: 372]
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
-    await Hive.initFlutter(); // [cite: 373]
-    await initializeDateFormatting('vi', null); // [cite: 375]
-    final appState = AppState(); // [cite: 376]
-    final connectivityResult = await Connectivity().checkConnectivity(); // [cite: 377]
-    if (connectivityResult != ConnectivityResult.none) { // [cite: 378]
-      await appState.syncWithFirestore(); // [cite: 378]
+    await Hive.initFlutter();
+    await initializeDateFormatting('vi', null);
+
+    // Chuẩn bị AppState
+    final appState = AppState();
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult != ConnectivityResult.none) {
+      await appState.syncWithFirestore();
     }
-    initConnectivityListener(appState); // [cite: 379]
+    initConnectivityListener(appState);
+
+    // <<< THAY ĐỔI: Chạy ứng dụng và cung cấp AppState >>>
+    // `SubscriptionService` sẽ được cung cấp bên trong MyApp
     runApp(
-      ChangeNotifierProvider( // [cite: 380]
-        create: (context) => appState, // [cite: 380]
-        child: MyApp(), // [cite: 380]
+      ChangeNotifierProvider(
+        create: (context) => appState,
+        child: MyApp(),
       ),
     );
   } catch (e) {
-    print('Lỗi khởi tạo ứng dụng: $e'); // [cite: 381]
-    runApp(MaterialApp( // [cite: 382]
+    print('Lỗi khởi tạo ứng dụng: $e');
+    runApp(MaterialApp(
       home: Scaffold(
-        body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')), // [cite: 382]
+        body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')),
       ),
     ));
   }
@@ -62,10 +70,10 @@ void main() async {
 void initConnectivityListener(AppState appState) {
   Timer? _debounceTimer;
   Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
-    if (_debounceTimer?.isActive ?? false) return; // Skip if debounce is active
+    if (_debounceTimer?.isActive ?? false) return;
     _debounceTimer = Timer(Duration(seconds: 2), () {
       if (results.any((result) => result != ConnectivityResult.none)) {
-        if (!appState.isLoadingListenable.value) { // Use existing isLoadingListenable
+        if (!appState.isLoadingListenable.value) {
           appState.syncWithFirestore();
         }
       }
@@ -73,51 +81,76 @@ void initConnectivityListener(AppState appState) {
   });
 }
 
+// <<< THAY ĐỔI: MyApp giờ đây sẽ cung cấp SubscriptionService >>>
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context); // [cite: 383, 384]
-    return MaterialApp(
-      debugShowCheckedModeBanner: false, // [cite: 384]
-      title: 'FinGrowth', // [cite: 384]
-      theme: ThemeData( // [cite: 384]
-        primarySwatch: Colors.red, // [cite: 384]
-        useMaterial3: true, // [cite: 384]
-        brightness: Brightness.light, // [cite: 384]
+    // Cung cấp SubscriptionService cho toàn bộ ứng dụng
+    return Provider<SubscriptionService>(
+      create: (_) => SubscriptionService(),
+      child: Builder(
+        builder: (context) {
+          final appState = Provider.of<AppState>(context);
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            title: 'FinGrowth',
+            theme: ThemeData(
+              primarySwatch: Colors.red,
+              useMaterial3: true,
+              brightness: Brightness.light,
+            ),
+            darkTheme: ThemeData(
+              primarySwatch: Colors.red,
+              useMaterial3: true,
+              brightness: Brightness.dark,
+            ),
+            themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: const [
+              Locale('vi', 'VN'),
+              Locale('en', 'US'),
+            ],
+            locale: const Locale('vi', 'VN'),
+            home: const AuthWrapper(),
+          );
+        },
       ),
-      darkTheme: ThemeData( // [cite: 384]
-        primarySwatch: Colors.red, // [cite: 384]
-        useMaterial3: true, // [cite: 384]
-        brightness: Brightness.dark, // [cite: 384]
-      ),
-      themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light, // [cite: 385]
-      localizationsDelegates: const [ // [cite: 385]
-        GlobalMaterialLocalizations.delegate, // [cite: 385]
-        GlobalWidgetsLocalizations.delegate, // [cite: 385]
-        GlobalCupertinoLocalizations.delegate, // [cite: 385]
-      ],
-      supportedLocales: const [ // [cite: 385]
-        Locale('vi', 'VN'), // [cite: 385]
-        Locale('en', 'US'), // [cite: 385]
-      ],
-      locale: const Locale('vi', 'VN'), // [cite: 385]
-      home: AuthWrapper(), // [cite: 386]
     );
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+
+// <<< THAY ĐỔI LỚN: AuthWrapper được chuyển thành StatefulWidget >>>
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<SubscriptionService>().init();
+  }
+
   @override
   Widget build(BuildContext context) {
-    //
+    // Logic StreamBuilder gốc của bạn được giữ nguyên hoàn toàn
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(), //
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnapshot) {
-        if (authSnapshot.connectionState == ConnectionState.waiting) { //
+        if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-              body: Center(child: CircularProgressIndicator())); //
+              body: Center(child: CircularProgressIndicator()));
         }
-
         if (authSnapshot.hasData && authSnapshot.data != null) {
           final user = authSnapshot.data!;
           return StreamBuilder<DocumentSnapshot>(
@@ -127,19 +160,23 @@ class AuthWrapper extends StatelessWidget {
                 return const Scaffold(
                     body: Center(child: CircularProgressIndicator()));
               }
-
               if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) {
-                // Hiếm khi xảy ra nếu logic đăng nhập đúng, nhưng vẫn nên xử lý
                 FirebaseAuth.instance.signOut();
                 return LoginScreen();
               }
 
               final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
+
+              // Cập nhật AppState với trạng thái subscription mới nhất từ DB
               final appState = Provider.of<AppState>(context, listen: false);
               appState.updateSubscriptionStatus(userData);
+
+              if (appState.authUserId != user.uid) {
+                appState.setUserId(user.uid);
+              }
+
               final storedDeviceId = userData['lastLoginDeviceId'];
 
-              // Sử dụng hàm getDeviceId() đã tạo ở bước 1
               return FutureBuilder<String?>(
                 future: getDeviceId(),
                 builder: (context, deviceIdSnapshot) {
@@ -147,21 +184,13 @@ class AuthWrapper extends StatelessWidget {
                     return const Scaffold(
                         body: Center(child: CircularProgressIndicator()));
                   }
-
                   final currentDeviceId = deviceIdSnapshot.data;
-
-                  // So sánh ID
                   if (storedDeviceId != null && currentDeviceId != null && storedDeviceId == currentDeviceId) {
-                    // Mọi thứ đều ổn, cho phép vào app
-                    final appState = Provider.of<AppState>(context, listen: false); //
-                    if (appState.activeUserId != user.uid) { //
-                      appState.setUserId(user.uid); //
-                    }
-                    return MainScreen(); //
+                    return MainScreen();
                   } else {
                     Future.delayed(Duration.zero, () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')),
+                        const SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')),
                       );
                       FirebaseAuth.instance.signOut();
                     });
@@ -172,9 +201,7 @@ class AuthWrapper extends StatelessWidget {
             },
           );
         }
-
-        // Người dùng chưa đăng nhập
-        return LoginScreen(); //
+        return LoginScreen();
       },
     );
   }
