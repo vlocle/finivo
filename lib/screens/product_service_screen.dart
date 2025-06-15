@@ -404,6 +404,7 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
     //final appState = Provider.of<AppState>(context);
     //final bool isOwner = appState.authUserId == appState.activeUserId;
     final bool canManageProducts = _appState.hasPermission('canManageProducts');
+    final appState = context.read<AppState>();
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
@@ -441,58 +442,66 @@ class _ProductServiceScreenState extends State<ProductServiceScreen>
             ),
           ),
         ),
-        body: FutureBuilder<List<Map<String, dynamic>>>(
-          key: ValueKey(selectedCategory),
-          future: _productsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(
-                  child: CircularProgressIndicator(color: AppColors.primaryBlue));
-            }
-            if (snapshot.hasError) {
-              return Center(
-                  child: Text("Lỗi tải dữ liệu sản phẩm",
-                      style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context))));
-            }
-            List<Map<String, dynamic>> productList = snapshot.data ?? [];
-            return ScaleTransition(
-              scale: _scaleAnimation,
-              child: IndexedStack(
-                index: _selectedTab,
-                children: [
-                  ProductInputSection(
-                    key: const ValueKey('productServiceInput'),
-                    nameController: nameController,
-                    priceController: priceController,
-                    selectedCategory: selectedCategory,
-                    onAddProduct: canManageProducts ? () => addProduct(_appState, productList) : null,
-                    onCategoryChanged: (newCategory) {
-                      if (mounted) {
-                        setState(() {
-                          selectedCategory = newCategory;
-                          _productsFuture = _loadProducts(_appState);
-                        });
-                      }
-                    },
-                    appState: _appState,
-                    inputPriceFormatter: _inputPriceFormatter,
+        body: ValueListenableBuilder<int>(
+          valueListenable: appState.permissionVersion, // Lắng nghe tín hiệu quyền
+          builder: (context, permissionVersion, child) {
+            // Logic kiểm tra quyền được đặt ở đây
+            final bool canManageProducts = appState.hasPermission('canManageProducts');
+
+            return FutureBuilder<List<Map<String, dynamic>>>(
+              key: ValueKey(selectedCategory),
+              future: _productsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator(color: AppColors.primaryBlue));
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text("Lỗi tải dữ liệu sản phẩm", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context))));
+                }
+                List<Map<String, dynamic>> productList = snapshot.data ?? [];
+
+                return ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: IndexedStack(
+                    index: _selectedTab,
+                    children: [
+                      ProductInputSection(
+                        key: const ValueKey('productServiceInput'),
+                        nameController: nameController,
+                        priceController: priceController,
+                        selectedCategory: selectedCategory,
+                        // `canManageProducts` giờ sẽ là giá trị real-time
+                        onAddProduct: canManageProducts ? () => addProduct(appState, productList) : null,
+                        onCategoryChanged: (newCategory) {
+                          if (mounted) {
+                            setState(() {
+                              selectedCategory = newCategory;
+                              _productsFuture = _loadProducts(appState);
+                            });
+                          }
+                        },
+                        appState: appState,
+                        inputPriceFormatter: _inputPriceFormatter,
+                      ),
+                      ProductListSection(
+                        key: ValueKey('productList_${selectedCategory}'),
+                        productList: productList,
+                        // `canManageProducts` cũng được cập nhật ở đây
+                        onEditProduct: canManageProducts ? (index) => editProduct(appState, productList, index) : null,
+                        onDeleteProduct: canManageProducts ? (index) => deleteProduct(appState, productList, index) : null,
+                        appState: appState,
+                        currencyFormat: currencyFormat,
+                        primaryColor: AppColors.primaryBlue,
+                        textColorPrimary: AppColors.getTextColor(context),
+                        textColorSecondary: AppColors.getTextSecondaryColor(context),
+                        cardBackgroundColor: AppColors.getCardColor(context),
+                        accentColor: AppColors.chartRed,
+                        selectedCategoryText: selectedCategory,
+                      ),
+                    ],
                   ),
-                  ProductListSection(
-                    key: ValueKey('productList_${selectedCategory}'),
-                    productList: productList,
-                    onEditProduct: canManageProducts ? (index) => editProduct(_appState, productList, index) : null,
-                    onDeleteProduct: canManageProducts ? (index) => deleteProduct(_appState, productList, index) : null,
-                    appState: _appState,
-                    currencyFormat: currencyFormat,
-                    primaryColor: AppColors.primaryBlue,
-                    textColorPrimary: AppColors.getTextColor(context),
-                    textColorSecondary: AppColors.getTextSecondaryColor(context),
-                    cardBackgroundColor: AppColors.getCardColor(context),
-                    accentColor: AppColors.chartRed,
-                    selectedCategoryText: selectedCategory,
-                  ),
-                ],
-              ),
+                );
+              },
             );
           },
         ),

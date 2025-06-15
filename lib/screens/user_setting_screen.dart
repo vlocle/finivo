@@ -5,15 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import 'firestore_service.dart';
 import 'general_settings_screen.dart'; // Giả sử bạn có màn hình này
 import 'login_screen.dart';
 import 'permissions_screen.dart';
 import 'package:fingrowth/screens/report_screen.dart';
 import 'subscription_screen.dart';
 
-class UserSettingsScreen extends StatelessWidget {
+enum SnackBarType { success, error }
+
+class UserSettingsScreen extends StatefulWidget {
   const UserSettingsScreen({super.key});
 
+  @override
+  State<UserSettingsScreen> createState() => _UserSettingsScreenState();
+}
+
+class _UserSettingsScreenState extends State<UserSettingsScreen> {
   void _showUpgradeDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -101,6 +109,63 @@ class UserSettingsScreen extends StatelessWidget {
         }
       }
     }
+  }
+
+  // --- Hàm hiển thị SnackBar hiện đại (Thiết kế mới) ---
+  void _showModernSnackBar({
+    required BuildContext context,
+    required String message,
+    required SnackBarType type,
+  }) {
+    final snackBar = SnackBar(
+      // Bỏ viền và đổ bóng mặc định
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      behavior: SnackBarBehavior.floating,
+      // Căn lề trên cùng thay vì dưới cùng
+      margin: const EdgeInsets.only(top: 20, left: 16, right: 16),
+      content: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          // Chọn màu dựa trên loại thông báo
+          color: type == SnackBarType.success
+              ? const Color(0xFF2E7D32) // Xanh lá đậm
+              : const Color(0xFFC62828), // Đỏ đậm
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Icon tương ứng
+            Icon(
+              type == SnackBarType.success ? Icons.check_circle : Icons.error,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar() // Ẩn snackbar cũ nếu có
+      ..showSnackBar(snackBar);
   }
 
   // --- Hàm xóa toàn bộ dữ liệu ---
@@ -198,16 +263,6 @@ class UserSettingsScreen extends StatelessWidget {
                 .collection(parts[0]) // 'expenses'
                 .doc(parts[1])        // 'fixedList'
                 .collection(parts[2]);// 'items' (Cần kiểm tra lại cấu trúc này, ví dụ trên là 3 parts)
-            // Nếu cấu trúc là users/userId/expenses/fixedList/docId/items thì cần điều chỉnh
-            // Hiện tại, giả định 'fixedList' và 'variableList' là document, và 'items', 'monthly' là subcollection của chúng.
-            // Nếu 'fixedList' là collection, thì logic trên đã sai.
-            // Dựa theo code gốc, 'fixedList' và 'variableList' là document.
-            // Ví dụ: expenses/fixedList/items -> users/userId/expenses/fixedList/collection('items')
-            // Điều chỉnh lại:
-            // 'expenses/fixedList/items' -> collection('users').doc(userId).collection('expenses').doc('fixedList').collection('items')
-            // 'expenses/variableList/monthly' -> collection('users').doc(userId).collection('expenses').doc('variableList').collection('monthly')
-            // Vì vậy, path nên là: 'expenses/fixedList/items' và 'expenses/variableList/monthly'
-            // Và parts[0] = 'expenses', parts[1] = 'fixedList' (tên document), parts[2] = 'items' (tên subcollection)
             print("Đang xử lý subcollection path: $path");
             subCollectionRef = firestore
                 .collection('users')
@@ -256,6 +311,113 @@ class UserSettingsScreen extends StatelessWidget {
         }
       }
     }
+  }
+
+  // --- Hàm hiển thị Bottom Sheet chỉnh sửa tên (Thiết kế mới) ---
+  Future<bool?> _showEditNameBottomSheet(BuildContext context, User currentUser) async {
+    final TextEditingController nameController =
+    TextEditingController(text: currentUser.displayName);
+    final firestoreService = FirestoreService();
+
+    // showModalBottomSheet sẽ trả về giá trị được truyền trong Navigator.pop()
+    return await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      backgroundColor: AppColors.getBackgroundColor(context),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              top: 24,
+              left: 24,
+              right: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Thay đổi tên của bạn",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.getTextColor(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Tên mới sẽ được hiển thị trên toàn bộ ứng dụng.",
+                style: TextStyle(
+                  fontSize: 15,
+                  color: AppColors.getTextSecondaryColor(context),
+                ),
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: "Tên hiển thị",
+                  labelStyle: TextStyle(color: AppColors.primaryBlue),
+                  prefixIcon: Icon(Icons.person_outline, color: AppColors.primaryBlue),
+                  filled: true,
+                  fillColor: AppColors.getCardColor(context),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.primaryBlue, width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () async {
+                    String newName = nameController.text.trim();
+
+                    if (newName.isEmpty) {
+                      newName = currentUser.email?.split('@').first ?? 'Người dùng';
+                    }
+
+                    try {
+                      await currentUser.updateDisplayName(newName);
+                      await firestoreService.updateDisplayName(currentUser.uid, newName);
+
+                      if (mounted) {
+                        // Báo cáo thành công bằng cách trả về `true` khi pop
+                        Navigator.pop(context, true);
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        // Đóng sheet và báo lỗi (bằng cách không trả về gì hoặc trả về false)
+                        Navigator.pop(context, false);
+                        // SnackBar lỗi sẽ được hiển thị bên ngoài
+                      }
+                    }
+                  },
+                  child: const Text("Lưu Thay Đổi", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   // --- Hàm xóa tài khoản ---
@@ -505,15 +667,15 @@ class UserSettingsScreen extends StatelessWidget {
   }
 
   Widget _buildUserProfileSection(BuildContext context, User? user) {
+    if (user == null) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24.0),
       decoration: const BoxDecoration(
         color: AppColors.primaryBlue,
-        // borderRadius: BorderRadius.only(
-        //   bottomLeft: Radius.circular(30),
-        //   bottomRight: Radius.circular(30),
-        // ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -522,23 +684,60 @@ class UserSettingsScreen extends StatelessWidget {
             radius: 50,
             backgroundColor: Colors.white.withOpacity(0.9),
             backgroundImage:
-            user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-            child: user?.photoURL == null
-                ? Icon(Icons.person_outline, size: 60, color: AppColors.primaryBlue.withOpacity(0.8))
+            user.photoURL != null ? NetworkImage(user.photoURL!) : null,
+            child: user.photoURL == null
+                ? Icon(Icons.person_outline,
+                size: 60, color: AppColors.primaryBlue.withOpacity(0.8))
                 : null,
           ),
           const SizedBox(height: 16),
-          Text(
-            user?.displayName ?? "Người dùng",
-            style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
-            textAlign: TextAlign.center,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  user.displayName ?? "Người dùng",
+                  style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white),
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined,
+                    color: Colors.white, size: 24),
+                onPressed: () async {
+                  // Đợi kết quả trả về từ Bottom Sheet
+                  final bool? updateSuccess = await _showEditNameBottomSheet(context, user);
+
+                  // Nếu kết quả là `true` (cập nhật thành công)
+                  if (updateSuccess == true && mounted) {
+                    // Hiển thị SnackBar tại đây
+                    _showModernSnackBar(
+                        context: context,
+                        message: "Cập nhật tên thành công!",
+                        type: SnackBarType.success);
+                    // Gọi setState để build lại giao diện với tên mới
+                    setState(() {});
+                  }
+                  // (Tùy chọn) Xử lý trường hợp `updateSuccess` là false (lỗi)
+                  else if (updateSuccess == false && mounted){
+                    _showModernSnackBar(
+                        context: context,
+                        message: "Đã xảy ra lỗi khi cập nhật tên.",
+                        type: SnackBarType.error);
+                  }
+                },
+                splashRadius: 20,
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
-            user?.email ?? "Không có thông tin email",
+            user.email ?? "Không có thông tin email",
             style: TextStyle(fontSize: 15, color: Colors.white.withOpacity(0.85)),
             textAlign: TextAlign.center,
           ),
@@ -550,8 +749,11 @@ class UserSettingsScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Text(
-              "Thành viên cơ bản", // Hoặc có thể lấy từ thông tin người dùng nếu có
-              style: TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500),
+              "Thành viên cơ bản",
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500),
             ),
           ),
         ],

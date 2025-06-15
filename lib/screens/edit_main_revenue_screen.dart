@@ -454,7 +454,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
   @override
   Widget build(BuildContext context) {
     //final appState = Provider.of<AppState>(context)
-    final bool canEditThisRevenue = _appState.hasPermission('canEditRevenue');
+    final appState = context.read<AppState>();
     return GestureDetector( // [cite: 191]
       onTap: () => FocusScope.of(context).unfocus(), // [cite: 191]
       behavior: HitTestBehavior.opaque, // [cite: 191]
@@ -493,62 +493,74 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
             ),
           ),
         ),
-        body: FutureBuilder<List<Map<String, dynamic>>>( // [cite: 197]
-          future: _loadProductsFuture,
-          builder: (context, snapshot) { // [cite: 197]
-            if (snapshot.connectionState == ConnectionState.waiting) { // [cite: 197]
-              return Center(
-                  child: CircularProgressIndicator(color: AppColors.primaryBlue)); // [cite: 198]
-            }
-            if (snapshot.hasError) { // [cite: 199]
-              return Center( // [cite: 199]
-                  child: Text("Lỗi tải dữ liệu sản phẩm", // [cite: 199]
-                      style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)))); // [cite: 199, 200]
-            }
-            List<Map<String, dynamic>> productList = snapshot.data ?? []; // [cite: 200, 201]
-            return ScaleTransition( // [cite: 201]
-                scale: _scaleAnimation, // [cite: 201]
-                child: IndexedStack( // [cite: 201]
-                  index: _selectedTab, // [cite: 201]
-                  children: [ // [cite: 202]
-                    ProductInputSection( // [cite: 202]
-                      key: _productInputSectionKey, // [cite: 202]
-                      productList: productList, // [cite: 202]
-                      quantityController: quantityController, // [cite: 203]
-                      priceController: priceController, // Controller cho giá BÁN // [cite: 203]
-                      onAddTransaction: canEditThisRevenue
-                          ? (selectedProduct, selectedPrice, isFlexiblePrice) {
-                        addTransaction(
-                            _appState,
-                            selectedProduct,
-                            selectedPrice,
-                            isFlexiblePrice
-                        );
-                      }
-                          : null, // Truyền null nếu không có quyền
-                      appState: _appState, // [cite: 211]
-                      currencyFormat: currencyFormat, // [cite: 211]
-                    ),
-                    TransactionHistorySection( // [cite: 211]
-                      key: const ValueKey('transactionHistory'), // [cite: 212]
-                      transactionsNotifier: _appState.mainRevenueTransactions, // [cite: 212]
-                      onEditTransaction: canEditThisRevenue ? editTransaction : null,
-                      onRemoveTransaction: canEditThisRevenue
-                          ? (localAppState, localTransactions, index) {
-                        // Hàm ẩn danh này khớp với yêu cầu (3 tham số)
-                        // Bên trong nó, ta gọi hàm removeTransaction đầy đủ với 4 tham số
-                        removeTransaction(localAppState, localTransactions, index, 'Doanh thu chính');
-                      }
-                          : null,
-                      appState: _appState, // [cite: 213]
-                      currencyFormat: currencyFormat, // [cite: 213]
-                      primaryColor: AppColors.primaryBlue,
-                      textColorPrimary: AppColors.getTextColor(context),
-                      textColorSecondary: AppColors.getTextSecondaryColor(context),
-                      cardBackgroundColor: AppColors.getCardColor(context),
-                    ),
-                  ],
-                ));
+        body: ValueListenableBuilder<int>(
+          valueListenable: appState.permissionVersion, // Lắng nghe tín hiệu thay đổi quyền
+          builder: (context, permissionVersion, child) {
+            // Logic kiểm tra quyền được đặt bên trong builder
+            final bool canEditThisRevenue = appState.hasPermission('canEditRevenue');
+
+            // Trả về phần body cũ, nhưng giờ các quyền đã được cập nhật real-time
+            return FutureBuilder<List<Map<String, dynamic>>>(
+              future: _loadProductsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(
+                      child: CircularProgressIndicator(color: AppColors.primaryBlue));
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                      child: Text("Lỗi tải dữ liệu sản phẩm",
+                          style: GoogleFonts.poppins(
+                              color: AppColors.getTextSecondaryColor(context))));
+                }
+                List<Map<String, dynamic>> productList = snapshot.data ?? [];
+
+                return ScaleTransition(
+                    scale: _scaleAnimation,
+                    child: IndexedStack(
+                      index: _selectedTab,
+                      children: [
+                        ProductInputSection(
+                          key: _productInputSectionKey,
+                          productList: productList,
+                          quantityController: quantityController,
+                          priceController: priceController,
+                          // `canEditThisRevenue` giờ đây luôn là giá trị mới nhất
+                          onAddTransaction: canEditThisRevenue
+                              ? (selectedProduct, selectedPrice, isFlexiblePrice) {
+                            addTransaction(
+                                appState,
+                                selectedProduct,
+                                selectedPrice,
+                                isFlexiblePrice
+                            );
+                          }
+                              : null, // Nút bấm sẽ bị vô hiệu hóa nếu không có quyền
+                          appState: appState,
+                          currencyFormat: currencyFormat,
+                        ),
+                        TransactionHistorySection(
+                          key: const ValueKey('transactionHistory'),
+                          transactionsNotifier: appState.mainRevenueTransactions,
+                          // `canEditThisRevenue` cũng được cập nhật cho các hành động sửa/xóa
+                          onEditTransaction: canEditThisRevenue ? editTransaction : null,
+                          onRemoveTransaction: canEditThisRevenue
+                              ? (localAppState, localTransactions, index) {
+                            removeTransaction(localAppState,
+                                localTransactions, index, 'Doanh thu chính');
+                          }
+                              : null,
+                          appState: appState,
+                          currencyFormat: currencyFormat,
+                          primaryColor: AppColors.primaryBlue,
+                          textColorPrimary: AppColors.getTextColor(context),
+                          textColorSecondary: AppColors.getTextSecondaryColor(context),
+                          cardBackgroundColor: AppColors.getCardColor(context),
+                        ),
+                      ],
+                    ));
+              },
+            );
           },
         ),
       ),
@@ -639,7 +651,8 @@ class _ProductInputSectionState extends State<ProductInputSection> {
     }
   }
 
-  Future<void> _loadProductVariableCostComponents(String? productId) async {
+  Future<void> _loadProductVariableCostComponents(String? productId, double sellingPrice) async {
+    // Dọn dẹp state cũ
     for (var component in _currentUnitVariableCostComponents) {
       (component['controller'] as TextEditingController?)?.dispose();
       (component['focusNode'] as FocusNode?)?.dispose();
@@ -657,19 +670,39 @@ class _ProductInputSectionState extends State<ProductInputSection> {
     }
 
     try {
+      // Tải danh sách các khoản chi phí biến đổi có sẵn
       List<Map<String, dynamic>> allAvailableExpenses =
       await ExpenseManager.loadAvailableVariableExpenses(widget.appState);
 
-      // Sửa logic lọc theo linkedProductId
+      // Lọc ra các chi phí đã được "Gắn" với sản phẩm này
       List<Map<String, dynamic>> productSpecificComponents = allAvailableExpenses
           .where((expense) => expense['linkedProductId'] == productId)
           .toList();
 
       for (var expenseComponent in productSpecificComponents) {
         String name = expenseComponent['name']?.toString() ?? 'Không rõ';
-        double cost = (expenseComponent['price'] as num? ?? 0.0).toDouble();
+
+        // =================================================================
+        // <<< SỬA LỖI VÀ CẬP NHẬT LOGIC TÍNH TOÁN NẰM Ở ĐÂY >>>
+        //
+        // Đọc loại chi phí và giá trị từ cấu trúc dữ liệu mới
+        final String costType = expenseComponent['costType']?.toString() ?? 'fixed';
+        final double costValue = (expenseComponent['costValue'] as num? ?? 0.0).toDouble();
+        double calculatedCost = 0.0; // Chi phí thực tế sau khi tính toán
+
+        if (costType == 'percentage') {
+          // Nếu là %, tính chi phí dựa trên giá bán của giao dịch
+          calculatedCost = sellingPrice * (costValue / 100.0);
+        } else {
+          // Nếu là 'fixed', lấy thẳng giá trị đã lưu
+          calculatedCost = costValue;
+        }
+        //
+        // <<< KẾT THÚC SỬA LỖI VÀ CẬP NHẬT >>>
+        // =================================================================
+
         var controller =
-        TextEditingController(text: _priceInputFormatter.format(cost));
+        TextEditingController(text: _priceInputFormatter.format(calculatedCost)); // Hiển thị chi phí đã tính
         var focusNode = FocusNode();
 
         controller.addListener(() {
@@ -695,14 +728,15 @@ class _ProductInputSectionState extends State<ProductInputSection> {
 
         _currentUnitVariableCostComponents.add({
           'name': name,
-          'originalCost': cost,
-          'cost': cost,
+          'originalCost': calculatedCost, // originalCost giờ là chi phí đã được tính toán
+          'cost': calculatedCost,
           'controller': controller,
           'focusNode': focusNode,
         });
+
         _lastLoadedCogsComponentsForProduct.add({
           'name': name,
-          'originalCost': cost,
+          'originalCost': calculatedCost,
         });
       }
 
@@ -870,12 +904,19 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                               color: AppColors.getTextColor(context))),
                     ))
                         .toList(), // [cite: 315]
-                    onChanged: (String? newValue) { // [cite: 315, 316]
+                    onChanged: (String? newValue) {
                       setState(() {
                         selectedProductId = newValue;
-                        _updatePriceControllerBasedOnSelection(newValue); // Cập nhật giá bán // [cite: 316]
-                        _loadProductVariableCostComponents(
-                            newValue); // MỚI: Load thành phần CPBĐ/ĐV // [cite: 317]
+                        // Cập nhật giá bán trên UI trước
+                        _updatePriceControllerBasedOnSelection(newValue);
+
+                        // Lấy giá bán hiện tại từ controller hoặc từ state
+                        final double currentSellingPrice = double.tryParse(widget.priceController.text
+                            .replaceAll('.', '')
+                            .replaceAll(',', '')) ?? selectedPriceFromDropdown;
+
+                        // Gọi hàm với đầy đủ tham số
+                        _loadProductVariableCostComponents(newValue, currentSellingPrice);
                       });
                     },
                     style: GoogleFonts.poppins( // [cite: 318, 319]

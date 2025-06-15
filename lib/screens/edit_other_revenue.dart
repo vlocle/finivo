@@ -295,7 +295,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
 
   @override
   Widget build(BuildContext context) {
-    final appState = Provider.of<AppState>(context);
+    final appState = context.read<AppState>();
     final bool canEditThisRevenue = appState.hasPermission('canEditRevenue');
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -335,34 +335,43 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
             ),
           ),
         ),
-        body: ScaleTransition(
-          scale: _scaleAnimation,
-          child: IndexedStack(
-            index: _selectedTab,
-            children: [
-              TransactionInputSection(
-                key: const ValueKey('otherRevenueInput'),
-                totalController: _totalController,
-                nameController: _nameController,
-                onAddTransaction: canEditThisRevenue ? () => _addTransaction(appState) : null,
-                appState: appState, // Not strictly needed if only calling callback
-                inputPriceFormatter: _inputPriceFormatter,
+        body: ValueListenableBuilder<int>(
+          valueListenable: appState.permissionVersion,
+          builder: (context, permissionVersion, child) {
+            final bool canEditThisRevenue = appState.hasPermission('canEditRevenue');
+
+            return ScaleTransition(
+              scale: _scaleAnimation,
+              child: IndexedStack(
+                index: _selectedTab,
+                children: [
+                  TransactionInputSection(
+                    key: const ValueKey('otherRevenueInput'),
+                    totalController: _totalController,
+                    nameController: _nameController,
+                    // `canEditThisRevenue` đã được cập nhật
+                    onAddTransaction: canEditThisRevenue ? () => _addTransaction(appState) : null,
+                    appState: appState,
+                    inputPriceFormatter: _inputPriceFormatter,
+                  ),
+                  TransactionHistorySection(
+                    key: const ValueKey('otherRevenueHistory'),
+                    transactionsNotifier: appState.otherRevenueTransactions,
+                    // `canEditThisRevenue` đã được cập nhật
+                    onEditTransaction: canEditThisRevenue ? _editTransaction : null,
+                    onDeleteTransaction: canEditThisRevenue ? _deleteTransaction : null,
+                    appState: appState,
+                    currencyFormat: currencyFormat,
+                    primaryColor: AppColors.primaryBlue,
+                    textColorPrimary: AppColors.getTextColor(context),
+                    textColorSecondary: AppColors.getTextSecondaryColor(context),
+                    cardBackgroundColor: AppColors.getCardColor(context),
+                    accentColor: AppColors.chartRed,
+                  ),
+                ],
               ),
-              TransactionHistorySection(
-                key: const ValueKey('otherRevenueHistory'),
-                transactionsNotifier: appState.otherRevenueTransactions, // MODIFIED: Pass ValueNotifier
-                onEditTransaction: canEditThisRevenue ? _editTransaction : null,
-                onDeleteTransaction: canEditThisRevenue ? _deleteTransaction : null,
-                appState: appState, // Pass appState if needed by callbacks directly
-                currencyFormat: currencyFormat,
-                primaryColor: AppColors.primaryBlue,
-                textColorPrimary: AppColors.getTextColor(context),
-                textColorSecondary: AppColors.getTextSecondaryColor(context),
-                cardBackgroundColor: AppColors.getCardColor(context),
-                accentColor: AppColors.chartRed,
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

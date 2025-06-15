@@ -19,6 +19,7 @@ class AppState extends ChangeNotifier {
   String? authUserId;
   String? activeUserId;
   Map<String, bool> activeUserPermissions = {};
+  final ValueNotifier<int> permissionVersion = ValueNotifier(0);
   DateTime _selectedDate = DateTime.now();
   final ValueNotifier<DateTime> selectedDateListenable = ValueNotifier(DateTime.now());
   final ValueNotifier<bool> isLoadingListenable = ValueNotifier(false);
@@ -57,6 +58,9 @@ class AppState extends ChangeNotifier {
   StreamSubscription<DocumentSnapshot>? _variableExpenseSubscription;
   StreamSubscription<DocumentSnapshot>? _dailyFixedExpenseSubscription;
   StreamSubscription<DocumentSnapshot>? _dailyDataSubscription;
+  StreamSubscription<QuerySnapshot>? _productsSubscription;
+  StreamSubscription<DocumentSnapshot>? _permissionSubscription;
+  StreamSubscription<DocumentSnapshot>? _variableExpenseListSubscription;
 
   double get fixedExpense => _fixedExpense;
   bool get notificationsEnabled => _notificationsEnabled;
@@ -171,15 +175,20 @@ class AppState extends ChangeNotifier {
       _cancelFixedExpenseSubscription();
       _cancelVariableExpenseSubscription();
       _cancelDailyFixedExpenseSubscription();
+      _cancelProductsSubscription();
+      _cancelVariableExpenseListSubscription();
+      _cancelPermissionSubscription();
 
       _loadSettings();
       _loadInitialData().then((_) async {
-        await _loadPermissionsForActiveUser();
+        _subscribeToPermissions();
 
         _subscribeToFixedExpenses();
         _subscribeToVariableExpenses();
         _subscribeToDailyFixedExpenses();
         _subscribeToDailyData();
+        _subscribeToProducts();
+        _subscribeToAvailableVariableExpenses();
         notifyListeners();
       });
     }
@@ -202,11 +211,14 @@ class AppState extends ChangeNotifier {
       _cancelFixedExpenseSubscription();
       _cancelVariableExpenseSubscription();
       _cancelDailyFixedExpenseSubscription();
+      _cancelProductsSubscription();
+      _cancelVariableExpenseListSubscription();
+      _cancelPermissionSubscription();
 
       print("Switching to user $newActiveUserId and reloading data...");
 
       // Tải quyền của người dùng mới TRƯỚC khi tải dữ liệu chính
-      await _loadPermissionsForActiveUser(); // <-- GỌI HÀM TẢI QUYỀN
+      _subscribeToPermissions();// <-- GỌI HÀM TẢI QUYỀN
 
       await _loadInitialData();
 
@@ -214,6 +226,8 @@ class AppState extends ChangeNotifier {
       _subscribeToVariableExpenses();
       _subscribeToDailyFixedExpenses();
       _subscribeToDailyData();
+      _subscribeToProducts();
+      _subscribeToAvailableVariableExpenses();
 
       notifyListeners();
     }
@@ -254,6 +268,9 @@ class AppState extends ChangeNotifier {
     _cancelVariableExpenseSubscription();
     _cancelDailyFixedExpenseSubscription();
     _cancelDailyDataSubscription();
+    _cancelProductsSubscription();
+    _cancelVariableExpenseListSubscription();
+    _cancelPermissionSubscription();
     _saveSettings();
     _cachedDateKey = null;
     _cachedData = null;
@@ -370,11 +387,13 @@ class AppState extends ChangeNotifier {
       _cancelDailyFixedExpenseSubscription();
       _cancelDailyDataSubscription();
       _cancelFixedExpenseSubscription();
+      _cancelVariableExpenseListSubscription();
 
       _subscribeToFixedExpenses();
       _subscribeToVariableExpenses();
       _subscribeToDailyFixedExpenses();
       _subscribeToDailyData();
+      _subscribeToAvailableVariableExpenses();
 
       // Chỉ cần notifyListeners() để các widget không dùng ValueNotifier cập nhật nếu có.
       notifyListeners();
@@ -434,29 +453,33 @@ class AppState extends ChangeNotifier {
     dataReadyListenable.value = true;
   }
 
-  Future<void> _loadPermissionsForActiveUser() async {
+  void _subscribeToPermissions() {
+    _cancelPermissionSubscription(); // Luôn hủy listener cũ
+
     if (isOwner()) {
-      activeUserPermissions = {}; // Reset map quyền
+      activeUserPermissions = {};
+      permissionVersion.value++; // Báo hiệu sự thay đổi
       return;
     }
 
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(activeUserId) // activeUserId là của Owner (A)
-          .collection('permissions')
-          .doc(authUserId)   // authUserId là của Viewer (B)
-          .get();
-
-      if (doc.exists && doc.data()?['permissions'] != null) {
-        activeUserPermissions = Map<String, bool>.from(doc.data()!['permissions']);
+    _permissionSubscription = FirebaseFirestore.instance
+        .collection('users').doc(activeUserId)
+        .collection('permissions').doc(authUserId)
+        .snapshots()
+        .listen((snapshot) {
+      print("Real-time permission update received!");
+      if (snapshot.exists && snapshot.data()?['permissions'] != null) {
+        activeUserPermissions = Map<String, bool>.from(snapshot.data()!['permissions']);
       } else {
-        activeUserPermissions = {}; // Không tìm thấy hoặc không có map permissions -> không có quyền
+        activeUserPermissions = {};
       }
-    } catch (e) {
-      print("Lỗi nghiêm trọng khi tải quyền: $e");
-      activeUserPermissions = {}; // Đặt về rỗng nếu có lỗi
-    }
+
+      permissionVersion.value++;
+    }, onError: (error) {
+      print("Lỗi khi lắng nghe quyền: $error");
+      activeUserPermissions = {};
+      permissionVersion.value++;
+    });
   }
 
   void notifyProductsUpdated() {
@@ -477,6 +500,115 @@ class AppState extends ChangeNotifier {
   void _cancelVariableExpenseSubscription() {
     _variableExpenseSubscription?.cancel();
     _variableExpenseSubscription = null;
+  }
+
+  void _cancelVariableExpenseListSubscription() {
+    _variableExpenseListSubscription?.cancel();
+    _variableExpenseListSubscription = null;
+  }
+
+  void _cancelPermissionSubscription() {
+    _permissionSubscription?.cancel();
+    _permissionSubscription = null;
+  }
+
+  void _subscribeToAvailableVariableExpenses() {
+    if (!_isFirebaseInitialized || activeUserId == null) return;
+
+    _cancelVariableExpenseListSubscription(); // Hủy listener cũ
+
+    final firestore = FirebaseFirestore.instance;
+    final String monthKey = DateFormat('yyyy-MM').format(_selectedDate);
+    final String firestoreDocKey = getKey('variableExpenseList_$monthKey');
+    final String hiveKey = '$activeUserId-variableExpenseList-$monthKey';
+
+    print("Bắt đầu lắng nghe DS chi phí biến đổi cho user: $activeUserId, tháng: $monthKey");
+
+    _variableExpenseListSubscription = firestore
+        .collection('users').doc(activeUserId)
+        .collection('expenses').doc('variableList')
+        .collection('monthly').doc(firestoreDocKey)
+        .snapshots()
+        .listen((snapshot) async {
+      if (snapshot.metadata.hasPendingWrites) {
+        return;
+      }
+
+      print("Phát hiện thay đổi DS chi phí biến đổi từ Firestore!");
+      List<Map<String, dynamic>> expenses = [];
+      if (snapshot.exists && snapshot.data()?['products'] != null) {
+        expenses = List<Map<String, dynamic>>.from(snapshot.data()!['products']);
+      }
+
+      // Cập nhật cache trên Hive
+      if (!Hive.isBoxOpen('variableExpenseListBox')) {
+        await Hive.openBox('variableExpenseListBox');
+      }
+      final variableExpenseListBox = Hive.box('variableExpenseListBox');
+      await variableExpenseListBox.put(hiveKey, expenses);
+
+      // Thông báo cho UI cập nhật. Ta có thể dùng lại notifier của products.
+      notifyProductsUpdated();
+
+    }, onError: (error) {
+      print("Lỗi khi lắng nghe DS chi phí biến đổi: $error");
+    });
+  }
+
+  void _cancelProductsSubscription() {
+    _productsSubscription?.cancel();
+    _productsSubscription = null;
+  }
+
+  void _subscribeToProducts() {
+    if (!_isFirebaseInitialized || activeUserId == null) return;
+
+    _cancelProductsSubscription(); // Luôn hủy listener cũ trước khi tạo mới
+
+    print("Bắt đầu lắng nghe thay đổi sản phẩm cho user: $activeUserId");
+    final firestore = FirebaseFirestore.instance;
+
+    _productsSubscription = firestore
+        .collection('users')
+        .doc(activeUserId)
+        .collection('products')
+        .snapshots() // Lắng nghe toàn bộ collection 'products'
+        .listen((snapshot) async {
+      // Bỏ qua các thay đổi đang chờ ghi từ chính client này để tránh vòng lặp
+      if (snapshot.metadata.hasPendingWrites) {
+        return;
+      }
+
+      print("Phát hiện thay đổi trong danh sách sản phẩm từ Firestore!");
+      if (!Hive.isBoxOpen('productsBox')) {
+        await Hive.openBox('productsBox');
+      }
+      var productsBox = Hive.box('productsBox');
+
+      // Cập nhật cache cho từng loại sản phẩm (chính và phụ)
+      for (var doc in snapshot.docs) {
+        final productList = List<Map<String, dynamic>>.from(doc.data()['products'] ?? []);
+        String hiveStorageKey = '';
+
+        // Xác định đúng key cho Hive cache dựa trên ID của document
+        if (doc.id == getKey('mainProductList')) {
+          hiveStorageKey = getKey('Doanh thu chính_productList');
+        } else if (doc.id == getKey('extraProductList')) {
+          hiveStorageKey = getKey('Doanh thu phụ_productList');
+        }
+
+        if (hiveStorageKey.isNotEmpty) {
+          await productsBox.put(hiveStorageKey, productList);
+          print("Đã cập nhật cache cho: $hiveStorageKey");
+        }
+      }
+
+      // Quan trọng: Thông báo cho UI rằng dữ liệu sản phẩm đã được cập nhật
+      notifyProductsUpdated();
+
+    }, onError: (error) {
+      print("Lỗi khi lắng nghe danh sách sản phẩm: $error");
+    });
   }
 
   // Dành cho file appstate.docx
@@ -2368,6 +2500,10 @@ class AppState extends ChangeNotifier {
     _cancelFixedExpenseSubscription();
     _cancelVariableExpenseSubscription();
     _cancelDailyFixedExpenseSubscription();
+    _cancelProductsSubscription();
+    _cancelVariableExpenseListSubscription();
+    _cancelPermissionSubscription();
+    permissionVersion.dispose();
     super.dispose();
   }
 }

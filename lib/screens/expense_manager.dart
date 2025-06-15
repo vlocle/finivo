@@ -247,94 +247,87 @@ class ExpenseManager {
     }
   }
 
-  // Load available variable expenses (Danh sách các loại chi phí biến đổi có thể chọn)
   static Future<List<Map<String, dynamic>>> loadAvailableVariableExpenses(
       AppState appState) async {
-    final String? userId = appState.activeUserId; // [cite: 922]
-    if (userId == null) return []; // [cite: 923]
-    final String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate); // [cite: 923]
-    final String hiveKey = '$userId-variableExpenseList-$monthKey'; // [cite: 923]
+    final String? userId = appState.activeUserId;
+    if (userId == null) return [];
+
+    final String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate);
+    final String hiveKey = '$userId-variableExpenseList-$monthKey';
+
     if (!Hive.isBoxOpen('variableExpenseListBox')) {
       await Hive.openBox('variableExpenseListBox');
     }
-    final variableExpenseListBox = Hive.box('variableExpenseListBox'); // [cite: 924]
+    final variableExpenseListBox = Hive.box('variableExpenseListBox');
 
-    final cachedData = variableExpenseListBox.get(hiveKey); // [cite: 924]
-    if (cachedData != null) { // [cite: 925]
+    // Luồng 1: Tải từ Hive cache
+    final cachedData = variableExpenseListBox.get(hiveKey);
+    if (cachedData != null) {
       try {
-        if (cachedData is List) { // [cite: 925]
-          List<Map<String, dynamic>> castedList = []; // [cite: 925]
-          for (var item in cachedData) { // [cite: 926]
-            if (item is Map) { // [cite: 926]
-              // Đảm bảo 'name' là String và 'price' là double, và thêm 'linkedProductName'
-              castedList.add({ //
-                'name': item['name']?.toString() ?? 'Không xác định', // [cite: 926]
-                'price': (item['price'] as num? ?? 0.0).toDouble(), // [cite: 926, 927]
-                'linkedProductId': item['linkedProductId'] as String?, // THÊM MỚI: Đọc trường liên kết sản phẩm
-              });
-            }
-          }
-          return castedList; // [cite: 928]
-        }
-      } catch (e) {
-        print(
-            'Error casting Hive data in loadAvailableVariableExpenses: $e. Falling back to Firestore.'); // [cite: 929]
-      }
-    }
-
-    try {
-      final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 930]
-      final String firestoreDocKey =
-      appState.getKey('variableExpenseList_$monthKey'); // [cite: 931]
-      DocumentSnapshot doc = await firestore // [cite: 932]
-          .collection('users') // [cite: 932]
-          .doc(userId) // [cite: 932]
-          .collection('expenses') // [cite: 932]
-          .doc('variableList') // [cite: 932]
-          .collection('monthly') // [cite: 932]
-          .doc(firestoreDocKey) // [cite: 932]
-          .get();
-      List<Map<String, dynamic>> expenses = []; // [cite: 933]
-      if (doc.exists && doc.data() != null) { // [cite: 933]
-        final data = doc.data() as Map<String, dynamic>; // [cite: 933]
-        if (data['products'] != null && data['products'] is List) { // [cite: 934]
-          List<dynamic> rawExpenses = data['products']; // [cite: 934]
-          expenses = rawExpenses.map((item) { // [cite: 935]
-            if (item is Map) { // [cite: 935]
-              return { //
-                'name': item['name']?.toString() ?? 'Không xác định', // [cite: 935]
-                'price': (item['price'] as num? ?? 0.0).toDouble(), // [cite: 935]
-                'linkedProductId': item['linkedProductId'] as String?, // THÊM MỚI: Đọc trường liên kết sản phẩm
-              };
-            }
-            return <String, dynamic>{'name': 'Lỗi dữ liệu', 'price': 0.0, 'linkedProductId': null}; // [cite: 936]
-          }).toList();
-        }
-      }
-      await variableExpenseListBox.put(hiveKey, expenses); // [cite: 937]
-      return expenses; // [cite: 938]
-    } catch (e) {
-      print("Error loading available variable expenses from Firestore: $e"); // [cite: 938]
-      // Attempt to return cached data on error if not already returned (though logic above might catch it)
-      if (cachedData != null && cachedData is List) {
-        try {
+        if (cachedData is List) {
           List<Map<String, dynamic>> castedList = [];
           for (var item in cachedData) {
             if (item is Map) {
+              // =============================================================
+              // <<< SỬA LỖI CỐT LÕI NẰM Ở ĐÂY (LOGIC ĐỌC TỪ HIVE) >>>
+              //
+              // Đọc theo cấu trúc dữ liệu mới
               castedList.add({
                 'name': item['name']?.toString() ?? 'Không xác định',
-                'price': (item['price'] as num? ?? 0.0).toDouble(),
+                'costType': item['costType']?.toString() ?? 'fixed',
+                'costValue': (item['costValue'] as num? ?? 0.0).toDouble(),
                 'linkedProductId': item['linkedProductId'] as String?,
               });
+              //
+              // <<< KẾT THÚC SỬA LỖI >>>
+              // =============================================================
             }
           }
           return castedList;
-        } catch (castError) {
-          print("Error casting Hive data on fallback for available variable expenses: $castError");
-          return [];
+        }
+      } catch (e) {
+        print('Error casting Hive data in loadAvailableVariableExpenses: $e. Falling back to Firestore.');
+      }
+    }
+
+    // Luồng 2: Tải từ Firestore (Logic này đã đúng, giữ nguyên)
+    try {
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      final String firestoreDocKey = appState.getKey('variableExpenseList_$monthKey');
+      DocumentSnapshot doc = await firestore
+          .collection('users')
+          .doc(userId)
+          .collection('expenses')
+          .doc('variableList')
+          .collection('monthly')
+          .doc(firestoreDocKey)
+          .get();
+
+      List<Map<String, dynamic>> expenses = [];
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data() as Map<String, dynamic>;
+        if (data['products'] != null && data['products'] is List) {
+          List<dynamic> rawExpenses = data['products'];
+          expenses = rawExpenses.map((item) {
+            if (item is Map) {
+              return {
+                'name': item['name']?.toString() ?? 'Không xác định',
+                'costType': item['costType']?.toString() ?? 'fixed',
+                'costValue': (item['costValue'] as num? ?? 0.0).toDouble(),
+                'linkedProductId': item['linkedProductId'] as String?,
+              };
+            }
+            return <String, dynamic>{'name': 'Lỗi dữ liệu', 'costType': 'fixed', 'costValue': 0.0, 'linkedProductId': null};
+          }).toList();
         }
       }
-      return []; // [cite: 939]
+
+      // Lưu kết quả đúng vào cache cho lần sau
+      await variableExpenseListBox.put(hiveKey, expenses);
+      return expenses;
+    } catch (e) {
+      print("Error loading available variable expenses from Firestore: $e");
+      return []; // Trả về rỗng nếu có lỗi
     }
   }
 

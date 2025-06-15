@@ -900,7 +900,6 @@ class _RevenueScreenState extends State<RevenueScreen>
   }
 
   Widget _buildTransactionList(AppState appState) {
-    final bool isOwner = appState.authUserId == appState.activeUserId;
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
       sliver: ValueListenableBuilder<List<Map<String, dynamic>>>(
@@ -910,14 +909,15 @@ class _RevenueScreenState extends State<RevenueScreen>
             // Thu thập tất cả các UID duy nhất từ danh sách giao dịch
             final uids = transactions
                 .map((t) => t['createdBy'] as String?)
-                .whereType<String>() // <-- SỬA LẠI DÙNG whereType<String>()
+                .whereType<String>()
                 .toSet();
-
             // Yêu cầu AppState tải tên của các UID này (nếu chưa có trong cache)
             if (uids.isNotEmpty) {
               // Dùng WidgetsBinding để tránh gọi setState trong lúc build
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                context.read<AppState>().fetchDisplayNames(uids);
+                if(context.mounted) {
+                  context.read<AppState>().fetchDisplayNames(uids);
+                }
               });
             }
           }
@@ -952,21 +952,17 @@ class _RevenueScreenState extends State<RevenueScreen>
             delegate: SliverChildBuilderDelegate(
                   (context, index) {
                 final transaction = transactions[index];
-                final bool isCreator = (transaction['createdBy'] ?? "") == appState.authUserId;
-                final bool canModify = appState.isOwner() || (appState.hasPermission('canEditRevenue') && isCreator);
+                final String? creatorUid = transaction['createdBy'] as String?;
                 final String? dateTimeString = transaction['date'];
                 final String formattedTime = dateTimeString != null
                     ? dateTimeFormat.format(DateTime.parse(dateTimeString))
                     : 'N/A';
-
-                // <<< MỚI: Tính toán các giá trị cần thiết >>>
                 final double totalRevenue = (transaction['total'] as num? ?? 0.0).toDouble();
                 final double totalVariableCost = (transaction['totalVariableCost'] as num? ?? 0.0).toDouble();
                 final double grossProfit = totalRevenue - totalVariableCost;
                 final List<dynamic>? cogsComponents = _selectedTransactionCategory == 'Doanh thu phụ'
                     ? transaction['cogsComponentsUsed_Secondary'] as List<dynamic>?
                     : transaction['cogsComponentsUsed'] as List<dynamic>?;
-
                 IconData transactionIcon;
                 Color iconColor;
                 if (_selectedTransactionCategory == 'Doanh thu chính') {
@@ -980,203 +976,208 @@ class _RevenueScreenState extends State<RevenueScreen>
                   iconColor = Colors.purple.shade600;
                 }
 
-                final String? creatorUid = transaction['createdBy'] as String?;
-                return FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Slidable(
-                    key: Key(transaction['id']?.toString() ?? UniqueKey().toString()),
-                    endActionPane: canModify ? ActionPane(
-                      motion: const StretchMotion(),
-                      children: [
-                        // Các SlidableAction (Sửa, Xóa) giữ nguyên
-                        SlidableAction(
-                          onPressed: (context) {
-                            _editTransaction(appState, transactions, index, _selectedTransactionCategory);
-                          },
-                          backgroundColor: Colors.blueAccent.shade400,
-                          foregroundColor: Colors.white,
-                          icon: Icons.edit_outlined,
-                          label: 'Sửa',
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        SlidableAction(
-                          onPressed: (context) async {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                                title: Text(
-                                  'Xác nhận xóa',
-                                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
-                                ),
-                                content: Text(
-                                  'Bạn có chắc chắn muốn xóa giao dịch "${transaction['name']}" không? Hành động này không thể hoàn tác.',
-                                  style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
-                                ),
-                                actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
-                                    child: Text(
-                                        'Hủy',
-                                        style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context), fontWeight: FontWeight.w500)
-                                    ),
-                                  ),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.redAccent,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                    ),
-                                    onPressed: () => Navigator.pop(context, true),
-                                    child: Text('Xóa', style: GoogleFonts.poppins()),
-                                  ),
-                                ],
-                              ),
-                            );
+                // BỌC WIDGET BẰNG VALUELLISTENABLEBUILDER
+                return ValueListenableBuilder<int>(
+                  valueListenable: appState.permissionVersion,
+                  builder: (context, permissionVersion, child) {
+                    // Logic kiểm tra quyền được chuyển vào đây
+                    final bool isCreator = (transaction['createdBy'] ?? "") == appState.authUserId;
+                    final bool canModify = appState.isOwner() || (appState.hasPermission('canEditRevenue') && isCreator);
 
-                            if (confirm == true) {
-                              _removeTransaction(appState, transactions, index, _selectedTransactionCategory);
-                            }
-                          },
-                          backgroundColor: Colors.redAccent.shade400,
-                          foregroundColor: Colors.white,
-                          icon: Icons.delete_outline,
-                          label: 'Xóa',
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ],
-                    ): null,
-                    child: Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15)),
-                      color: AppColors.getCardColor(context),
-                      // <<< MỚI: Thay thế ListTile bằng ExpansionTile >>>
-                      child: ExpansionTile(
-                        leading: Container(
-                          padding: EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                              color: iconColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12)),
-                          child: Icon(
-                            transactionIcon,
-                            color: iconColor,
-                            size: 26,
-                          ),
-                        ),
-                        title: Text(
-                          transaction['name']?.toString() ?? 'Không xác định',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                              color: AppColors.getTextColor(context)),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    return FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Slidable(
+                        key: Key(transaction['id']?.toString() ?? UniqueKey().toString()),
+                        endActionPane: canModify // Sử dụng biến `canModify` đã được cập nhật real-time
+                            ? ActionPane(
+                          motion: const StretchMotion(),
                           children: [
-                            // Dòng tổng doanh thu
-                            Text(
-                              'Tổng DT: ${currencyFormat.format(totalRevenue)}',
+                            SlidableAction(
+                              onPressed: (context) {
+                                _editTransaction(appState, transactions, index, _selectedTransactionCategory);
+                              },
+                              backgroundColor: Colors.blueAccent.shade400,
+                              foregroundColor: Colors.white,
+                              icon: Icons.edit_outlined,
+                              label: 'Sửa',
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            SlidableAction(
+                              onPressed: (context) async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                    title: Text(
+                                      'Xác nhận xóa',
+                                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
+                                    ),
+                                    content: Text(
+                                      'Bạn có chắc chắn muốn xóa giao dịch "${transaction['name']}" không? Hành động này không thể hoàn tác.',
+                                      style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+                                    ),
+                                    actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: Text(
+                                            'Hủy',
+                                            style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context), fontWeight: FontWeight.w500)
+                                        ),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.redAccent,
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: Text('Xóa', style: GoogleFonts.poppins()),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  _removeTransaction(appState, transactions, index, _selectedTransactionCategory);
+                                }
+                              },
+                              backgroundColor: Colors.redAccent.shade400,
+                              foregroundColor: Colors.white,
+                              icon: Icons.delete_outline,
+                              label: 'Xóa',
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ],
+                        )
+                            : null,
+                        child: Card(
+                          elevation: 2,
+                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15)
+                          ),
+                          color: AppColors.getCardColor(context),
+                          child: ExpansionTile(
+                            leading: Container(
+                              padding: EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                  color: iconColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12)
+                              ),
+                              child: Icon(
+                                transactionIcon,
+                                color: iconColor,
+                                size: 26,
+                              ),
+                            ),
+                            title: Text(
+                              transaction['name']?.toString() ?? 'Không xác định',
                               style: TextStyle(
-                                  fontSize: 14,
-                                  color: AppColors.getTextSecondaryColor(context),
-                                  fontWeight: FontWeight.w500),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  color: AppColors.getTextColor(context)),
                               overflow: TextOverflow.ellipsis,
                             ),
-                            // Dòng hiển thị người tạo mới được thêm vào
-                            if (creatorUid != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 3.0),
-                                child: Consumer<AppState>( // Dùng Consumer để UI tự cập nhật khi tên được tải về
-                                  builder: (context, appStateConsumer, child) {
-                                    return Text(
-                                      "Tạo bởi: ${appStateConsumer.getUserDisplayName(creatorUid)}",
-                                      style: GoogleFonts.poppins(
-                                          fontSize: 11.5,
-                                          color: AppColors.getTextSecondaryColor(context).withOpacity(0.8),
-                                          fontStyle: FontStyle.italic),
-                                    );
-                                  },
-                                ),
-                              ),
-                          ],
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              transaction['quantity'] != null
-                                  ? 'SL: ${transaction['quantity']}'
-                                  : '',
-                              style: TextStyle(
-                                  fontSize: 13, color: AppColors.getTextSecondaryColor(context)),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              formattedTime,
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey.shade500),
-                            ),
-                          ],
-                        ),
-                        // <<< MỚI: Phần nội dung được mở rộng >>>
-                        children: <Widget>[
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0).copyWith(left: 70), // Căn lề với title
-                            child: Column(
+                            subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Divider(height: 1, color: Colors.grey.shade200),
-                                SizedBox(height: 8),
-                                _buildProfitDetailRow(
-                                    'Tổng CP Biến đổi:',
-                                    currencyFormat.format(totalVariableCost),
-                                    Colors.red.shade600
+                                Text(
+                                  'Tổng DT: ${currencyFormat.format(totalRevenue)}',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.getTextSecondaryColor(context),
+                                      fontWeight: FontWeight.w500),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                SizedBox(height: 4),
-                                _buildProfitDetailRow(
-                                    'Lợi nhuận gộp:',
-                                    currencyFormat.format(grossProfit),
-                                    Colors.green.shade700
-                                ),
-                                // Hiển thị các thành phần chi phí nếu có
-                                if (cogsComponents != null && cogsComponents.isNotEmpty) ...[
-                                  SizedBox(height: 8),
-                                  Divider(height: 1, color: Colors.grey.shade200),
+                                if (creatorUid != null)
                                   Padding(
-                                    padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
-                                    child: Text(
-                                      'Chi tiết giá vốn:',
-                                      style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.getTextSecondaryColor(context)),
+                                    padding: const EdgeInsets.only(top: 3.0),
+                                    child: Consumer<AppState>(
+                                      builder: (context, appStateConsumer, child) {
+                                        return Text(
+                                          "Tạo bởi: ${appStateConsumer.getUserDisplayName(creatorUid)}",
+                                          style: GoogleFonts.poppins(
+                                              fontSize: 11.5,
+                                              color: AppColors.getTextSecondaryColor(context).withOpacity(0.8),
+                                              fontStyle: FontStyle.italic),
+                                        );
+                                      },
                                     ),
                                   ),
-                                  ...cogsComponents.map((component) {
-                                    final name = component['name'] ?? 'Thành phần không rõ';
-                                    final cost = (component['cost'] as num? ?? 0.0);
-                                    return Padding(
-                                      padding: const EdgeInsets.only(left: 8.0, top: 2.0, bottom: 2.0),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text('  • $name', style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
-                                          Text(currencyFormat.format(cost), style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
-                                ],
-                                SizedBox(height: 8),
                               ],
                             ),
-                          )
-                        ],
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  transaction['quantity'] != null
+                                      ? 'SL: ${transaction['quantity']}'
+                                      : '',
+                                  style: TextStyle(
+                                      fontSize: 13, color: AppColors.getTextSecondaryColor(context)),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  formattedTime,
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.grey.shade500),
+                                ),
+                              ],
+                            ),
+                            children: <Widget>[
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0).copyWith(left: 70),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Divider(height: 1, color: Colors.grey.shade200),
+                                    SizedBox(height: 8),
+                                    _buildProfitDetailRow(
+                                        'Tổng CP Biến đổi:',
+                                        currencyFormat.format(totalVariableCost),
+                                        Colors.red.shade600),
+                                    SizedBox(height: 4),
+                                    _buildProfitDetailRow(
+                                        'Lợi nhuận gộp:',
+                                        currencyFormat.format(grossProfit),
+                                        Colors.green.shade700
+                                    ),
+                                    if (cogsComponents != null && cogsComponents.isNotEmpty) ...[
+                                      SizedBox(height: 8),
+                                      Divider(height: 1, color: Colors.grey.shade200),
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+                                        child: Text(
+                                          'Chi tiết giá vốn:',
+                                          style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.getTextSecondaryColor(context)),
+                                        ),
+                                      ),
+                                      ...cogsComponents.map((component) {
+                                        final name = component['name'] ?? 'Thành phần không rõ';
+                                        final cost = (component['cost'] as num? ?? 0.0);
+                                        return Padding(
+                                          padding: const EdgeInsets.only(left: 8.0, top: 2.0, bottom: 2.0),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text('  • $name', style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
+                                              Text(currencyFormat.format(cost), style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
+                                            ],
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ],
+                                    SizedBox(height: 8),
+                                  ],
+                                ),
+                              )
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               },
               childCount: transactions.length,

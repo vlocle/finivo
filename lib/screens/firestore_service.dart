@@ -32,4 +32,17 @@ class FirestoreService {
       print("Lỗi khi lưu thông tin người dùng vào Firestore: $e"); //
     }
   }
+
+  Future<void> updateDisplayName(String uid, String newName) async {
+    try {
+      await _db.collection('users').doc(uid).update({
+        'displayName': newName,
+      });
+      print("Đã cập nhật displayName cho user: $uid");
+    } catch (e) {
+      print("Lỗi khi cập nhật displayName trên Firestore: $e");
+      // Ném lại lỗi để bên gọi có thể xử lý
+      rethrow;
+    }
+  }
 }

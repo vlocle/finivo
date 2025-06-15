@@ -195,76 +195,87 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildHeader(BuildContext context, User? user, bool isDarkMode) { // [cite: 45]
+  Widget _buildHeader(BuildContext context, User? user, bool isDarkMode) {
     return Padding(
-      padding: const EdgeInsets.all(16.0), // [cite: 45]
+      padding: const EdgeInsets.all(16.0), //
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween, // [cite: 45]
+        mainAxisAlignment: MainAxisAlignment.spaceBetween, //
+        crossAxisAlignment: CrossAxisAlignment.center, // Căn chỉnh các item theo chiều dọc
         children: [
-          Row(
-            children: [
-              GestureDetector( // [cite: 45]
-                onTap: () { // [cite: 46]
-                  Navigator.push( // [cite: 46]
-                    context,
-                    MaterialPageRoute(builder: (context) => UserSettingsScreen()), // [cite: 46]
-                  );
-                },
-                child: Container( // [cite: 47]
-                  decoration: BoxDecoration( // [cite: 47]
-                    shape: BoxShape.circle, // [cite: 47]
-                    border: Border.all(color: AppColors.primaryBlue.withOpacity(0.5), width: 2), // [cite: 47]
-                    boxShadow: [ // [cite: 48]
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1), // [cite: 48]
-                        blurRadius: 5, // [cite: 48]
-                        offset: const Offset(0, 2), // [cite: 49]
-                      )
-                    ],
-                  ),
-                  child: CircleAvatar( // [cite: 49]
-                    radius: 24, // [cite: 50]
-                    backgroundColor: AppColors.getCardColor(context), // [cite: 50, 51]
-                    backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null, // [cite: 51, 52]
-                    child: user?.photoURL == null // [cite: 52]
-                        ? Icon(Icons.person, size: 30, color: AppColors.primaryBlue) // [cite: 53]
-                        : null, // [cite: 53]
+          // Bọc Row chứa avatar và tên bằng Flexible để nó có thể co giãn
+          Flexible(
+            child: Row(
+              // Row này chỉ chiếm không gian cần thiết, không đẩy các widget khác
+              mainAxisSize: MainAxisSize.min, //
+              children: [
+                GestureDetector( //
+                  onTap: () { //
+                    Navigator.push( //
+                      context,
+                      MaterialPageRoute(builder: (context) => UserSettingsScreen()), //
+                    );
+                  },
+                  child: Container( //
+                    decoration: BoxDecoration( //
+                      shape: BoxShape.circle, //
+                      border: Border.all(color: AppColors.primaryBlue.withOpacity(0.5), width: 2), //
+                      boxShadow: [ //
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1), //
+                          blurRadius: 5, //
+                          offset: const Offset(0, 2), //
+                        )
+                      ],
+                    ),
+                    child: CircleAvatar( //
+                      radius: 24, //
+                      backgroundColor: AppColors.getCardColor(context), //
+                      backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null, //
+                      child: user?.photoURL == null //
+                          ? Icon(Icons.person, size: 30, color: AppColors.primaryBlue) //
+                          : null, //
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12), // [cite: 53]
-              AccountSwitcher(textColor: AppColors.getTextColor(context)),
-            ],
+                const SizedBox(width: 12), //
+                // Bọc AccountSwitcher bằng Flexible để tên có thể co lại
+                Flexible(
+                  child: AccountSwitcher(textColor: AppColors.getTextColor(context)),
+                ),
+              ],
+            ),
           ),
-          GestureDetector(
-            onTap: () => _selectDateRange(context), // [cite: 55, 56]
+
+          // Phần chọn ngày được giữ nguyên
+          GestureDetector( //
+            onTap: () => _selectDateRange(context), //
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // [cite: 56]
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), //
               decoration: BoxDecoration(
-                color: AppColors.getCardColor(context), // [cite: 56]
-                borderRadius: BorderRadius.circular(20), // [cite: 56]
-                border: Border.all(color: AppColors.getBorderColor(context)), // [cite: 57]
-                boxShadow: [ // [cite: 57]
+                color: AppColors.getCardColor(context), //
+                borderRadius: BorderRadius.circular(20), //
+                border: Border.all(color: AppColors.getBorderColor(context)), //
+                boxShadow: [ //
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05), // [cite: 57, 58]
-                    blurRadius: 4, // [cite: 58]
-                    offset: const Offset(0, 2), // [cite: 58]
+                    color: Colors.black.withOpacity(0.05), //
+                    blurRadius: 4, //
+                    offset: const Offset(0, 2), //
                   )
                 ],
               ),
-              child: Row( // [cite: 59]
-                mainAxisSize: MainAxisSize.min, // [cite: 59]
+              child: Row( //
+                mainAxisSize: MainAxisSize.min, //
                 children: [
-                  Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.primaryBlue), // [cite: 59]
-                  const SizedBox(width: 6), // [cite: 59]
-                  Text( // [cite: 60]
+                  Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.primaryBlue), //
+                  const SizedBox(width: 6), //
+                  Text( //
                     selectedDateRange != null
-                        ? "${DateFormat('dd/MM').format(selectedDateRange!.start)} - ${DateFormat('dd/MM').format(selectedDateRange!.end)}"
-                        : "Chọn ngày", // [cite: 60]
-                    style: TextStyle( // [cite: 61]
-                        color: AppColors.primaryBlue, // [cite: 61]
-                        fontWeight: FontWeight.w500, // [cite: 61]
-                        fontSize: 13), // [cite: 61]
+                        ? "${DateFormat('dd/MM').format(selectedDateRange!.start)} - ${DateFormat('dd/MM').format(selectedDateRange!.end)}" //
+                        : "Chọn ngày", //
+                    style: TextStyle( //
+                        color: AppColors.primaryBlue, //
+                        fontWeight: FontWeight.w500, //
+                        fontSize: 13), //
                   ),
                 ],
               ),

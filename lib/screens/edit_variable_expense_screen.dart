@@ -18,15 +18,13 @@ class EditVariableExpenseScreen extends StatefulWidget {
 
 class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
     with SingleTickerProviderStateMixin {
-  String? selectedExpenseName; //
   final TextEditingController amountController = TextEditingController(); //
   final currencyFormat =
   NumberFormat.currency(locale: 'vi_VN', symbol: 'VNĐ'); //
   final NumberFormat _inputPriceFormatter = NumberFormat("#,##0", "vi_VN"); //
+  final TextEditingController nameController = TextEditingController();
   late AppState appState; //
 
-  // State variables mới
-  double selectedPriceFromDropdown = 0.0; //
   final FocusNode _amountFocusNode = FocusNode(); //
 
   late AnimationController _animationController; //
@@ -36,22 +34,13 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   late Animation<double> _buttonScaleAnimation; //
 
   List<Map<String, dynamic>> variableExpenses = []; //
-  List<Map<String, dynamic>> availableExpenses = []; //
   bool isLoading = true; //
   bool hasError = false; //
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Lưu trữ tham chiếu đến AppState
-    appState = Provider.of<AppState>(context, listen: false); //
-    // Di chuyển logic khởi tạo listener vào đây
-    appState.productsUpdated.addListener(_onProductOrExpenseListUpdated); //
-  }
-
-  @override
   void initState() {
-    super.initState(); //
+    super.initState();
+    appState = Provider.of<AppState>(context, listen: false);
     _animationController = AnimationController(
         duration: const Duration(milliseconds: 700), vsync: this); //
     _slideAnimation = Tween<Offset>(
@@ -72,11 +61,15 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
 
     _loadInitialData(); //
     amountController.addListener(_onAmountChanged); //
+    appState.productsUpdated.addListener(_onExpensesUpdated);
   }
 
-  void _onProductOrExpenseListUpdated() {
+  void _onExpensesUpdated() {
+    // Khi AppState báo có cập nhật (từ một trong hai listener),
+    // chúng ta sẽ tải lại toàn bộ dữ liệu cho màn hình này.
+    print("Nhận tín hiệu cập nhật chi phí, đang tải lại dữ liệu...");
     if (mounted) {
-      _loadInitialData(); //
+      _loadInitialData();
     }
   }
 
@@ -85,134 +78,55 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   }
 
   Future<void> _loadInitialData() async {
-    if (!mounted) return; //
+    if (!mounted) return;
     setState(() {
-      isLoading = true; //
-      hasError = false; //
+      isLoading = true;
+      hasError = false;
     });
 
     try {
       final appState = Provider.of<AppState>(context, listen: false);
-      final results = await Future.wait([
-        ExpenseManager.loadVariableExpenses(appState),
-        ExpenseManager.loadAvailableVariableExpenses(appState),
-      ]);
-
-      // ===================== PHẦN THÊM MỚI =====================
-      // Lọc danh sách chi phí có sẵn để chỉ lấy những chi phí không được gắn sản phẩm.
-      final List<Map<String, dynamic>> allAvailableExpenses = results[1];
-      final List<Map<String, dynamic>> unlinkedExpenses = allAvailableExpenses
-          .where((expense) => expense['linkedProductId'] == null)
-          .toList();
-      // ========================================================
+      // Chỉ cần tải danh sách các chi phí đã nhập trong ngày
+      final dailyExpenses = await ExpenseManager.loadVariableExpenses(appState);
 
       if (mounted) {
         setState(() {
-          variableExpenses = results[0];
-          // Sử dụng danh sách đã được lọc
-          availableExpenses = unlinkedExpenses;
-          appState.variableExpenseList.value = List.from(results[0]);
+          variableExpenses = dailyExpenses;
+          appState.variableExpenseList.value = List.from(dailyExpenses);
           isLoading = false;
           _animationController.forward();
           _resetFormFields();
         });
       }
-    } catch (e) { //
-      if (mounted) { //
+    } catch (e) {
+      if (mounted) {
         setState(() {
-          hasError = true; //
-          isLoading = false; //
+          hasError = true;
+          isLoading = false;
         });
-        final appState = Provider.of<AppState>(context, listen: false); //
-        final String dateKey = DateFormat('yyyy-MM-dd').format(appState.selectedDate); //
-        final String monthKey = DateFormat('yyyy-MM').format(appState.selectedDate); //
-        final String firestoreDailyVariableDocId =
-        appState.getKey('variableTransactionHistory_$dateKey'); //
-        final String hiveVariableKey =
-            '${appState.activeUserId}-variableExpenses-$firestoreDailyVariableDocId'; //
-        final String hiveListKey =
-            '${appState.activeUserId}-variableExpenseList-$monthKey'; //
-        final variableExpensesBox = Hive.box('variableExpensesBox'); //
-        final variableExpenseListBox = Hive.box('variableExpenseListBox'); //
-        final rawCachedVariable = variableExpensesBox.get(hiveVariableKey) ?? []; //
-        final rawCachedList = variableExpenseListBox.get(hiveListKey) ?? []; //
-        List<Map<String, dynamic>> castedVariableExpenses = []; //
-        List<Map<String, dynamic>> castedAvailableExpenses = []; //
-
-        if (rawCachedVariable is List) { //
-          for (var item in rawCachedVariable) { //
-            if (item is Map) { //
-              castedVariableExpenses.add( //
-                  Map<String, dynamic>.fromEntries(item.entries.map( //
-                          (entry) => MapEntry(entry.key.toString(), entry.value)))); //
-            }
-          }
-        }
-        if (rawCachedList is List) { //
-          for (var item in rawCachedList) { //
-            if (item is Map) { //
-              castedAvailableExpenses.add(Map<String, dynamic>.fromEntries( //
-                  item.entries.map((entry) => //
-                  MapEntry(entry.key.toString(), entry.value)))); //
-            }
-          }
-        }
-        if (mounted &&
-            (castedVariableExpenses.isNotEmpty ||
-                castedAvailableExpenses.isNotEmpty)) { //
-          setState(() {
-            variableExpenses = castedVariableExpenses; //
-            availableExpenses = castedAvailableExpenses; //
-            appState.variableExpenseList.value =
-                List.from(castedVariableExpenses); //
-            isLoading = false; //
-            hasError = false; //
-            _animationController.forward(); //
-            _resetFormFields(); //
-          });
-        } else if (mounted) {
-          _showStyledSnackBar("Lỗi tải dữ liệu và không có cache.", //
-              isError: true); //
-        }
+        _showStyledSnackBar("Lỗi tải dữ liệu. Vui lòng thử lại.", isError: true);
       }
-      print("Error loading expenses in EditVariableExpenseScreen: $e"); //
+      print("Error loading expenses in EditVariableExpenseScreen: $e");
     }
   }
 
   @override
   void dispose() {
-    appState.productsUpdated.removeListener(_onProductOrExpenseListUpdated); //
-    amountController.removeListener(_onAmountChanged); //
+    appState.productsUpdated.removeListener(_onExpensesUpdated);
+    nameController.dispose();
     amountController.dispose(); //
     _amountFocusNode.dispose(); //
     _animationController.dispose(); //
     super.dispose(); //
   }
 
-  void _updateAmountControllerBasedOnSelection() {
-    if (!mounted) return;
-    if (selectedExpenseName != null) {
-      final selectedExpenseData = availableExpenses.firstWhere(
-              (exp) => exp['name'] == selectedExpenseName,
-          orElse: () => {'price': 0.0});
-      selectedPriceFromDropdown =
-          (selectedExpenseData['price'] as num? ?? 0.0).toDouble();
-      amountController.text =
-          _inputPriceFormatter.format(selectedPriceFromDropdown);
-    } else {
-      selectedPriceFromDropdown = 0.0;
-      amountController.text = _inputPriceFormatter.format(0);
-    }
-  }
-
   void _resetFormFields() {
     if (!mounted) return;
     setState(() {
-      selectedExpenseName = null;
-      selectedPriceFromDropdown = 0.0;
+      nameController.clear(); // <-- THAY ĐỔI Ở ĐÂY
       amountController.text = _inputPriceFormatter.format(0);
       if (_amountFocusNode.hasFocus) {
-        _amountFocusNode.unfocus();
+      _amountFocusNode.unfocus();
       }
     });
   }
@@ -231,48 +145,50 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   }
 
   void addExpense(AppState appState) {
-    if (selectedExpenseName == null) {
-      _showStyledSnackBar("Vui lòng chọn một khoản chi phí!", isError: true);
+    final String expenseName = nameController.text.trim();
+    if (expenseName.isEmpty) {
+      _showStyledSnackBar("Vui lòng nhập tên khoản chi phí!", isError: true);
       return;
     }
 
-    // Luôn lấy số tiền từ ô nhập liệu
     double amountToUse = double.tryParse(
         amountController.text.replaceAll('.', '').replaceAll(',', '')) ??
         0.0;
 
     if (amountToUse <= 0) {
-      _showStyledSnackBar("Số tiền phải lớn hơn 0!", isError: true);
-      return;
+    _showStyledSnackBar("Số tiền phải lớn hơn 0!", isError: true);
+    return;
     }
 
     if (!mounted) return;
 
-    // Giữ nguyên phần logic lưu dữ liệu ở sau
     setState(() {
       List<Map<String, dynamic>> currentVariableExpenses =
       List.from(appState.variableExpenseList.value);
+
       currentVariableExpenses.add({
-        "name": selectedExpenseName,
+        "name": expenseName, // <-- THAY ĐỔI: Lấy từ nameController
         "amount": amountToUse,
         "date": DateTime.now().toIso8601String(),
         "createdBy": appState.authUserId,
       });
-      appState.variableExpenseList.value = currentVariableExpenses; //
+
+      appState.variableExpenseList.value = currentVariableExpenses;
       variableExpenses = List.from(currentVariableExpenses);
+
       ExpenseManager.saveVariableExpenses(appState, currentVariableExpenses)
           .then((_) {
-        return ExpenseManager.updateTotalVariableExpense(
-            appState, currentVariableExpenses); //
+      return ExpenseManager.updateTotalVariableExpense(
+      appState, currentVariableExpenses);
       }).then((total) {
-        appState.setExpenses(appState.fixedExpense, total);
-        _showStyledSnackBar("Đã thêm: $selectedExpenseName");
-        _resetFormFields();
+      appState.setExpenses(appState.fixedExpense, total);
+      _showStyledSnackBar("Đã thêm: $expenseName");
+      _resetFormFields();
       }).catchError((e) {
-        _showStyledSnackBar("Lỗi khi lưu chi phí: $e", isError: true);
+      _showStyledSnackBar("Lỗi khi lưu chi phí: $e", isError: true);
       });
     });
-    FocusScope.of(context).unfocus(); //
+    FocusScope.of(context).unfocus();
   }
 
   void removeExpense(int index, AppState appState) {
@@ -753,82 +669,13 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                                         color: AppColors.chartRed), //
                                   ),
                                   const SizedBox(height: 16), //
-                                  DropdownButtonFormField<String>( //
-                                    value: selectedExpenseName,
-                                    hint: Text("Chọn khoản chi phí",
-                                        style: GoogleFonts.poppins(
-                                            color:
-                                            AppColors.getTextSecondaryColor(context))), //
-                                    isExpanded: true, //
-                                    decoration: InputDecoration( //
-                                      prefixIcon: Icon(
-                                          Icons.category_outlined,
-                                          color: AppColors.chartRed,
-                                          size: 22), //
-                                      border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: AppColors.getBorderColor(context))
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: AppColors.getBorderColor(context))
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: AppColors.chartRed, width: 1.5)
-                                      ),
-                                      filled: true, //
-                                      fillColor: AppColors.getBackgroundColor(context)
-                                          .withOpacity(0.5), //
-                                      contentPadding:
-                                      const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 14), //
-                                    ),
-                                    items:
-                                    availableExpenses.isEmpty //
-                                        ? [
-                                      const DropdownMenuItem<
-                                          String>( //
-                                        value: null, //
-                                        child: Text( //
-                                            "Chưa có khoản chi phí nào", //
-                                            style: TextStyle(
-                                                fontStyle: FontStyle
-                                                    .italic)), //
-                                      )
-                                    ]
-                                        : availableExpenses.map(
-                                            (expense) =>
-                                            DropdownMenuItem<
-                                                String>(
-                                              value: expense[
-                                              'name'], //
-                                              child: Text(
-                                                  expense['name'], //
-                                                  overflow:
-                                                  TextOverflow
-                                                      .ellipsis, //
-                                                  style: GoogleFonts
-                                                      .poppins(
-                                                      color:
-                                                      AppColors.getTextColor(context)))
-                                            )).toList(), //
-                                    onChanged: (String? newValue) { //
-                                      setState(() {
-                                        selectedExpenseName =
-                                            newValue;
-                                        _updateAmountControllerBasedOnSelection(); //
-                                      });
-                                    },
-                                    style: GoogleFonts.poppins(
-                                        color: AppColors.getTextColor(context),
-                                        fontSize: 16), //
-                                    icon: Icon(Icons
-                                        .arrow_drop_down_circle_outlined,
-                                        color: AppColors.chartRed), //
-                                    borderRadius:
-                                    BorderRadius.circular(12), //
+                                  _buildModernTextField(
+                                    context: context,
+                                    controller: nameController,
+                                    labelText: "Tên khoản chi",
+                                    prefixIconData: Icons.edit_note_outlined,
+                                    keyboardType: TextInputType.text,
+                                    maxLength: 50,
                                   ),
                                   const SizedBox(height: 16),
                                   _buildModernTextField( //

@@ -679,23 +679,30 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 
 
+  // THAY THẾ HÀM removeExpense BẰNG PHIÊN BẢN NÀY
   void removeExpense(AppState appState, List<Map<String, dynamic>> currentExpensesList, int index, String category) {
-    List<Map<String, dynamic>> modifiableExpenses = List.from(currentExpensesList);
-    if (index < 0 || index >= modifiableExpenses.length) {
+    if (index < 0 || index >= currentExpensesList.length) {
       return;
     }
 
+    List<Map<String, dynamic>> modifiableExpenses = List.from(currentExpensesList);
     final removedExpenseName = modifiableExpenses[index]['name'] ?? 'Chi phí không tên';
     modifiableExpenses.removeAt(index);
 
     if (category == 'Chi phí cố định') {
       appState.fixedExpenseList.value = modifiableExpenses;
+      // Cập nhật lại tổng tiền tương ứng
+      final total = modifiableExpenses.fold(0.0, (sum, item) => sum + (item['amount'] ?? 0.0));
+      appState.fixedExpenseListenable.value = total;
+      // Lưu vào DB
       ExpenseManager.saveFixedExpenses(appState, modifiableExpenses);
     } else {
       appState.variableExpenseList.value = modifiableExpenses;
+      // Lưu vào DB
       ExpenseManager.saveVariableExpenses(appState, modifiableExpenses);
     }
 
+    // Thông báo cập nhật thành công
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -707,21 +714,22 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     }
   }
 
+  // THAY THẾ HÀM editExpense BẰNG PHIÊN BẢN NÀY
   void editExpense(AppState appState, List<Map<String, dynamic>> currentExpensesList, int index, String category) {
     if (index < 0 || index >= currentExpensesList.length) {
       return;
     }
 
+    final expenseToEdit = currentExpensesList[index];
     TextEditingController editAmountController =
-    TextEditingController(text: currentExpensesList[index]['amount'].toString());
-    final expenseName = currentExpensesList[index]['name'] ?? 'Chi phí không tên';
+    TextEditingController(text: expenseToEdit['amount'].toString());
+    final expenseName = expenseToEdit['name'] ?? 'Chi phí không tên';
 
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("Chỉnh sửa: $expenseName",
-            style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
+        title: Text("Chỉnh sửa: $expenseName", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
         content: _buildModernDialogTextField(
             controller: editAmountController,
             labelText: "Nhập số tiền mới (VNĐ)",
@@ -730,9 +738,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         actionsPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
-              onPressed: () {
-                Navigator.pop(dialogCtx);
-              },
+              onPressed: () => Navigator.pop(dialogCtx),
               child: Text("Hủy", style: TextStyle(color: AppColors.getTextSecondaryColor(context)))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -741,20 +747,21 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () {
-              double newAmount =
-                  double.tryParse(editAmountController.text) ?? currentExpensesList[index]['amount'];
+              double newAmount = double.tryParse(editAmountController.text) ?? expenseToEdit['amount'];
               if (newAmount >= 0) {
                 List<Map<String, dynamic>> modifiableExpenses = List.from(currentExpensesList);
                 modifiableExpenses[index]['amount'] = newAmount;
 
                 if (category == 'Chi phí cố định') {
-                  appState.fixedExpenseList.value = List.from(modifiableExpenses);
+                  appState.fixedExpenseList.value = modifiableExpenses;
+                  final total = modifiableExpenses.fold(0.0, (sum, item) => sum + (item['amount'] ?? 0.0));
+                  appState.fixedExpenseListenable.value = total;
                   ExpenseManager.saveFixedExpenses(appState, modifiableExpenses);
                 } else {
-                  appState.variableExpenseList.value = List.from(modifiableExpenses);
+                  appState.variableExpenseList.value = modifiableExpenses;
                   ExpenseManager.saveVariableExpenses(appState, modifiableExpenses);
                 }
-                appState.loadExpenseValues();
+
                 Navigator.pop(dialogCtx);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -762,18 +769,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                       content: Text('Đã cập nhật chi phí: $expenseName'),
                       backgroundColor: Colors.green,
                       behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      margin: EdgeInsets.all(10),
                     ),
                   );
-                }
-              } else {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text("Số tiền không thể âm"),
-                          backgroundColor: Colors.orangeAccent,
-                          behavior: SnackBarBehavior.floating));
                 }
               }
             },
@@ -781,19 +778,14 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           ),
         ],
       ),
-    ).then((_) {
-      print('ExpenseScreen: Edit expense dialog closed for: $expenseName');
-    });
+    );
   }
 
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final appState = context.watch<AppState>();
-    final canManageFixed = appState.hasPermission('canManageFixedExpenses');
-    final canManageVariable = appState.hasPermission('canManageVariableExpenses');
-    final canManageTypes = appState.hasPermission('canManageExpenseTypes');
+    final appState = context.read<AppState>();
 
     // This callback ensures animations run after the first frame is built and data is ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -816,10 +808,19 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-              child: _buildNavigationActions(
-                canManageFixed: canManageFixed,
-                canManageVariable: canManageVariable,
-                canManageTypes: canManageTypes,
+              child: ValueListenableBuilder<int>(
+                valueListenable: appState.permissionVersion,
+                builder: (context, version, child) {
+                  final canManageFixed = appState.hasPermission('canManageFixedExpenses');
+                  final canManageVariable = appState.hasPermission('canManageVariableExpenses');
+                  final canManageTypes = appState.hasPermission('canManageExpenseTypes');
+
+                  return _buildNavigationActions(
+                    canManageFixed: canManageFixed,
+                    canManageVariable: canManageVariable,
+                    canManageTypes: canManageTypes,
+                  );
+                },
               ),
             ),
           ),
@@ -936,6 +937,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     );
   }
 
+  // THAY THẾ TOÀN BỘ HÀM _buildTotalExpenseSection BẰNG PHIÊN BẢN NÀY
   Widget _buildTotalExpenseSection(AppState appState) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -946,7 +948,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withOpacity(0.15),
-            spreadRadius: 2, blurRadius: 10, offset: Offset(0, 5),
+            spreadRadius: 2,
+            blurRadius: 10,
+            offset: Offset(0, 5),
           ),
         ],
       ),
@@ -970,22 +974,30 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             ],
           ),
           SizedBox(height: 10),
-          ValueListenableBuilder<double>( // Listen to fixed expense for daily total
-              valueListenable: appState.fixedExpenseListenable, // Assuming this holds daily fixed total
-              builder: (context, fixedDailyExpense, _) {
-                // Assuming variableExpense is also a ValueListenable or fetched appropriately
-                // For simplicity, if variableExpense is not a ValueListenable but a direct value in AppState:
-                final totalDailyExpense = fixedDailyExpense + appState.variableExpense;
-                return Text(
-                  currencyFormat.format(totalDailyExpense),
-                  style: TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.chartRed,
-                  ),
-                  textAlign: TextAlign.center,
-                );
-              }
+          // SỬA ĐỔI CỐT LÕI NẰM Ở ĐÂY
+          // Lắng nghe cả hai sự thay đổi của chi phí cố định và biến đổi
+          ValueListenableBuilder<double>(
+            valueListenable: appState.fixedExpenseListenable, // Lắng nghe chi phí cố định
+            builder: (context, fixedDailyExpense, _) {
+              // Lồng thêm một ValueListenableBuilder để lắng nghe chi phí biến đổi
+              return ValueListenableBuilder<List<Map<String, dynamic>>>(
+                valueListenable: appState.variableExpenseList, // Lắng nghe danh sách chi phí biến đổi
+                builder: (context, variableExpenses, __) {
+                  // Tính lại tổng chi phí biến đổi từ danh sách
+                  final double variableDailyExpense = variableExpenses.fold(0.0, (sum, e) => sum + (e['amount'] ?? 0.0));
+                  final totalDailyExpense = fixedDailyExpense + variableDailyExpense;
+                  return Text(
+                    currencyFormat.format(totalDailyExpense),
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.chartRed,
+                    ),
+                    textAlign: TextAlign.center,
+                  );
+                },
+              );
+            },
           ),
         ],
       ),
@@ -1119,34 +1131,33 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 
   Widget _buildExpenseList(AppState appState) {
-    final bool isOwner = appState.authUserId == appState.activeUserId;
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), // Padding for the list
       sliver: ValueListenableBuilder<List<Map<String, dynamic>>>(
         valueListenable: selectedExpenseCategory == 'Chi phí cố định'
             ? appState.fixedExpenseList
-            : appState.variableExpenseList, //
+            : appState.variableExpenseList,
         builder: (context, expenses, _) {
-          if (expenses.isEmpty) { //
-            return SliverFillRemaining( //
-              hasScrollBody: false, //
+          if (expenses.isEmpty) {
+            return SliverFillRemaining(
+              hasScrollBody: false,
               child: FadeTransition(
-                opacity: _fadeAnimation, //
-                child: Center( //
+                opacity: _fadeAnimation,
+                child: Center(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center, //
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.receipt_long_outlined, size: 60, color: Colors.grey.shade400), //
-                      SizedBox(height: 16), //
+                      Icon(Icons.receipt_long_outlined, size: 60, color: Colors.grey.shade400),
+                      SizedBox(height: 16),
                       Text(
                         'Không có chi phí nào',
-                        style: TextStyle(fontSize: 17, color: AppColors.getTextSecondaryColor(context)), //
+                        style: TextStyle(fontSize: 17, color: AppColors.getTextSecondaryColor(context)),
                       ),
-                      SizedBox(height: 8), //
+                      SizedBox(height: 8),
                       Text(
-                        'Thêm chi phí mới để theo dõi.', //
-                        textAlign: TextAlign.center, //
-                        style: TextStyle(fontSize: 14, color: Colors.grey.shade500), //
+                        'Thêm chi phí mới để theo dõi.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
                       ),
                     ],
                   ),
@@ -1154,8 +1165,6 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               ),
             );
           }
-
-          // <<<< LOGIC MỚI BẮT ĐẦU TỪ ĐÂY >>>>
 
           final bool isVariableCategory = selectedExpenseCategory == 'Chi phí biến đổi';
           final List<dynamic> displayItems = isVariableCategory ? _groupVariableExpenses(expenses) : expenses;
@@ -1165,7 +1174,6 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                   (context, index) {
                 final item = displayItems[index];
 
-                // --- A. Render một nhóm chi phí ---
                 if (isVariableCategory && item is Map && item['isGroup'] == true) {
                   return FadeTransition(
                     opacity: _fadeAnimation,
@@ -1173,142 +1181,147 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                   );
                 }
 
-                // --- B. Render một chi phí đơn lẻ (cố định hoặc biến đổi thủ công) ---
                 final expense = item as Map<String, dynamic>;
-                bool isAutoCogs = expense['sourceSalesTransactionId'] != null; //
+                bool isAutoCogs = expense['sourceSalesTransactionId'] != null;
+
                 IconData expenseItemIcon;
                 Color iconColorInList;
 
                 if (selectedExpenseCategory == 'Chi phí cố định') {
-                  expenseItemIcon = Icons.shield_outlined; //
-                  iconColorInList = AppColors.primaryBlue.withOpacity(0.8); //
+                  expenseItemIcon = Icons.shield_outlined;
+                  iconColorInList = AppColors.primaryBlue.withOpacity(0.8);
                 } else {
-                  expenseItemIcon = Icons.local_fire_department_outlined; //
-                  iconColorInList = Colors.orange.shade700; //
+                  expenseItemIcon = Icons.local_fire_department_outlined;
+                  iconColorInList = Colors.orange.shade700;
                 }
-                final bool isOwner = appState.isOwner();
 
-                final bool isCreator = (expense['createdBy'] ?? "") == appState.authUserId;
+                final originalIndex = expenses.indexOf(expense);
+
+                // THAY ĐỔI CỐT LÕI: Bọc Slidable bằng ValueListenableBuilder
+                // để nó có thể cập nhật quyền Sửa/Xóa một cách độc lập.
+                return ValueListenableBuilder<int>(
+                  valueListenable: appState.permissionVersion,
+                  builder: (context, permissionVersion, child) {
+                    // Logic kiểm tra quyền được đặt bên trong builder
+                    final bool isCreator = (expense['createdBy'] ?? "") == appState.authUserId;
                     final bool hasGeneralPermission = selectedExpenseCategory == 'Chi phí cố định'
                         ? appState.hasPermission('canManageFixedExpenses')
                         : appState.hasPermission('canManageVariableExpenses');
-                final bool canModifyThisRecord = appState.isOwner() || (hasGeneralPermission && isCreator);
+                    final bool canModifyThisRecord = appState.isOwner() || (hasGeneralPermission && isCreator);
 
-                // Tìm index gốc để các hàm edit/remove không bị lỗi
-                final originalIndex = expenses.indexOf(expense);
-
-                return FadeTransition(
-                  opacity: _fadeAnimation, //
-                  child: Slidable(
-                    key: Key(expense['id']?.toString() ?? expense['name']?.toString() ?? UniqueKey().toString()), //
-                    endActionPane: isAutoCogs
-                        ? ActionPane( // Nếu là COGS tự động, chỉ hiển thị nút thông tin
-                      motion: const StretchMotion(),
-                      children: [
-                        SlidableAction(
-                          onPressed: (context) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Đây là giá vốn tự động, quản lý qua giao dịch doanh thu.'),
-                                backgroundColor: AppColors.getTextSecondaryColor(context),
-                              ),
-                            );
-                          },
-                          backgroundColor: Colors.grey.shade300,
-                          foregroundColor: AppColors.getTextColor(context),
-                          icon: Icons.info_outline,
-                          label: 'Chi tiết',
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ],
-                    )
-                        : (canModifyThisRecord // Ngược lại, kiểm tra quyền sửa đổi
-                        ? ActionPane( // Nếu có quyền, hiển thị nút Sửa/Xóa
-                      motion: const StretchMotion(),
-                      children: [
-                        SlidableAction(
-                          onPressed: (context) {
-                            if (originalIndex != -1) {
-                              editExpense(appState, expenses, originalIndex, selectedExpenseCategory);
-                            }
-                          },
-                          backgroundColor: AppColors.primaryBlue,
-                          foregroundColor: Colors.white,
-                          icon: Icons.edit_outlined,
-                          label: 'Sửa',
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        SlidableAction(
-                          onPressed: (context) async {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (dialogCtx) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: Text('Xác nhận xóa', style: TextStyle(color: AppColors.getTextColor(context), fontWeight:FontWeight.bold)),
-                                content: Text('Bạn có chắc chắn muốn xóa chi phí "${expense['name']}" không?', style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dialogCtx, false),
-                                    child: Text('Hủy', style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
+                    return FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Slidable(
+                        key: Key(expense['id']?.toString() ?? expense['name']?.toString() ?? UniqueKey().toString()),
+                        endActionPane: isAutoCogs
+                            ? ActionPane(
+                          motion: const StretchMotion(),
+                          children: [
+                            SlidableAction(
+                              onPressed: (context) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Đây là giá vốn tự động, quản lý qua giao dịch doanh thu.'),
+                                    backgroundColor: AppColors.getTextSecondaryColor(context),
                                   ),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.chartRed,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                                    ),
-                                    onPressed: () => Navigator.pop(dialogCtx, true),
-                                    child: Text('Xóa'),
+                                );
+                              },
+                              backgroundColor: Colors.grey.shade300,
+                              foregroundColor: AppColors.getTextColor(context),
+                              icon: Icons.info_outline,
+                              label: 'Chi tiết',
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ],
+                        )
+                            : (canModifyThisRecord // << Dùng biến canModifyThisRecord ở đây
+                            ? ActionPane(
+                          motion: const StretchMotion(),
+                          children: [
+                            SlidableAction(
+                              onPressed: (context) {
+                                if (originalIndex != -1) {
+                                  editExpense(appState, expenses, originalIndex, selectedExpenseCategory);
+                                }
+                              },
+                              backgroundColor: AppColors.primaryBlue,
+                              foregroundColor: Colors.white,
+                              icon: Icons.edit_outlined,
+                              label: 'Sửa',
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            SlidableAction(
+                              onPressed: (context) async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dialogCtx) => AlertDialog(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    title: Text('Xác nhận xóa', style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
+                                    content: Text('Bạn có chắc chắn muốn xóa chi phí "${expense['name']}" không?', style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dialogCtx, false),
+                                        child: Text('Hủy', style: TextStyle(color: AppColors.getTextSecondaryColor(context))),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.chartRed,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                                        onPressed: () => Navigator.pop(dialogCtx, true),
+                                        child: Text('Xóa'),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                );
+                                if (confirm == true) {
+                                  if (originalIndex != -1) {
+                                    removeExpense(appState, expenses, originalIndex, selectedExpenseCategory);
+                                  }
+                                }
+                              },
+                              backgroundColor: AppColors.chartRed.withOpacity(0.9),
+                              foregroundColor: Colors.white,
+                              icon: Icons.delete_outline,
+                              label: 'Xóa',
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ],
+                        )
+                            : null),
+                        child: Card(
+                          elevation: 1.5,
+                          margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 0),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          color: AppColors.getCardColor(context),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            leading: Container(
+                              padding: EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                  color: iconColorInList.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(10)),
+                              child: Icon(
+                                expenseItemIcon,
+                                color: iconColorInList,
+                                size: 24,
                               ),
-                            );
-                            if (confirm == true) {
-                              if (originalIndex != -1) {
-                                removeExpense(appState, expenses, originalIndex, selectedExpenseCategory);
-                              }
-                            }
-                          },
-                          backgroundColor: AppColors.chartRed.withOpacity(0.9),
-                          foregroundColor: Colors.white,
-                          icon: Icons.delete_outline,
-                          label: 'Xóa',
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ],
-                    )
-                        : null),
-                    child: Card(
-                      elevation: 1.5, //
-                      margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 0), //
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), //
-                      color: AppColors.getCardColor(context), //
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), //
-                        leading: Container(
-                          padding: EdgeInsets.all(10), //
-                          decoration: BoxDecoration( //
-                              color: iconColorInList.withOpacity(0.1), //
-                              borderRadius: BorderRadius.circular(10)), //
-                          child: Icon( //
-                            expenseItemIcon,
-                            color: iconColorInList, //
-                            size: 24, //
+                            ),
+                            title: Text(
+                              expense['name']?.toString() ?? 'Không xác định',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: AppColors.getTextColor(context)),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              '${currencyFormat.format(expense['amount'] ?? 0.0)}',
+                              style: TextStyle(fontSize: 14, color: AppColors.getTextSecondaryColor(context).withOpacity(0.9), fontWeight: FontWeight.w500),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
-                        title: Text(
-                          expense['name']?.toString() ?? 'Không xác định', //
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: AppColors.getTextColor(context)), //
-                          overflow: TextOverflow.ellipsis, //
-                        ),
-                        subtitle: Text(
-                          '${currencyFormat.format(expense['amount'] ?? 0.0)}', //
-                          style: TextStyle(fontSize: 14, color: AppColors.getTextSecondaryColor(context).withOpacity(0.9), fontWeight: FontWeight.w500), //
-                          overflow: TextOverflow.ellipsis, //
-                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               },
               childCount: displayItems.length,

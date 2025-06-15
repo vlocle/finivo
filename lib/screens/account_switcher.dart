@@ -125,11 +125,14 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
     // Widget hiển thị tên tài khoản với style mới
     final Widget accountNameText = Text(
       currentAccount.displayName,
-      style: GoogleFonts.poppins( // Áp dụng font Poppins
+      style: GoogleFonts.poppins(
         color: widget.textColor,
-        fontSize: 16, // Tăng kích thước font
-        fontWeight: FontWeight.w600, // In đậm vừa phải
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
       ),
+      overflow: TextOverflow.ellipsis,
+      maxLines: 1,
+      softWrap: false,
     );
 
     if (_accounts.length > 1) {
@@ -151,8 +154,8 @@ class _AccountSwitcherState extends State<AccountSwitcher> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              accountNameText, // Sử dụng widget đã style ở trên
-              const SizedBox(width: 2), // Giảm khoảng cách nhẹ
+              Flexible(child: accountNameText), // Bọc widget tên bằng Flexible
+              const SizedBox(width: 2),
               const Icon(Icons.arrow_drop_down, color: Colors.white),
             ],
           ),
