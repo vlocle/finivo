@@ -12,22 +12,10 @@ class SubscriptionScreen extends StatefulWidget {
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
   final SubscriptionService _subscriptionService = SubscriptionService();
-  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadProducts();
-  }
-
-  Future<void> _loadProducts() async {
-    // Service đã được init ở main, nên chỉ cần gọi fetch
-    await _subscriptionService.fetchProducts();
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   @override
@@ -40,7 +28,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         foregroundColor: AppColors.getTextColor(context),
         elevation: 1,
       ),
-      body: _isLoading
+      body: _subscriptionService.products.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : _buildContent(),
     );
