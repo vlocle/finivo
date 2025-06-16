@@ -194,7 +194,10 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: AppColors.chartRed),
             SizedBox(width: 10),
-            Text("Xác nhận làm mới dữ liệu", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
+            // Chỉ cần thêm Expanded ở đây
+            Expanded(
+              child: Text("Xác nhận xóa dữ liệu", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
         content: Text(
@@ -225,8 +228,10 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
         final batch = firestore.batch();
 
         // Xóa dữ liệu Firestore
-        final collections = ['expenses', 'revenue', 'transactions', 'products', 'daily_data'];
+        final collections = ['expenses', 'products', 'daily_data'];
         for (var collectionName in collections) {
+          if (collectionName == 'expenses') continue;
+
           var snapshot = await firestore
               .collection('users')
               .doc(userId)
@@ -240,10 +245,9 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
         // Xóa các subcollections của expenses
         final expenseSubcollections = [
           'expenses/fixed/daily',
+          'expenses/fixed/monthly',
           'expenses/variable/daily',
-          'expenses/fixedList/items', // Giả sử tên subcollection là 'items'
-          'expenses/variableList/monthly', // Giả sử tên subcollection là 'monthly'
-          // 'expenses/monthlyFixed/monthly' // Xem lại cấu trúc này nếu cần
+          'expenses/variableList/monthly',
         ];
 
         for (var path in expenseSubcollections) {
@@ -286,8 +290,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
         await batch.commit();
 
-        // Đặt lại trạng thái AppState
-        //appState.resetAllData(); // Gọi một hàm tổng hợp trong AppState để reset
+        appState.resetAllUserData();
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -303,7 +306,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("Lỗi khi xóa dữ liệu: $e"),
+              content: Text("Xóa dữ liệu thất bại"),
               backgroundColor: AppColors.chartRed,
               behavior: SnackBarBehavior.floating,
             ),

@@ -2506,4 +2506,59 @@ class AppState extends ChangeNotifier {
     permissionVersion.dispose();
     super.dispose();
   }
+
+  Future<void> resetAllUserData() async {
+
+    // Giữ lại toàn bộ phần reset state và dọn dẹp Hive
+    mainRevenue = 0.0;
+    secondaryRevenue = 0.0;
+    otherRevenue = 0.0;
+    mainRevenueListenable.value = 0.0;
+    secondaryRevenueListenable.value = 0.0;
+    otherRevenueListenable.value = 0.0;
+    totalRevenueListenable.value = 0.0;
+    profitListenable.value = 0.0;
+    profitMarginListenable.value = 0.0;
+    _fixedExpense = 0.0;
+    fixedExpenseListenable.value = 0.0;
+    variableExpense = 0.0;
+    mainRevenueTransactions.value = [];
+    secondaryRevenueTransactions.value = [];
+    otherRevenueTransactions.value = [];
+    fixedExpenseList.value = [];
+    variableExpenseList.value = [];
+
+    _cancelRevenueSubscription();
+    _cancelFixedExpenseSubscription();
+    _cancelVariableExpenseSubscription();
+    _cancelDailyFixedExpenseSubscription();
+    _cancelDailyDataSubscription();
+    _cancelProductsSubscription();
+    _cancelVariableExpenseListSubscription();
+    _cancelPermissionSubscription();
+
+    _saveSettings(); // Có thể giữ lại để lưu các cài đặt chung
+    _cachedDateKey = null;
+    _cachedData = null;
+
+    if (!Hive.isBoxOpen('productsBox')) await Hive.openBox('productsBox');
+    if (!Hive.isBoxOpen('transactionsBox')) await Hive.openBox('transactionsBox');
+    if (!Hive.isBoxOpen('revenueBox')) await Hive.openBox('revenueBox'); // Sửa lỗi gõ: transactionsBox -> revenueBox
+    if (!Hive.isBoxOpen('fixedExpensesBox')) await Hive.openBox('fixedExpensesBox'); // Sửa lỗi gõ: transactionsBox -> fixedExpensesBox
+    if (!Hive.isBoxOpen('variableExpensesBox')) await Hive.openBox('variableExpensesBox'); // Sửa lỗi gõ: transactionsBox -> variableExpensesBox
+    if (!Hive.isBoxOpen('variableExpenseListBox')) await Hive.openBox('variableExpenseListBox'); // Sửa lỗi gõ: transactionsBox -> variableExpenseListBox
+    if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) await Hive.openBox('monthlyFixedExpensesBox'); // Sửa lỗi gõ: transactionsBox -> monthlyFixedExpensesBox
+    if (!Hive.isBoxOpen('monthlyFixedAmountsBox')) await Hive.openBox('monthlyFixedAmountsBox'); // Sửa lỗi gõ: transactionsBox -> monthlyFixedAmountsBox
+
+    Hive.box('productsBox').clear();
+    Hive.box('transactionsBox').clear();
+    Hive.box('revenueBox').clear();
+    Hive.box('fixedExpensesBox').clear();
+    Hive.box('variableExpensesBox').clear();
+    Hive.box('variableExpenseListBox').clear();
+    Hive.box('monthlyFixedExpensesBox').clear();
+    Hive.box('monthlyFixedAmountsBox').clear();
+
+    notifyListeners();
+  }
 }

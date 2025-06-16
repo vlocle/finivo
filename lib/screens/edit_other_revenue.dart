@@ -460,7 +460,6 @@ class TransactionInputSection extends StatelessWidget {
                     labelText: 'Tên giao dịch',
                     prefixIconData: Icons.description_outlined,
                     maxLength: 100,
-                    maxLines: 2, // Allow multiple lines for name if desired
                   ),
                   const SizedBox(height: 16),
                   _buildInputTextField( // Uses local helper

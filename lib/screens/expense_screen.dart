@@ -127,6 +127,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     if (picked != null && picked != appState.selectedDate) {
       appState.setSelectedDate(picked);
       _resetAnimation(); // Reset animation for new data
+      _runAnimation();
     }
   }
 

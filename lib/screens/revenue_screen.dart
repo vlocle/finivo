@@ -33,7 +33,6 @@ class _RevenueScreenState extends State<RevenueScreen>
   late Animation<double> _fadeAnimation;
   bool _hasAnimated = false;
   String _selectedTransactionCategory = 'Doanh thu chính';
-  final PageController _pageController = PageController();
   AppState? _appState; // Biến để lưu tham chiếu đến AppState
 
 
@@ -94,7 +93,6 @@ class _RevenueScreenState extends State<RevenueScreen>
   @override
   void dispose() {
     _animationController.dispose();
-    _pageController.dispose();
     // Sử dụng _appState thay vì Provider.of
     _appState?.dataReadyListenable.removeListener(_onDataReady);
     super.dispose();
@@ -536,7 +534,7 @@ class _RevenueScreenState extends State<RevenueScreen>
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.only(top: 20.0, bottom: 10),
-              child: _buildTotalRevenueSection(appState),
+              child: _buildCombinedRevenueCard(appState),
             ),
           ),
           SliverToBoxAdapter(
@@ -663,115 +661,75 @@ class _RevenueScreenState extends State<RevenueScreen>
     );
   }
 
-  Widget _buildTotalRevenueSection(AppState appState) {
-    return SizedBox(
-      height: 120,
-      child: Column(
-        children: [
-          Expanded(
-            child: PageView(
-              controller: _pageController,
+  // Phương án 4: Thẻ có Dải màu trang trí
+  Widget _buildCombinedRevenueCard(AppState appState) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      // Sử dụng ClipRRect để bo góc cả container
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.getCardColor(context),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.15),
+                spreadRadius: 2,
+                blurRadius: 10,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: IntrinsicHeight(
+            child: Row(
               children: [
-                _buildRevenueCard(
-                  title: 'Tổng doanh thu',
-                  valueListenable: appState.totalRevenueListenable,
-                  appState: appState,
-                  icon: Icons.account_balance_wallet_outlined,
+                // Dải màu trang trí bên trái
+                Container(
+                  width: 10, // Chiều rộng của dải màu
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppColors.primaryBlue, Colors.blue.shade300],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
                 ),
-                _buildRevenueCard(
-                  title: 'Lợi nhuận hôm nay',
-                  valueListenable: appState.profitListenable,
-                  appState: appState,
-                  icon: Icons.trending_up_outlined,
-                  isProfit: true,
+                // Phần nội dung
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Mục Tổng doanh thu
+                        Text('Tổng doanh thu', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextSecondaryColor(context))),
+                        SizedBox(height: 4),
+                        ValueListenableBuilder<double>(
+                          valueListenable: appState.totalRevenueListenable,
+                          builder: (context, value, _) {
+                            return Text(currencyFormat.format(value), style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.primaryBlue));
+                          },
+                        ),
+                        Divider(height: 24),
+                        // Mục Lợi nhuận
+                        Text('Lợi nhuận hôm nay', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextSecondaryColor(context))),
+                        SizedBox(height: 4),
+                        ValueListenableBuilder<double>(
+                          valueListenable: appState.profitListenable,
+                          builder: (context, value, _) {
+                            final color = value < 0 ? Colors.red : AppColors.chartGreen;
+                            return Text(currencyFormat.format(value), style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color));
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          SizedBox(height: 12),
-          SmoothPageIndicator(
-            controller: _pageController,
-            count: 2,
-            effect: ExpandingDotsEffect(
-              activeDotColor: AppColors.primaryBlue,
-              dotColor: Colors.grey.shade300,
-              dotHeight: 8,
-              dotWidth: 8,
-              spacing: 6,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRevenueCard({
-    required String title,
-    required ValueNotifier<double> valueListenable,
-    required AppState appState,
-    required IconData icon,
-    bool isProfit = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.getCardColor(context), // [cite: 113]
-        borderRadius: BorderRadius.circular(20), // [cite: 113]
-        boxShadow: [ // [cite: 113]
-          BoxShadow( // [cite: 114]
-            color: Colors.grey.withOpacity(0.15), // [cite: 114]
-            spreadRadius: 2, // [cite: 114]
-            blurRadius: 10, // [cite: 114]
-            offset: Offset(0, 5), // [cite: 114]
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center, // [cite: 114]
-        crossAxisAlignment: CrossAxisAlignment.center, // [cite: 115]
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center, // [cite: 115]
-            children: [
-              Icon(icon, color: isProfit ? AppColors.chartGreen : AppColors.primaryBlue, size: 22), // [cite: 115]
-              SizedBox(width: 8), // [cite: 115]
-              Text( // [cite: 116]
-                title, // [cite: 116]
-                style: TextStyle( // [cite: 116]
-                  fontSize: 16, // [cite: 116]
-                  fontWeight: FontWeight.w600, // [cite: 116]
-                  color: AppColors.getTextSecondaryColor(context), // [cite: 116]
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 8), // [cite: 117]
-          ValueListenableBuilder<double>(
-            valueListenable: valueListenable, // [cite: 117]
-            builder: (context, value, _) {
-              Color valueColor;
-              if (isProfit) {
-                if (value < 0) {
-                  valueColor = Colors.red; // Màu đỏ cho số tiền âm
-                } else {
-                  valueColor = AppColors.chartGreen; // Màu xanh lá cho số tiền dương [cite: 7, 119]
-                }
-              } else {
-                valueColor = AppColors.getTextColor(context); // [cite: 8, 119]
-              }
-              return Text(
-                currencyFormat.format(value), // [cite: 118]
-                style: TextStyle( // [cite: 118]
-                  fontSize: 26, // [cite: 118]
-                  fontWeight: FontWeight.bold, // [cite: 118]
-                  color: valueColor, //Sử dụng màu đã được xác định
-                ),
-                textAlign: TextAlign.center, // [cite: 119]
-              );
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
