@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
-import '../screens/subscription_service.dart'; // Import service của bạn
-import 'package:fingrowth/screens/report_screen.dart'; // Import AppColors
+import 'package:provider/provider.dart';
+import '../screens/subscription_service.dart';
+import 'package:fingrowth/screens/report_screen.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -11,7 +12,6 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-  final SubscriptionService _subscriptionService = SubscriptionService();
 
   @override
   void initState() {
@@ -20,22 +20,32 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackgroundColor(context),
-      appBar: AppBar(
-        title: const Text("Nâng Cấp Premium", style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: AppColors.getCardColor(context),
-        foregroundColor: AppColors.getTextColor(context),
-        elevation: 1,
-      ),
-      body: _subscriptionService.products.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : _buildContent(),
+    // Sử dụng Consumer để lắng nghe thay đổi từ SubscriptionService
+    return Consumer<SubscriptionService>(
+      builder: (context, subscriptionService, child) {
+        return Scaffold(
+          backgroundColor: AppColors.getBackgroundColor(context),
+          appBar: AppBar(
+            title: const Text("Nâng Cấp Premium", style: TextStyle(fontWeight: FontWeight.bold)),
+            backgroundColor: AppColors.getCardColor(context),
+            foregroundColor: AppColors.getTextColor(context),
+            elevation: 1,
+          ),
+          body: subscriptionService.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : subscriptionService.error != null
+              ? Center(child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Text(subscriptionService.error!, textAlign: TextAlign.center),
+          ))
+              : _buildContent(context, subscriptionService),
+        );
+      },
     );
   }
 
-  Widget _buildContent() {
-    if (_subscriptionService.products.isEmpty) {
+  Widget _buildContent(BuildContext context, SubscriptionService subscriptionService) {
+    if (subscriptionService.products.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(20.0),
@@ -48,6 +58,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       );
     }
 
+    // Sắp xếp danh sách sản phẩm một lần duy nhất ở đây
+    final sortedProducts = List<ProductDetails>.from(subscriptionService.products);
+    sortedProducts.sort((a, b) {
+      // Ưu tiên gói năm, sau đó là tháng, rồi đến tuần
+      if (a.id.contains('yearly')) return -1;
+      if (b.id.contains('yearly')) return 1;
+      if (a.id.contains('monthly')) return -1;
+      if (b.id.contains('monthly')) return 1;
+      return 0;
+    });
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -55,13 +76,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         children: [
           _buildHeader(),
           const SizedBox(height: 24),
-          ..._subscriptionService.products.map((product) {
-            // Sắp xếp để gói năm hiển thị trước (nếu có)
-            _subscriptionService.products.sort((a, b) => b.price.compareTo(a.price));
-            return _buildProductCard(product);
+          // Sử dụng danh sách đã sắp xếp để build UI
+          ...sortedProducts.map((product) {
+            return _buildProductCard(context, product, subscriptionService);
           }).toList(),
           const SizedBox(height: 24),
-          _buildRestoreButton(),
+          _buildRestoreButton(context, subscriptionService),
           const SizedBox(height: 16),
         ],
       ),
@@ -100,9 +120,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  Widget _buildProductCard(ProductDetails product) {
-    bool isYearly = product.id.contains('yearly'); // Giả định ID gói năm chứa 'yearly'
-
+  Widget _buildProductCard(BuildContext context, ProductDetails product, SubscriptionService subscriptionService) {
+    bool isYearly = product.id.contains('yearly');
     return Card(
       elevation: isYearly ? 4 : 2,
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -137,7 +156,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
-                _subscriptionService.buySubscription(product);
+                subscriptionService.buySubscription(product);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: isYearly ? Colors.amber[800] : AppColors.primaryBlue,
@@ -153,10 +172,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  Widget _buildRestoreButton() {
+  Widget _buildRestoreButton(BuildContext context, SubscriptionService subscriptionService) {
     return TextButton(
       onPressed: () {
-        _subscriptionService.restorePurchases();
+        subscriptionService.restorePurchases();
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Đang thử khôi phục các giao dịch đã mua..."))
         );
