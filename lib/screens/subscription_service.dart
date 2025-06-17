@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'dart:io';
 
 /// Service này sẽ quản lý toàn bộ logic mua hàng.
 /// Nó sử dụng ChangeNotifier để thông báo cho UI về các thay đổi trạng thái (loading, error, products loaded).
@@ -82,26 +83,25 @@ class SubscriptionService with ChangeNotifier {
   /// Hàm lắng nghe và xử lý các trạng thái của giao dịch.
   void _listenToPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) {
     for (var purchase in purchaseDetailsList) {
-      switch (purchase.status) {
-        case PurchaseStatus.pending:
-          print("Giao dịch đang chờ xử lý...");
-          break;
-        case PurchaseStatus.error:
-          print("Lỗi giao dịch: ${purchase.error}");
-          break;
-        case PurchaseStatus.purchased:
-        case PurchaseStatus.restored:
-          _verifyAndCompletePurchase(purchase);
-          break;
-        case PurchaseStatus.canceled:
-          print("Giao dịch đã bị hủy.");
-          break;
+      if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
+        if (Platform.isIOS) {
+          // Gọi hàm xác thực của Apple
+          _verifyApplePurchase(purchase);
+        } else if (Platform.isAndroid) {
+          // Gọi hàm xác thực mới của Google
+          _verifyGooglePurchase(purchase);
+        }
+      } else if (purchase.status == PurchaseStatus.error) {
+        print("Lỗi giao dịch: ${purchase.error}");
+      } else if (purchase.status == PurchaseStatus.pending) {
+        print("Giao dịch đang chờ xử lý...");
       }
+      // ... xử lý các trạng thái khác nếu cần
     }
   }
 
   /// GỌI CLOUD FUNCTION VÀ HOÀN TẤT GIAO DỊCH.
-  Future<void> _verifyAndCompletePurchase(PurchaseDetails purchase) async {
+  Future<void> _verifyApplePurchase(PurchaseDetails purchase) async {
     // KIỂM TRA HÓA ĐƠN TRƯỚC KHI GỬI
     if (purchase.verificationData.serverVerificationData.isEmpty) {
       print("Lỗi: Hóa đơn xác thực (serverVerificationData) bị trống. Không thể xác thực.");
@@ -129,6 +129,30 @@ class SubscriptionService with ChangeNotifier {
       }
     } catch (e) {
       print("Lỗi khi gọi Cloud Function: $e");
+    }
+  }
+
+  Future<void> _verifyGooglePurchase(PurchaseDetails purchase) async {
+    try {
+      print("Bắt đầu xác thực hóa đơn Google Play...");
+      final HttpsCallable callable = _functions.httpsCallable('verifyGooglePurchase');
+
+      final result = await callable.call<Map<String, dynamic>>({
+        'productId': purchase.productID,
+        'purchaseToken': purchase.verificationData.serverVerificationData,
+        'packageName': 'com.vlocle.finivo', // QUAN TRỌNG: Thay bằng tên gói mới của bạn
+      });
+
+      if (result.data['success'] == true) {
+        print("Xác thực Google Play thành công! Hoàn tất giao dịch.");
+        if (purchase.pendingCompletePurchase) {
+          await _iap.completePurchase(purchase);
+        }
+      } else {
+        print("Xác thực Google Play thất bại từ server.");
+      }
+    } catch (e) {
+      print("Lỗi khi gọi Cloud Function verifyGooglePurchase: $e");
     }
   }
 

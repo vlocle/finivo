@@ -48,6 +48,42 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:777906354439:android:2f36fb66ce84295c912da2",
+        "android_client_info": {
+          "package_name": "com.vlocle.finivo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "777906354439-3fe3ddt5knvcht8mqlehch3hvaq1358m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBBT35yqoN4-qz_R0ZNck9JiWF368ftIqU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "777906354439-3fe3ddt5knvcht8mqlehch3hvaq1358m.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "777906354439-csep7cjkvjc8ch6jbd9an72cnc8kodc7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.fingrowth"
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
