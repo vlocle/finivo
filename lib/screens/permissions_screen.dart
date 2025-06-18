@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fingrowth/screens/subscription_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -242,10 +243,11 @@ class _PermissionsScreenState extends State<PermissionsScreen>
   @override
   Widget build(BuildContext context) {
     // Lấy AppState để kiểm tra quyền
+    final subscriptionService = context.watch<SubscriptionService>();
     final appState = context.watch<AppState>();
 
     // <<< KIỂM TRA TRẠNG THÁI PREMIUM NGAY TỪ ĐẦU >>>
-    if (!appState.isSubscribed) {
+    if (!subscriptionService.isSubscribed) {
       // Nếu không phải Premium, hiển thị giao diện "Paywall"
       return _buildPaywallWidget();
     }
