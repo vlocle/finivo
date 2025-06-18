@@ -1,4 +1,5 @@
 import 'package:fingrowth/screens/subscription_screen.dart';
+import 'package:fingrowth/screens/subscription_service.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // [cite: 1]
 import 'package:flutter/material.dart'; // [cite: 1]
 import 'package:fl_chart/fl_chart.dart'; // [cite: 1]
@@ -121,8 +122,8 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
   }
 
   Future<void> _selectDateRange(BuildContext context) async {
-    final appState = Provider.of<AppState>(context, listen: false);
-    if (!appState.isSubscribed) {
+    final subscriptionService = context.read<SubscriptionService>();
+    if (!subscriptionService.isSubscribed) {
       // Bạn có thể dùng lại hàm _showUpgradeDialog tương tự như trên
       // Hoặc hiển thị một SnackBar
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

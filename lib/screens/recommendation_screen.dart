@@ -649,8 +649,7 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
     final appState = context.read<AppState>();
 
     // <<< KIỂM TRA TRẠNG THÁI PREMIUM NGAY TỪ ĐẦU >>>
-    if (!appState.isSubscribed) {
-      // Nếu không phải Premium, hiển thị giao diện "Paywall"
+    if (!subscriptionService.isSubscribed) {
       return _buildPaywallWidget();
     }
 
