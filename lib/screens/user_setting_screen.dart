@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fingrowth/screens/subscription_service.dart';
 import 'package:fingrowth/screens/user_guide_screen.dart'; // Giả sử bạn có màn hình này
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -77,6 +78,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
     if (confirm == true) {
       try {
+        await context.read<SubscriptionService>().logout();
         await FirebaseAuth.instance.signOut();
         await GoogleSignIn().signOut();
         // Không pop ở đây nữa, vì AuthWrapper sẽ xử lý việc điều hướng
@@ -591,11 +593,11 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
               context,
               title: "Tài khoản",
               children: [
-                Consumer<AppState>(
-                  builder: (context, appState, child) {
+                Consumer<SubscriptionService>(
+                  builder: (context, subscriptionService, child) {
                     // Nếu người dùng đã đăng ký Premium, không hiển thị gì cả
-                    if (appState.isSubscribed) {
-                      return const SizedBox.shrink(); // Widget trống
+                    if (subscriptionService.isSubscribed) {
+                      return const SizedBox.shrink();
                     }
 
                     // Nếu là người dùng miễn phí, hiển thị nút "Nâng Cấp"
@@ -620,12 +622,11 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   icon: Icons.group_add_outlined,
                   title: "Quản lý quyền truy cập",
                   onTap: () {
-                    final appState = context.read<AppState>();
+                    final subscriptionService = context.read<SubscriptionService>();
                     // <<< KIỂM TRA TRẠNG THÁI PREMIUM >>>
-                    if (appState.isSubscribed) {
+                    if (subscriptionService.isSubscribed) {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
                     } else {
-                      // Hiển thị dialog yêu cầu nâng cấp
                       _showUpgradeDialog(context);
                     }
                   },

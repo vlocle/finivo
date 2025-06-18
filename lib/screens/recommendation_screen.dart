@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fingrowth/screens/report_screen.dart';
 import 'package:fingrowth/screens/subscription_screen.dart';
+import 'package:fingrowth/screens/subscription_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -644,7 +645,8 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
+    final subscriptionService = context.watch<SubscriptionService>();
+    final appState = context.read<AppState>();
 
     // <<< KIỂM TRA TRẠNG THÁI PREMIUM NGAY TỪ ĐẦU >>>
     if (!appState.isSubscribed) {

@@ -1,5 +1,6 @@
 // main.dart
 import 'dart:async';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
+import 'package:purchases_flutter/purchases_flutter.dart'; // Thêm import của RevenueCat
 
 // <<< THÊM CÁC IMPORT CẦN THIẾT >>>
 import 'state/app_state.dart';
@@ -17,6 +19,22 @@ import 'screens/login_screen.dart';
 import 'screens/device_utils.dart';
 import 'screens/subscription_service.dart';
 
+Future<void> _configureRevenueCat() async {
+  await Purchases.setLogLevel(LogLevel.debug); // Bật log debug để dễ gỡ lỗi
+
+  PurchasesConfiguration configuration;
+  if (Platform.isIOS) {
+    // Dán Public Apple API Key của bạn vào đây
+    configuration = PurchasesConfiguration("appl_OfoRjYgrjnESgkPaEKnSfIQgINU");
+  } else if (Platform.isAndroid) {
+    // Dán Public Google API Key của bạn vào đây
+    configuration = PurchasesConfiguration("goog_YOUR_GOOGLE_API_KEY");
+  } else {
+    return;
+  }
+  await Purchases.configure(configuration);
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
@@ -24,6 +42,7 @@ void main() async {
     for (int i = 0; i < retries; i++) {
       try {
         await Firebase.initializeApp();
+        await _configureRevenueCat();
         break;
       } catch (e) {
         if (i == retries - 1) throw e;

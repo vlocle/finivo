@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:provider/provider.dart';
+import 'package:purchases_flutter/purchases_flutter.dart'; // THAY ĐỔI: Import RevenueCat SDK
 import '../screens/subscription_service.dart';
 import 'package:fingrowth/screens/report_screen.dart';
 
@@ -12,10 +12,11 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-
   @override
   void initState() {
     super.initState();
+    // Gọi fetchOfferings nếu cần, hoặc có thể đã được gọi trong init của service
+    context.read<SubscriptionService>().fetchOfferings();
   }
 
   @override
@@ -33,11 +34,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           ),
           body: subscriptionService.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : subscriptionService.error != null
-              ? Center(child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Text(subscriptionService.error!, textAlign: TextAlign.center),
-          ))
+          // THAY ĐỔI: Kiểm tra subscriptionService.packages
+              : subscriptionService.packages.isEmpty
+              ? const Center(child: Text("Không có gói nào được tìm thấy."))
               : _buildContent(context, subscriptionService),
         );
       },
@@ -45,28 +44,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Widget _buildContent(BuildContext context, SubscriptionService subscriptionService) {
-    if (subscriptionService.products.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(20.0),
-          child: Text(
-            "Không thể tải các gói đăng ký vào lúc này. Vui lòng kiểm tra kết nối và thử lại.",
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16),
-          ),
-        ),
-      );
-    }
-
-    // Sắp xếp danh sách sản phẩm một lần duy nhất ở đây
-    final sortedProducts = List<ProductDetails>.from(subscriptionService.products);
-    sortedProducts.sort((a, b) {
-      // Ưu tiên gói năm, sau đó là tháng, rồi đến tuần
-      if (a.id.contains('yearly')) return -1;
-      if (b.id.contains('yearly')) return 1;
-      if (a.id.contains('monthly')) return -1;
-      if (b.id.contains('monthly')) return 1;
-      return 0;
+    // THAY ĐỔI: Sắp xếp danh sách các "Package"
+    final sortedPackages = List<Package>.from(subscriptionService.packages);
+    sortedPackages.sort((a, b) {
+      // Sắp xếp theo thứ tự: Năm > Tháng > Tuần
+      final aOrder = a.packageType == PackageType.annual ? 0 : (a.packageType == PackageType.monthly ? 1 : 2);
+      final bOrder = b.packageType == PackageType.annual ? 0 : (b.packageType == PackageType.monthly ? 1 : 2);
+      return aOrder.compareTo(bOrder);
     });
 
     return SingleChildScrollView(
@@ -77,8 +61,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           _buildHeader(),
           const SizedBox(height: 24),
           // Sử dụng danh sách đã sắp xếp để build UI
-          ...sortedProducts.map((product) {
-            return _buildProductCard(context, product, subscriptionService);
+          ...sortedPackages.map((package) {
+            return _buildProductCard(context, package, subscriptionService);
           }).toList(),
           const SizedBox(height: 24),
           _buildRestoreButton(context, subscriptionService),
@@ -99,7 +83,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        _buildFeatureItem("Quản lý quyền hạn, thêm cộng tác viên."),
+        _buildFeatureItem("Phân quyền cho nhân viên/cộng sự."),
         _buildFeatureItem("Báo cáo không giới hạn thời gian."),
         _buildFeatureItem("Sử dụng A.I phân tích tài chính chuyên sâu."),
       ],
@@ -120,8 +104,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  Widget _buildProductCard(BuildContext context, ProductDetails product, SubscriptionService subscriptionService) {
-    bool isYearly = product.id.contains('yearly');
+  // THAY ĐỔI: Hàm này giờ nhận vào một đối tượng "Package"
+  Widget _buildProductCard(BuildContext context, Package package, SubscriptionService subscriptionService) {
+    final storeProduct = package.storeProduct;
+    final isYearly = package.packageType == PackageType.annual;
+
     return Card(
       elevation: isYearly ? 4 : 2,
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -146,17 +133,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 child: const Text("TIẾT KIỆM NHẤT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
               ),
             const SizedBox(height: 12),
-            Text(product.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            // THAY ĐỔI: Truy cập thông tin từ storeProduct
+            Text(storeProduct.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Text(
-              product.price,
+              storeProduct.priceString, // Sử dụng priceString đã được định dạng sẵn
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppColors.primaryBlue),
             ),
-            Text(product.description, textAlign: TextAlign.center),
+            Text(storeProduct.description, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
-                subscriptionService.buySubscription(product);
+                // THAY ĐỔI: Gọi hàm mua gói mới
+                subscriptionService.purchasePackage(package);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: isYearly ? Colors.amber[800] : AppColors.primaryBlue,

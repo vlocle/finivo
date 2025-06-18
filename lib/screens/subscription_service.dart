@@ -1,165 +1,113 @@
+// subscription_service_latest.docx
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'dart:io';
+import 'package:purchases_flutter/purchases_flutter.dart';
 
-/// Service này sẽ quản lý toàn bộ logic mua hàng.
-/// Nó sử dụng ChangeNotifier để thông báo cho UI về các thay đổi trạng thái (loading, error, products loaded).
 class SubscriptionService with ChangeNotifier {
-  // Singleton pattern để dễ dàng truy cập từ mọi nơi
+  // Singleton pattern
   static final SubscriptionService _instance = SubscriptionService._internal();
   factory SubscriptionService() => _instance;
   SubscriptionService._internal();
 
-  final InAppPurchase _iap = InAppPurchase.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: "asia-southeast1");
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
 
-  StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
-  List<ProductDetails> products = [];
-  bool isLoading = false;
-  String? error;
+  // Trạng thái Premium sẽ là nguồn tin cậy duy nhất
+  bool _isSubscribed = false;
+  bool get isSubscribed => _isSubscribed;
 
-  // !!! THAY THẾ BẰNG PRODUCT ID THẬT BẠN ĐÃ TẠO TRÊN APP STORE CONNECT !!!
-  final Set<String> _productIds = {
-    'com.finivo.weekly',
-    'com.finivo.monthly',
-    'com.finivo.yearly',
-  };
+  // Danh sách các gói sản phẩm để hiển thị trên màn hình mua
+  List<Package> _packages = [];
+  List<Package> get packages => _packages;
 
-  /// Hàm này nên được gọi một lần khi ứng dụng khởi động.
+  // Hàm khởi tạo, được gọi từ main.dart hoặc AuthWrapper
   Future<void> init() async {
-    final bool available = await _iap.isAvailable();
-    if (available) {
-      // Lắng nghe các cập nhật về giao dịch
-      _purchaseSubscription = _iap.purchaseStream.listen(
-            (purchaseDetailsList) {
-          _listenToPurchaseUpdated(purchaseDetailsList);
-        },
-        onDone: () => _purchaseSubscription?.cancel(),
-        onError: (error) => print("Lỗi lắng nghe giao dịch: $error"),
-      );
-      // Lấy thông tin sản phẩm từ App Store
-      await fetchProducts();
+    // Lắng nghe các thay đổi về thông tin người dùng (bao gồm cả trạng thái premium)
+    Purchases.addCustomerInfoUpdateListener((customerInfo) {
+      _updateSubscriptionStatus(customerInfo);
+    });
+
+    // Lấy thông tin người dùng lần đầu
+    await _loadInitialStatus();
+  }
+
+  Future<void> _loadInitialStatus() async {
+    _setLoading(true);
+    try {
+      final customerInfo = await Purchases.getCustomerInfo();
+      _updateSubscriptionStatus(customerInfo);
+      await fetchOfferings();
+    } catch (e) {
+      print("Lỗi khi lấy thông tin ban đầu: $e");
+    }
+    _setLoading(false);
+  }
+
+  // Hàm cốt lõi: cập nhật trạng thái premium dựa trên thông tin từ RevenueCat
+  void _updateSubscriptionStatus(CustomerInfo customerInfo) {
+    // 'premium' là tên Entitlement bạn đã tạo trên dashboard của RevenueCat
+    final newStatus = customerInfo.entitlements.all["premium"]?.isActive ?? false;
+
+    if (_isSubscribed != newStatus) {
+      _isSubscribed = newStatus;
+      notifyListeners(); // Thông báo cho UI cập nhật
+      print("Cập nhật trạng thái người dùng Premium: $_isSubscribed");
     }
   }
 
-  /// Lấy chi tiết sản phẩm (tên, giá) từ App Store.
-  /// Cập nhật trạng thái loading và error, đồng thời thông báo cho listeners.
-  Future<void> fetchProducts() async {
-    isLoading = true;
-    error = null;
-    notifyListeners(); // Thông báo bắt đầu loading
-
+  // Lấy danh sách các gói sản phẩm để hiển thị
+  Future<void> fetchOfferings() async {
     try {
-      final ProductDetailsResponse response = await _iap.queryProductDetails(_productIds);
-      if (response.error == null) {
-        products = response.productDetails;
-        print("Đã tải thành công ${products.length} sản phẩm.");
-      } else {
-        error = "Lỗi khi tải sản phẩm: ${response.error?.message}";
-        print("Lỗi khi tải sản phẩm: ${response.error?.message}");
+      final offerings = await Purchases.getOfferings();
+      // 'default' là tên Offering bạn đã tạo trên dashboard
+      if (offerings.current != null && offerings.current!.availablePackages.isNotEmpty) {
+        _packages = offerings.current!.availablePackages;
       }
     } catch (e) {
-      error = "Lỗi không xác định khi tải sản phẩm: $e";
-      print("Lỗi không xác định khi tải sản phẩm: $e");
+      print("Lỗi khi lấy các gói sản phẩm: $e");
+      _packages = [];
     }
-
-    isLoading = false;
-    notifyListeners(); // Thông báo đã loading xong
+    notifyListeners();
   }
 
-  /// Bắt đầu quá trình mua một gói.
-  Future<void> buySubscription(ProductDetails product) async {
-    final PurchaseParam purchaseParam = PurchaseParam(productDetails: product);
-    await _iap.buyNonConsumable(purchaseParam: purchaseParam);
+  // Hàm để thực hiện mua một gói
+  Future<bool> purchasePackage(Package package) async {
+    _setLoading(true);
+    try {
+      await Purchases.purchasePackage(package);
+      // Listener sẽ tự động cập nhật trạng thái premium
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      print("Lỗi khi mua hàng: $e");
+      _setLoading(false);
+      return false;
+    }
   }
 
-  /// Khôi phục các giao dịch đã mua.
+  // Khôi phục giao dịch
   Future<void> restorePurchases() async {
-    await _iap.restorePurchases();
-  }
-
-  /// Hàm lắng nghe và xử lý các trạng thái của giao dịch.
-  void _listenToPurchaseUpdated(List<PurchaseDetails> purchaseDetailsList) {
-    for (var purchase in purchaseDetailsList) {
-      if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
-        if (Platform.isIOS) {
-          // Gọi hàm xác thực của Apple
-          _verifyApplePurchase(purchase);
-        } else if (Platform.isAndroid) {
-          // Gọi hàm xác thực mới của Google
-          _verifyGooglePurchase(purchase);
-        }
-      } else if (purchase.status == PurchaseStatus.error) {
-        print("Lỗi giao dịch: ${purchase.error}");
-      } else if (purchase.status == PurchaseStatus.pending) {
-        print("Giao dịch đang chờ xử lý...");
-      }
-      // ... xử lý các trạng thái khác nếu cần
-    }
-  }
-
-  /// GỌI CLOUD FUNCTION VÀ HOÀN TẤT GIAO DỊCH.
-  Future<void> _verifyApplePurchase(PurchaseDetails purchase) async {
-    // KIỂM TRA HÓA ĐƠN TRƯỚC KHI GỬI
-    if (purchase.verificationData.serverVerificationData.isEmpty) {
-      print("Lỗi: Hóa đơn xác thực (serverVerificationData) bị trống. Không thể xác thực.");
-      // (Tùy chọn) Hiển thị thông báo lỗi cho người dùng
-      return;
-    }
-
+    _setLoading(true);
     try {
-      print("Bắt đầu xác thực hóa đơn với Cloud Function...");
-      final String receipt = purchase.verificationData.serverVerificationData;
-
-      // In ra để debug
-      print("Hóa đơn gửi đi: ${receipt.substring(0, 30)}..."); // In ra 30 ký tự đầu
-
-      final callable = _functions.httpsCallable('verifyApplePurchase');
-      final response = await callable.call<Map<String, dynamic>>({
-        'receiptData': receipt,
-      });
-
-      if (response.data['success'] == true) {
-        print("Xác thực thành công! Hoàn tất giao dịch.");
-        await _iap.completePurchase(purchase);
-      } else {
-        print("Xác thực thất bại từ server.");
-      }
+      await Purchases.restorePurchases();
+      // Listener sẽ tự động cập nhật trạng thái premium
     } catch (e) {
-      print("Lỗi khi gọi Cloud Function: $e");
+      print("Lỗi khi khôi phục giao dịch: $e");
     }
+    _setLoading(false);
   }
 
-  Future<void> _verifyGooglePurchase(PurchaseDetails purchase) async {
-    try {
-      print("Bắt đầu xác thực hóa đơn Google Play...");
-      final HttpsCallable callable = _functions.httpsCallable('verifyGooglePurchase');
-
-      final result = await callable.call<Map<String, dynamic>>({
-        'productId': purchase.productID,
-        'purchaseToken': purchase.verificationData.serverVerificationData,
-        'packageName': 'com.vlocle.finivo', // QUAN TRỌNG: Thay bằng tên gói mới của bạn
-      });
-
-      if (result.data['success'] == true) {
-        print("Xác thực Google Play thành công! Hoàn tất giao dịch.");
-        if (purchase.pendingCompletePurchase) {
-          await _iap.completePurchase(purchase);
-        }
-      } else {
-        print("Xác thực Google Play thất bại từ server.");
-      }
-    } catch (e) {
-      print("Lỗi khi gọi Cloud Function verifyGooglePurchase: $e");
-    }
+  void _setLoading(bool status) {
+    _isLoading = status;
+    notifyListeners();
   }
 
-  /// Dọn dẹp listener khi không cần.
-  @override
-  void dispose() {
-    _purchaseSubscription?.cancel();
-    super.dispose();
+  // Quan trọng: Khi người dùng đăng xuất, cần reset RevenueCat
+  Future<void> logout() async {
+    await Purchases.logOut();
+    _isSubscribed = false;
+    _packages = [];
+    notifyListeners();
+    print("Đã đăng xuất khỏi RevenueCat.");
   }
 }
