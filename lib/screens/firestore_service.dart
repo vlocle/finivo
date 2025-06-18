@@ -19,13 +19,6 @@ class FirestoreService {
         'lastLoginAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
 
-        // <<< THÊM CÁC TRƯỜNG SUBSCRIPTION MẶC ĐỊNH TẠI ĐÂY >>>
-        'subscriptionStatus': 'free',
-        'subscriptionTier': 'none',
-        'subscriptionExpiryDate': null,
-        'subscriptionProvider': 'none',
-        'originalTransactionId': 'none',
-
       }, SetOptions(merge: true));
       print("Đã lưu/cập nhật thông tin và deviceId cho user: ${user.uid}"); //
     } catch (e) {
