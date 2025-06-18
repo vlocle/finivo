@@ -158,6 +158,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
         if (authSnapshot.hasData && authSnapshot.data != null) {
           final user = authSnapshot.data!;
+          Purchases.logIn(user.uid).catchError((error) {
+            print("Lỗi khi đăng nhập RevenueCat: $error");
+          });
+          print("Đã đăng nhập vào RevenueCat với user ID: ${user.uid}");
           return StreamBuilder<DocumentSnapshot>(
             stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
             builder: (context, userDocSnapshot) {
@@ -170,7 +174,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
               }
               final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
               final appState = Provider.of<AppState>(context, listen: false);
-              appState.updateSubscriptionStatus(userData);
+              //appState.updateSubscriptionStatus(userData);
               if (appState.authUserId != user.uid) {
                 appState.setUserId(user.uid);
               }
@@ -198,6 +202,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
             },
           );
         }
+        // === BẮT ĐẦU PHẦN ĐỒNG BỘ REVENUECAT ===
+        // Khi người dùng đăng xuất, cũng đăng xuất khỏi RevenueCat
+        Purchases.logOut().catchError((error) {
+          print("Lỗi khi đăng xuất RevenueCat: $error");
+        });
+        print("Đã đăng xuất khỏi RevenueCat");
+        // === KẾT THÚC PHẦN ĐỒNG BỘ REVENUECAT ===
         return LoginScreen();
       },
     );
