@@ -45,28 +45,27 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
   // --- Hàm đăng xuất ---
   Future<void> _signOut(BuildContext context) async {
-    // Phần hiển thị dialog xác nhận không thay đổi
     bool? confirm = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            Icon(Icons.logout_outlined, color: AppColors.chartRed), // Tham khảo màu từ AppColors
+            Icon(Icons.logout_outlined, color: AppColors.chartRed), // Thay bằng màu của bạn
             SizedBox(width: 10),
-            Text("Xác nhận đăng xuất", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)), // Tham khảo màu từ AppColors
+            Text("Xác nhận đăng xuất", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)), // Thay bằng màu của bạn
           ],
         ),
-        content: Text("Bạn có chắc muốn đăng xuất không?", style: TextStyle(color: AppColors.getTextSecondaryColor(context))), // Tham khảo màu từ AppColors
+        content: Text("Bạn có chắc muốn đăng xuất không?", style: TextStyle(color: AppColors.getTextSecondaryColor(context))), // Thay bằng màu của bạn
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text("Hủy", style: TextStyle(color: AppColors.getTextSecondaryColor(context))), // Tham khảo màu từ AppColors
+            child: Text("Hủy", style: TextStyle(color: AppColors.getTextSecondaryColor(context))), // Thay bằng màu của bạn
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.chartRed, // Tham khảo màu từ AppColors
+              backgroundColor: AppColors.chartRed, // Thay bằng màu của bạn
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -79,25 +78,30 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
     if (confirm == true) {
       try {
-        // 1. Chỉ cần gọi đăng xuất khỏi Firebase và Google.
-        // AuthWrapper sẽ tự động phát hiện sự thay đổi trạng thái này.
-        await FirebaseAuth.instance.signOut(); //
-        await GoogleSignIn().signOut(); //
+        // Đăng xuất khỏi các dịch vụ xác thực
+        await FirebaseAuth.instance.signOut();
+        await GoogleSignIn().signOut();
 
-        print("Sign out initiated from UserSettingsScreen. AuthWrapper will now handle redirection.");
+        print("Sign out successful. Navigating to LoginScreen.");
 
-        // 2. KHÔNG cần gọi SubscriptionService.logout(), hiển thị SnackBar
-        // hay điều hướng thủ công ở đây nữa. AuthWrapper sẽ làm tất cả những việc đó.
+        // **PHỤC HỒI LỆNH ĐIỀU HƯỚNG**
+        // Lệnh này sẽ xóa tất cả các màn hình hiện tại (UserSettings, MainScreen,...)
+        // và đẩy LoginScreen vào làm màn hình gốc mới.
+        if (context.mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => LoginScreen()),
+                (Route<dynamic> route) => false,
+          );
+        }
 
       } catch (e) {
-        print("Lỗi đăng xuất: $e"); //
-        // Chỉ hiển thị SnackBar nếu có lỗi xảy ra trong quá trình đăng xuất.
-        if (context.mounted) { //
-          ScaffoldMessenger.of(context).showSnackBar( //
-            SnackBar( //
-              content: Text('Đăng xuất thất bại: $e'), //
-              backgroundColor: AppColors.chartRed, //
-              behavior: SnackBarBehavior.floating, //
+        print("Lỗi đăng xuất: $e");
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đăng xuất thất bại: $e'),
+              backgroundColor: AppColors.chartRed,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }

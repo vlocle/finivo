@@ -159,23 +159,47 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   // Hàm helper để xử lý logic đăng nhập và định danh
   Future<void> _identifyUser(User user) async {
-    // Luôn gọi logIn khi có thông tin người dùng
-    // và đợi nó hoàn thành.
     try {
       print("Attempting to log in to RevenueCat with UID: ${user.uid}");
-      await Purchases.logIn(user.uid);
-      print("Successfully logged in to RevenueCat.");
 
-      // Sau khi đăng nhập RevenueCat thành công, cập nhật AppState
-      final appState = Provider.of<AppState>(context, listen: false);
-      if (appState.authUserId != user.uid) { //
-        appState.setUserId(user.uid); //
+      // 1. Đăng nhập và lấy về đối tượng LogInResult
+      final logInResult = await Purchases.logIn(user.uid);
+
+      // 2. LẤY ĐÚNG ĐỐI TƯỢNG customerInfo TỪ BÊN TRONG logInResult
+      final customerInfo = logInResult.customerInfo;
+
+      print("Successfully logged in to RevenueCat. Checking for subscription ownership...");
+
+      // 3. Kiểm tra xem người dùng có đang active premium không
+      final isSubscribed = customerInfo.entitlements.all["premium"]?.isActive ?? false;
+
+      if (isSubscribed && customerInfo.originalAppUserId != user.uid) {
+        print("Conflict detected: Subscription is active but belongs to another user (${customerInfo.originalAppUserId}).");
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Gói đăng ký này đã được sử dụng bởi một tài khoản khác trên thiết bị."),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+
+        await FirebaseAuth.instance.signOut();
+        throw Exception("Subscription ownership conflict.");
       }
+
+      // Nếu không có xung đột, tiếp tục cập nhật AppState như bình thường
+      print("Ownership check passed. User is clear to proceed.");
+      final appState = Provider.of<AppState>(context, listen: false);
+      if (appState.authUserId != user.uid) {
+        appState.setUserId(user.uid);
+      }
+
     } catch (e) {
-      print("Error logging in to RevenueCat: $e");
-      // Cân nhắc xử lý lỗi ở đây, ví dụ: đăng xuất người dùng khỏi Firebase
-      // để họ có thể thử lại.
-      await FirebaseAuth.instance.signOut();
+      await Purchases.logOut();
+      print("Error during user identification or ownership check: $e. User has been logged out.");
+      rethrow;
     }
   }
 

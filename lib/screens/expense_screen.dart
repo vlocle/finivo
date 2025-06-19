@@ -363,7 +363,31 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                         SizedBox(height: 6),
                         GestureDetector(
                           onTap: () async {
-                            final DateTimeRange? pickedDateRange = await showDateRangePicker(context: dialogContext, initialDateRange: _currentDialogDateRange ?? DateTimeRange(start: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1), end: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, daysInSelectedMonth)), firstDate: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1), lastDate: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, daysInSelectedMonth), builder: (context, child) { return Theme(data: ThemeData.light().copyWith(colorScheme: ColorScheme.light(primary: AppColors.chartRed, onPrimary: Colors.white, surface: AppColors.getCardColor(context), onSurface: AppColors.getTextColor(context)), dialogBackgroundColor: AppColors.getCardColor(context), textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: AppColors.chartRed))), child: child!); });
+                            final DateTimeRange? pickedDateRange = await showDateRangePicker(
+                                context: dialogContext,
+                                initialDateRange: _currentDialogDateRange ??
+                                    DateTimeRange(
+                                        start: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1),
+                                        end: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, daysInSelectedMonth)),
+                                firstDate: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1),
+                                lastDate: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, daysInSelectedMonth),
+                                builder: (context, child) {
+                                  return Theme(
+                                    data: Theme.of(context).copyWith(
+                                      colorScheme: Theme.of(context).colorScheme.copyWith(
+                                        primary: AppColors.chartRed,
+                                        onPrimary: Colors.white,
+                                        surface: AppColors.getCardColor(context),
+                                        onSurface: AppColors.getTextColor(context),
+                                      ),
+                                      dialogBackgroundColor: AppColors.getCardColor(context),
+                                      textButtonTheme: TextButtonThemeData(
+                                          style: TextButton.styleFrom(foregroundColor: AppColors.chartRed)
+                                      ),
+                                    ),
+                                    child: child!,
+                                  );
+                                });
                             if (pickedDateRange != null) {
                               setStateDialog(() => _currentDialogDateRange = pickedDateRange);
                             }
@@ -374,7 +398,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(_currentDialogDateRange == null ? "Cả tháng (${DateFormat('MM/yyyy', 'vi').format(_currentDialogMonth)})" : "${DateFormat('dd/MM/yy', 'vi').format(_currentDialogDateRange!.start)} - ${DateFormat('dd/MM/yy', 'vi').format(_currentDialogDateRange!.end)}", style: TextStyle(fontSize: 14.5, color: AppColors.getTextColor(context))),
+                                Text(
+                                    _currentDialogDateRange == null
+                                        ? "Cả tháng (${DateFormat('MM/yyyy', 'vi').format(_currentDialogMonth)})"
+                                        : "${DateFormat('dd/MM/yy', 'vi').format(_currentDialogDateRange!.start)} - ${DateFormat('dd/MM/yy', 'vi').format(_currentDialogDateRange!.end)}",
+                                    style: TextStyle(fontSize: 14.5, color: AppColors.getTextColor(context))),
                                 Icon(Icons.date_range_outlined, color: AppColors.chartRed, size: 20),
                               ],
                             ),
