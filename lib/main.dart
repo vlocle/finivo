@@ -1,4 +1,4 @@
-// main.dart
+// main.dart (Đã cập nhật)
 import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,7 +10,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
-import 'package:purchases_flutter/purchases_flutter.dart'; // Thêm import của RevenueCat
+import 'package:purchases_flutter/purchases_flutter.dart';
 
 // <<< THÊM CÁC IMPORT CẦN THIẾT >>>
 import 'state/app_state.dart';
@@ -21,7 +21,6 @@ import 'screens/subscription_service.dart';
 
 Future<void> _configureRevenueCat() async {
   await Purchases.setLogLevel(LogLevel.debug); // Bật log debug để dễ gỡ lỗi
-
   PurchasesConfiguration configuration;
   if (Platform.isIOS) {
     // Dán Public Apple API Key của bạn vào đây
@@ -55,44 +54,38 @@ void main() async {
     );
     await Hive.initFlutter();
     await initializeDateFormatting('vi', null);
-
-    final appState = AppState();
+    final appState = AppState(); //
     final connectivityResult = await Connectivity().checkConnectivity();
     if (connectivityResult != ConnectivityResult.none) {
       await appState.syncWithFirestore();
     }
     initConnectivityListener(appState);
-
     // Chạy ứng dụng và cung cấp các services bằng MultiProvider
     runApp(
       MultiProvider(
         providers: [
           // 1. Cung cấp SubscriptionService như một ChangeNotifier bình thường
           ChangeNotifierProvider(create: (_) => SubscriptionService()),
-
           // 2. Dùng ProxyProvider để AppState có thể "lắng nghe" SubscriptionService
           ChangeNotifierProxyProvider<SubscriptionService, AppState>(
-
             // create: Tạo ra AppState lần đầu tiên
             create: (context) => AppState(),
-
             // update: Được gọi mỗi khi SubscriptionService thay đổi
             update: (context, subscriptionService, previousAppState) {
               // Lấy trạng thái isSubscribed mới nhất từ service
               final newSubStatus = subscriptionService.isSubscribed;
-
               // Cập nhật AppState với trạng thái mới và trả về
               return previousAppState!..updateSubscriptionStatus(newSubStatus);
             },
           ),
         ],
-        child: const MyApp(),
+        child: const MyApp(), //
       ),
     );
   } catch (e) {
-    print('Lỗi khởi tạo ứng dụng: $e');
-    runApp(MaterialApp(
-      home: Scaffold(
+    print('Lỗi khởi tạo ứng dụng: $e'); //
+    runApp(MaterialApp( //
+      home: Scaffold( //
         body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')),
       ),
     ));
@@ -133,27 +126,27 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
       ),
-      themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      localizationsDelegates: const [
+      themeMode: appState.isDarkMode ? ThemeMode.dark : ThemeMode.light, //
+      localizationsDelegates: const [ //
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
+      supportedLocales: const [ //
         Locale('vi', 'VN'),
         Locale('en', 'US'),
       ],
       locale: const Locale('vi', 'VN'),
-      home: const AuthWrapper(),
+      home: const AuthWrapper(), //
     );
   }
 }
 
 class AuthWrapper extends StatefulWidget {
-  const AuthWrapper({super.key});
+  const AuthWrapper({super.key}); //
 
   @override
-  State<AuthWrapper> createState() => _AuthWrapperState();
+  State<AuthWrapper> createState() => _AuthWrapperState(); //
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
@@ -164,68 +157,120 @@ class _AuthWrapperState extends State<AuthWrapper> {
     context.read<SubscriptionService>().init();
   }
 
+  // Hàm helper để xử lý logic đăng nhập và định danh
+  Future<void> _identifyUser(User user) async {
+    // Luôn gọi logIn khi có thông tin người dùng
+    // và đợi nó hoàn thành.
+    try {
+      print("Attempting to log in to RevenueCat with UID: ${user.uid}");
+      await Purchases.logIn(user.uid);
+      print("Successfully logged in to RevenueCat.");
+
+      // Sau khi đăng nhập RevenueCat thành công, cập nhật AppState
+      final appState = Provider.of<AppState>(context, listen: false);
+      if (appState.authUserId != user.uid) { //
+        appState.setUserId(user.uid); //
+      }
+    } catch (e) {
+      print("Error logging in to RevenueCat: $e");
+      // Cân nhắc xử lý lỗi ở đây, ví dụ: đăng xuất người dùng khỏi Firebase
+      // để họ có thể thử lại.
+      await FirebaseAuth.instance.signOut();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: FirebaseAuth.instance.authStateChanges(), //
       builder: (context, authSnapshot) {
-        if (authSnapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        if (authSnapshot.connectionState == ConnectionState.waiting) { //
+          return const Scaffold(body: Center(child: CircularProgressIndicator())); //
         }
-        if (authSnapshot.hasData && authSnapshot.data != null) {
-          final user = authSnapshot.data!;
-          Purchases.logIn(user.uid).catchError((error) {
-            print("Lỗi khi đăng nhập RevenueCat: $error");
-          });
-          print("Đã đăng nhập vào RevenueCat với user ID: ${user.uid}");
-          return StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
-            builder: (context, userDocSnapshot) {
-              if (userDocSnapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
+        if (authSnapshot.hasData && authSnapshot.data != null) { //
+          final user = authSnapshot.data!; //
+
+          // Sử dụng FutureBuilder để đợi quá trình định danh hoàn tất
+          return FutureBuilder(
+            future: _identifyUser(user),
+            builder: (context, snapshot) {
+              // Trong khi đang đợi _identifyUser chạy
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 10),
+                        Text("Đang định danh người dùng...")
+                      ],
+                    ),
+                  ),
+                );
               }
-              if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) {
-                FirebaseAuth.instance.signOut();
+
+              // Nếu có lỗi trong quá trình định danh
+              if (snapshot.hasError) {
+                // Lỗi đã được xử lý bên trong _identifyUser,
+                // người dùng sẽ bị đăng xuất và quay về LoginScreen
                 return LoginScreen();
               }
-              final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
-              final appState = Provider.of<AppState>(context, listen: false);
-              //appState.updateSubscriptionStatus(userData);
-              if (appState.authUserId != user.uid) {
-                appState.setUserId(user.uid);
-              }
-              final storedDeviceId = userData['lastLoginDeviceId'];
-              return FutureBuilder<String?>(
-                future: getDeviceId(),
-                builder: (context, deviceIdSnapshot) {
-                  if (deviceIdSnapshot.connectionState == ConnectionState.waiting) {
+
+              // Khi _identifyUser đã chạy xong, tiếp tục kiểm tra deviceId
+              return StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(), //
+                builder: (context, userDocSnapshot) {
+                  if (userDocSnapshot.connectionState == ConnectionState.waiting) { //
                     return const Scaffold(body: Center(child: CircularProgressIndicator()));
                   }
-                  final currentDeviceId = deviceIdSnapshot.data;
-                  if (storedDeviceId != null && currentDeviceId != null && storedDeviceId == currentDeviceId) {
-                    return MainScreen();
-                  } else {
-                    Future.delayed(Duration.zero, () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')),
-                      );
-                      FirebaseAuth.instance.signOut();
-                    });
-                    return LoginScreen();
+                  if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) { //
+                    FirebaseAuth.instance.signOut(); //
+                    return LoginScreen(); //
                   }
+                  final userData = userDocSnapshot.data!.data() as Map<String, dynamic>; //
+                  final storedDeviceId = userData['lastLoginDeviceId']; //
+
+                  return FutureBuilder<String?>(
+                    future: getDeviceId(), //
+                    builder: (context, deviceIdSnapshot) {
+                      if (deviceIdSnapshot.connectionState == ConnectionState.waiting) { //
+                        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                      }
+                      final currentDeviceId = deviceIdSnapshot.data; //
+                      if (storedDeviceId != null && currentDeviceId != null && storedDeviceId == currentDeviceId) { //
+                        return MainScreen(); //
+                      } else {
+                        Future.delayed(Duration.zero, () { //
+                          ScaffoldMessenger.of(context).showSnackBar( //
+                            const SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')), //
+                          );
+                          FirebaseAuth.instance.signOut(); //
+                        });
+                        return LoginScreen(); //
+                      }
+                    },
+                  );
                 },
               );
             },
           );
         }
-        // === BẮT ĐẦU PHẦN ĐỒNG BỘ REVENUECAT ===
-        // Khi người dùng đăng xuất, cũng đăng xuất khỏi RevenueCat
-        Purchases.logOut().catchError((error) {
-          print("Lỗi khi đăng xuất RevenueCat: $error");
-        });
-        print("Đã đăng xuất khỏi RevenueCat");
-        // === KẾT THÚC PHẦN ĐỒNG BỘ REVENUECAT ===
-        return LoginScreen();
+
+        // Khi người dùng đăng xuất (authSnapshot không có data)
+        // Gọi logOut từ RevenueCat và quay về màn hình Login
+        return FutureBuilder(
+          future: Purchases.logOut(), // Đảm bảo logOut cũng được xử lý
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              print("Error logging out from RevenueCat: ${snapshot.error}"); //
+            } else {
+              print("Successfully logged out from RevenueCat."); //
+            }
+            return LoginScreen(); //
+          },
+        );
       },
     );
   }
