@@ -67,8 +67,24 @@ void main() async {
     runApp(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(create: (context) => appState),
-          ChangeNotifierProvider(create: (context) => SubscriptionService()),
+          // 1. Cung cấp SubscriptionService như một ChangeNotifier bình thường
+          ChangeNotifierProvider(create: (_) => SubscriptionService()),
+
+          // 2. Dùng ProxyProvider để AppState có thể "lắng nghe" SubscriptionService
+          ChangeNotifierProxyProvider<SubscriptionService, AppState>(
+
+            // create: Tạo ra AppState lần đầu tiên
+            create: (context) => AppState(),
+
+            // update: Được gọi mỗi khi SubscriptionService thay đổi
+            update: (context, subscriptionService, previousAppState) {
+              // Lấy trạng thái isSubscribed mới nhất từ service
+              final newSubStatus = subscriptionService.isSubscribed;
+
+              // Cập nhật AppState với trạng thái mới và trả về
+              return previousAppState!..updateSubscriptionStatus(newSubStatus);
+            },
+          ),
         ],
         child: const MyApp(),
       ),

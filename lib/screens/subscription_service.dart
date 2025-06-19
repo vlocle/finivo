@@ -48,10 +48,19 @@ class SubscriptionService with ChangeNotifier {
     // 'premium' là tên Entitlement bạn đã tạo trên dashboard của RevenueCat
     final newStatus = customerInfo.entitlements.all["premium"]?.isActive ?? false;
 
+    // --- BẮT ĐẦU LOG DEBUG ---
+    print("--- RevenueCat Listener Fired ---");
+    print("Current local status (_isSubscribed): $_isSubscribed");
+    print("New status from RevenueCat server: $newStatus");
+    print("Active entitlements from RevenueCat: ${customerInfo.entitlements.active}");
+    // --- KẾT THÚC LOG DEBUG ---
+
     if (_isSubscribed != newStatus) {
       _isSubscribed = newStatus;
+      print(">>> STATUS CHANGED! Calling notifyListeners() to update UI <<<");
       notifyListeners(); // Thông báo cho UI cập nhật
-      print("Cập nhật trạng thái người dùng Premium: $_isSubscribed");
+    } else {
+      print("--- Status has NOT changed. No need to call notifyListeners(). ---");
     }
   }
 

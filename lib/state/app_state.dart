@@ -10,6 +10,8 @@ import '/screens/expense_manager.dart';
 import '/screens/revenue_manager.dart';
 
 class AppState extends ChangeNotifier {
+  bool _isSubscribed = false;
+  bool get isSubscribed => _isSubscribed;
   DateTime? _subscriptionExpiryDate;
   DateTime? get subscriptionExpiryDate => _subscriptionExpiryDate;
   int _selectedScreenIndex = 0;
@@ -97,6 +99,15 @@ class AppState extends ChangeNotifier {
   void setSelectedScreenIndex(int index) {
     _selectedScreenIndex = index;
     notifyListeners();
+  }
+
+  void updateSubscriptionStatus(bool newStatus) {
+    // Chỉ cập nhật và thông báo nếu có sự thay đổi thực sự
+    if (_isSubscribed != newStatus) {
+      _isSubscribed = newStatus;
+      print("AppState updated by ProxyProvider: User is now premium -> $_isSubscribed");
+      notifyListeners(); // Báo cho toàn bộ UI đang nghe AppState cập nhật
+    }
   }
 
   void _updateProfitAndRelatedListenables() {

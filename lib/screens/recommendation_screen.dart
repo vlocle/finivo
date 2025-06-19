@@ -649,8 +649,9 @@ Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra 
     final appState = context.read<AppState>();
 
     // <<< KIỂM TRA TRẠNG THÁI PREMIUM NGAY TỪ ĐẦU >>>
-    if (!subscriptionService.isSubscribed) {
-      return _buildPaywallWidget();
+    if (!appState.isSubscribed) {
+      // Trả về paywall hoặc widget lỗi
+      return _buildPaywallWidget(); // Hoặc một Scaffold báo lỗi truy cập
     }
 
     // --- NẾU LÀ PREMIUM USER, HIỂN THỊ NỘI DUNG GỐC CỦA MÀN HÌNH ---

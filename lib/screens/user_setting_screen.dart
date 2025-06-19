@@ -593,7 +593,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
               context,
               title: "Tài khoản",
               children: [
-                Consumer<SubscriptionService>(
+                Consumer<AppState>(
                   builder: (context, subscriptionService, child) {
                     // Nếu người dùng đã đăng ký Premium, không hiển thị gì cả
                     if (subscriptionService.isSubscribed) {
