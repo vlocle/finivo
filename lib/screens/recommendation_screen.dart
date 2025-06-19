@@ -428,9 +428,9 @@ class _AnalysisScreenState extends State<AnalysisScreen>
    - Top 5 sản phẩm lợi nhuận cao nhất: ${productProfitabilitySummary.isNotEmpty ? productProfitabilitySummary : 'Không có dữ liệu'}.
 ''';
 
-      String expenseBreakdownSummary = expenseBreakdown.entries
-          .map((e) =>
-      '${e.key}: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(e.value)} VNĐ')
+      String expenseBreakdownSummary = expenseBreakdown
+          .map((item) => // 'item' bây giờ là một object CategoryChartData
+      '${item.category}: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(item.value)} VNĐ')
           .join(', ');
       String productRevenueSummary = productRevenueBreakdown.entries
           .map((e) => '${e.key}: ${e.value.toStringAsFixed(1)}%')

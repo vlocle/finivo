@@ -9,7 +9,9 @@ import 'package:intl/intl.dart'; // [cite: 1]
 import 'account_switcher.dart';
 import 'user_setting_screen.dart'; // [cite: 1]
 // Giả định đường dẫn này đúng
-import 'skeleton_loading.dart'; // Giả định đường dẫn này đúng // [cite: 2]
+import 'skeleton_loading.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+import '../screens/chart_data_models.dart';
 
 // Định nghĩa màu sắc tập trung
 class AppColors {
@@ -396,23 +398,23 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                     isDarkMode: isDarkMode, // [cite: 86]
                     child: Column(
                       children: [
-                        _buildLegend(isDarkMode, overview: true), // [cite: 86]
-                        const SizedBox(height: 16), // [cite: 87]
-                        SizedBox( // [cite: 87]
-                          height: MediaQuery.of(context).size.height * 0.35, // [cite: 87]
-                          child: FutureBuilder<List<Map<String, double>>>( // [cite: 88]
-                            future: appState.getDailyOverviewForRange(selectedDateRange!), // [cite: 88]
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.35,
+                          // THAY ĐỔI FUTUREBUILDER DƯỚI ĐÂY
+                          child: FutureBuilder<Map<String, List<TimeSeriesChartData>>>( // Sửa kiểu dữ liệu ở đây
+                            future: appState.getDailyOverviewForRange(selectedDateRange!),
                             builder: (context, trendSnapshot) {
-                              if (trendSnapshot.connectionState == ConnectionState.waiting) { // [cite: 88]
-                                return const Center(child: ReportSkeleton()); // [cite: 89]
+                              if (trendSnapshot.connectionState == ConnectionState.waiting) {
+                                return const Center(child: ReportSkeleton());
                               }
-                              if (trendSnapshot.hasError) { // [cite: 90]
-                                return Center(child: Text('Lỗi tải dữ liệu xu hướng: ${trendSnapshot.error}')); // [cite: 90]
+                              if (trendSnapshot.hasError) {
+                                return Center(child: Text('Lỗi tải dữ liệu xu hướng: ${trendSnapshot.error}'));
                               }
-                              if (trendSnapshot.hasData && trendSnapshot.data!.isNotEmpty) { // [cite: 91]
-                                return _buildOverviewTrendChart(appState, selectedDateRange!, trendSnapshot.data!); // [cite: 91]
+                              if (trendSnapshot.hasData && trendSnapshot.data!.isNotEmpty) {
+                                // Gọi widget Syncfusion mới
+                                return _buildSyncfusionOverviewChart(context, trendSnapshot.data!);
                               }
-                              return const Center(child: Text('Không có dữ liệu xu hướng')); // [cite: 92]
+                              return const Center(child: Text('Không có dữ liệu xu hướng'));
                             },
                           ),
                         ),
@@ -424,99 +426,6 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
         }
         return const Center(child: Text('Không có dữ liệu tổng quan')); // [cite: 95]
       },
-    );
-  }
-
-  Widget _buildOverviewTrendChart(AppState appState, DateTimeRange range, List<Map<String, double>> dailyData) { // [cite: 96]
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark; // [cite: 96, 97]
-    double maxVal = dailyData.isNotEmpty // [cite: 97]
-        ? dailyData.map((e) { // [cite: 98]
-      final revenue = e['totalRevenue'] ?? 0; // [cite: 98]
-      final expense = e['totalExpense'] ?? 0; // [cite: 98]
-      final profit = e['profit'] ?? 0; // [cite: 98]
-      return [revenue.abs(), expense.abs(), profit.abs()].reduce((max, val) => val > max ? val : max); // [cite: 98]
-    }).reduce((max, val) => val > max ? val : max)
-        : 1000000; // [cite: 98]
-    double horizontalInterval = (maxVal / 4).roundToDouble(); // [cite: 99]
-    horizontalInterval = horizontalInterval > 0 ? horizontalInterval : 100000; // [cite: 99]
-    return LineChart( // [cite: 100]
-      LineChartData(
-        lineBarsData: [
-          _buildLineData(dailyData, 'totalRevenue', AppColors.chartGreen, isDarkMode), // [cite: 100]
-          _buildLineData(dailyData, 'totalExpense', AppColors.chartRed, isDarkMode), // [cite: 100]
-          _buildLineData(dailyData, 'profit', AppColors.chartBlue, isDarkMode), // [cite: 100]
-        ],
-        titlesData: FlTitlesData(
-          bottomTitles: AxisTitles( // [cite: 100]
-            sideTitles: SideTitles(
-              showTitles: true, // [cite: 101]
-              reservedSize: 35, // [cite: 101]
-              interval: 1, // [cite: 101]
-              getTitlesWidget: (value, meta) {
-                int days = range.end.difference(range.start).inDays + 1; // [cite: 101]
-                if (value.toInt() >= 0 && value.toInt() < days) { // [cite: 102]
-                  DateTime date = range.start.add(Duration(days: value.toInt())); // [cite: 102]
-                  if (days > 7 && value.toInt() % (days ~/ 7) != 0 && value.toInt() != days - 1 && value.toInt() !=0) { // [cite: 102]
-                    return const SizedBox.shrink(); // [cite: 102]
-                  }
-                  return SideTitleWidget( // [cite: 103]
-                    axisSide: meta.axisSide, // [cite: 103]
-                    space: 8, // [cite: 103]
-                    child: Text( // [cite: 103]
-                      DateFormat('dd/MM').format(date), // [cite: 104]
-                      style: TextStyle(fontSize: 10, color: AppColors.getTextSecondaryColor(context)), // [cite: 104, 105]
-                    ),
-                  );
-                }
-                return const SizedBox.shrink(); // [cite: 106]
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true, // [cite: 107]
-              reservedSize: 50, // [cite: 107]
-              getTitlesWidget: (value, meta) => Text( // [cite: 107]
-                formatNumberCompact(value), // [cite: 108]
-                style: TextStyle(fontSize: 10, color: AppColors.getTextSecondaryColor(context)), // [cite: 108]
-              ),
-              interval: horizontalInterval, // [cite: 108]
-            ),
-          ),
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // [cite: 108]
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // [cite: 109]
-        ),
-        gridData: FlGridData(
-          show: true, // [cite: 109]
-          drawVerticalLine: false, // [cite: 109]
-          horizontalInterval: horizontalInterval, // [cite: 109]
-          getDrawingHorizontalLine: (value) => FlLine( // [cite: 109]
-            color: AppColors.getBorderColor(context).withOpacity(0.5), // [cite: 109]
-            strokeWidth: 1, // [cite: 109, 110]
-            dashArray: [3, 3], // [cite: 110]
-          ),
-        ),
-        borderData: FlBorderData(show: false), // [cite: 110]
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            tooltipBgColor: AppColors.getCardColor(context).withOpacity(0.9), // [cite: 110, 111]
-            tooltipRoundedRadius: 8, // [cite: 111]
-            getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
-              String label = spot.barIndex == 0 ? 'Doanh Thu' // [cite: 111]
-                  : spot.barIndex == 1 ? 'Chi Phí' : 'Lợi Nhuận'; // [cite: 111]
-              Color spotColor = spot.barIndex == 0 ? AppColors.chartGreen // [cite: 111]
-                  : spot.barIndex == 1 ? AppColors.chartRed : AppColors.chartBlue; // [cite: 112]
-              return LineTooltipItem( // [cite: 112]
-                '$label: ${currencyFormat.format(spot.y)}', // [cite: 112]
-                TextStyle( // [cite: 112]
-                  color: spotColor, // [cite: 112]
-                  fontWeight: FontWeight.bold, // [cite: 113]
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
     );
   }
 
@@ -544,152 +453,53 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                 const SizedBox(height: 12), // [cite: 118]
                 _buildModernInfoCard('Tổng Chi Phí', totalExpense, Icons.receipt_long_outlined, AppColors.chartRed), // [cite: 118]
                 const SizedBox(height: 20), // [cite: 118]
-                _buildSectionCard( // [cite: 118]
-                    title: 'Phân Tích Chi Phí', // [cite: 119]
-                    isDarkMode: isDarkMode, // [cite: 119]
-                    child: FutureBuilder<Map<String, double>>(
-                      future: appState.getExpenseBreakdown(selectedDateRange!), // [cite: 119]
+                _buildSectionCard(
+                    title: 'Phân Tích Chi Phí',
+                    isDarkMode: isDarkMode,
+                    child: FutureBuilder<List<CategoryChartData>>( // Sửa kiểu dữ liệu ở đây
+                      future: appState.getExpenseBreakdown(selectedDateRange!),
                       builder: (context, breakdownSnapshot) {
-                        if (breakdownSnapshot.connectionState == ConnectionState.waiting) { // [cite: 120]
-                          return const SizedBox(height: 250 + 50, child: Center(child: ReportSkeleton())); // +50 cho legend (ước lượng) // [cite: 120]
+                        if (breakdownSnapshot.connectionState == ConnectionState.waiting) {
+                          return const SizedBox(height: 250, child: Center(child: ReportSkeleton()));
                         }
-                        if (breakdownSnapshot.hasError) return Center(child: Text('Lỗi: ${breakdownSnapshot.error}')); // [cite: 121]
-                        if (breakdownSnapshot.hasData && breakdownSnapshot.data!.isNotEmpty) { // [cite: 121]
-                          final pieData = breakdownSnapshot.data!; // [cite: 121]
-                          return Column( // [cite: 122]
-                            children: [
-                              SizedBox( // [cite: 122]
-                                height: 250, // [cite: 122]
-                                child: _buildModernPieChart(pieData, isDarkMode, enableTouchInteraction: false), // [cite: 123]
-                              ),
-                              const SizedBox(height: 16), // [cite: 123]
-                              _buildPieChartLegend(pieData, isDarkMode), // [cite: 124]
-                            ],
+                        if (breakdownSnapshot.hasError) return Center(child: Text('Lỗi: ${breakdownSnapshot.error}'));
+                        if (breakdownSnapshot.hasData && breakdownSnapshot.data!.isNotEmpty) {
+                          return SizedBox(
+                            height: 300, // Tăng chiều cao để chứa cả legend
+                            child: _buildSyncfusionExpensePieChart(context, breakdownSnapshot.data!), // Gọi hàm mới
                           );
                         }
-                        return const Center(child: Text('Không có dữ liệu chi tiết')); // [cite: 125]
+                        return const Center(child: Text('Không có dữ liệu chi tiết'));
                       },
-                    )),
+                    )
+                ),
                 const SizedBox(height: 20), // [cite: 126]
-                _buildSectionCard( // [cite: 126]
-                    title: 'Xu hướng chi phí', // [cite: 126]
-                    isDarkMode: isDarkMode, // [cite: 126]
-                    child: Column(
-                      children: [
-                        _buildLegend(isDarkMode, expense: true), // [cite: 127]
-                        const SizedBox(height: 16), // [cite: 127]
-                        SizedBox( // [cite: 128]
-                          height: MediaQuery.of(context).size.height * 0.35, // [cite: 128]
-                          child: FutureBuilder<List<Map<String, double>>>( // [cite: 128]
-                            future: appState.getDailyExpensesForRange(selectedDateRange!), // [cite: 129]
-                            builder: (context, trendSnapshot) {
-                              if (trendSnapshot.connectionState == ConnectionState.waiting) { // [cite: 129]
-                                return const Center(child: ReportSkeleton()); // [cite: 130]
-                              }
-                              if (trendSnapshot.hasError) return Center(child: Text('Lỗi: ${trendSnapshot.error}')); // [cite: 130]
-                              if (trendSnapshot.hasData && trendSnapshot.data!.isNotEmpty) { // [cite: 131]
-                                return _buildExpenseTrendChart(appState, selectedDateRange!, trendSnapshot.data!); // [cite: 131]
-                              }
-                              return const Center(child: Text('Không có dữ liệu xu hướng')); // [cite: 132]
-                            },
-                          ),
-                        ),
-                      ],
-                    )),
+                _buildSectionCard(
+                  title: 'Xu hướng chi phí',
+                  isDarkMode: isDarkMode,
+                  child: SizedBox( // Bọc trong SizedBox để giới hạn chiều cao
+                    height: MediaQuery.of(context).size.height * 0.35,
+                    child: FutureBuilder<Map<String, List<TimeSeriesChartData>>>( // Sửa kiểu dữ liệu
+                      future: appState.getDailyExpensesForRange(selectedDateRange!),
+                      builder: (context, trendSnapshot) {
+                        if (trendSnapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: ReportSkeleton());
+                        }
+                        if (trendSnapshot.hasError) return Center(child: Text('Lỗi: ${trendSnapshot.error}'));
+                        if (trendSnapshot.hasData && trendSnapshot.data!.isNotEmpty) {
+                          return _buildSyncfusionExpenseTrendChart(context, trendSnapshot.data!); // Gọi hàm mới
+                        }
+                        return const Center(child: Text('Không có dữ liệu xu hướng'));
+                      },
+                    ),
+                  ),
+                )
               ],
             ),
           );
         }
         return const Center(child: Text('Không có dữ liệu chi phí')); // [cite: 135]
       },
-    );
-  }
-
-  Widget _buildExpenseTrendChart(AppState appState, DateTimeRange range, List<Map<String, double>> dailyData) { // [cite: 136]
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark; // [cite: 136, 137]
-    double maxVal = dailyData.isNotEmpty // [cite: 137]
-        ? dailyData.map((e) { // [cite: 138]
-      final fixed = e['fixedExpense'] ?? 0; // [cite: 138]
-      final variable = e['variableExpense'] ?? 0; // [cite: 138]
-      final total = e['totalExpense'] ?? 0; // [cite: 138]
-      return [fixed.abs(), variable.abs(), total.abs()].reduce((max, val) => val > max ? val : max); // [cite: 138]
-    }).reduce((max, val) => val > max ? val : max)
-        : 1000000; // [cite: 138]
-    double horizontalInterval = (maxVal / 4).roundToDouble(); // [cite: 139]
-    horizontalInterval = horizontalInterval > 0 ? horizontalInterval : 100000; // [cite: 139]
-    return LineChart( // [cite: 140]
-      LineChartData(
-        lineBarsData: [
-          _buildLineData(dailyData, 'fixedExpense', AppColors.chartBlue, isDarkMode, dashArray: [5, 5]), // [cite: 140]
-          _buildLineData(dailyData, 'variableExpense', AppColors.chartOrange, isDarkMode, dashArray: [5, 5]), // [cite: 140]
-          _buildLineData(dailyData, 'totalExpense', AppColors.chartRed, isDarkMode), // [cite: 140]
-        ],
-        titlesData: FlTitlesData(
-          bottomTitles: AxisTitles( // [cite: 140]
-            sideTitles: SideTitles(
-              showTitles: true, // [cite: 141]
-              reservedSize: 35, // [cite: 141]
-              interval: 1, // [cite: 141]
-              getTitlesWidget: (value, meta) {
-                int days = range.end.difference(range.start).inDays + 1; // [cite: 141]
-                if (value.toInt() >= 0 && value.toInt() < days) { // [cite: 142]
-                  DateTime date = range.start.add(Duration(days: value.toInt())); // [cite: 142]
-                  if (days > 7 && value.toInt() % (days ~/ 7) != 0 && value.toInt() != days - 1 && value.toInt() !=0) { // [cite: 142]
-                    return const SizedBox.shrink(); // [cite: 142]
-                  }
-                  return SideTitleWidget( // [cite: 143]
-                    axisSide: meta.axisSide, // [cite: 143]
-                    space: 8, // [cite: 143]
-                    child: Text( // [cite: 143]
-                      DateFormat('dd/MM').format(date), // [cite: 144]
-                      style: TextStyle(fontSize: 10, color: AppColors.getTextSecondaryColor(context)), // [cite: 144, 145]
-                    ),
-                  );
-                }
-                return const SizedBox.shrink(); // [cite: 146]
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true, // [cite: 147]
-              reservedSize: 50, // [cite: 147]
-              getTitlesWidget: (value, meta) => Text( // [cite: 147]
-                formatNumberCompact(value), // [cite: 148]
-                style: TextStyle(fontSize: 10, color: AppColors.getTextSecondaryColor(context)), // [cite: 148]
-              ),
-              interval: horizontalInterval, // [cite: 148]
-            ),
-          ),
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // [cite: 148]
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // [cite: 149]
-        ),
-        gridData: FlGridData(
-          show: true, // [cite: 149]
-          drawVerticalLine: false, // [cite: 149]
-          horizontalInterval: horizontalInterval, // [cite: 149]
-          getDrawingHorizontalLine: (value) => FlLine( // [cite: 149]
-            color: AppColors.getBorderColor(context).withOpacity(0.5), // [cite: 149]
-            strokeWidth: 1, // [cite: 149, 150]
-            dashArray: [3, 3], // [cite: 150]
-          ),
-        ),
-        borderData: FlBorderData(show: false), // [cite: 150]
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            tooltipBgColor: AppColors.getCardColor(context).withOpacity(0.9), // [cite: 150, 151]
-            tooltipRoundedRadius: 8, // [cite: 151]
-            getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
-              String label = spot.barIndex == 0 ? 'Cố Định' : spot.barIndex == 1 ? 'Biến Đổi' : 'Tổng'; // [cite: 151]
-              Color color = spot.barIndex == 0 ? AppColors.chartBlue : spot.barIndex == 1 ? AppColors.chartOrange : AppColors.chartRed; // [cite: 151]
-              return LineTooltipItem( // [cite: 152]
-                '$label: ${currencyFormat.format(spot.y)}', // [cite: 152]
-                TextStyle(color: color, fontWeight: FontWeight.bold), // [cite: 152]
-              );
-            }).toList(),
-          ),
-        ),
-      ),
     );
   }
 
@@ -720,32 +530,26 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                 const SizedBox(height: 12), // [cite: 157]
                 _buildModernInfoCard('Tổng Doanh Thu', totalRevenue, Icons.bar_chart_outlined, AppColors.chartTeal), // [cite: 157]
                 const SizedBox(height: 20), // [cite: 158]
-                _buildSectionCard( // [cite: 158]
-                    title: 'Xu hướng doanh thu', // [cite: 158]
-                    isDarkMode: isDarkMode, // [cite: 158]
-                    child: Column( // [cite: 158]
-                      children: [
-                        _buildLegend(isDarkMode, revenue: true), // [cite: 159]
-                        const SizedBox(height: 16), // [cite: 159]
-                        SizedBox( // [cite: 159]
-                          height: MediaQuery.of(context).size.height * 0.35, // [cite: 160]
-                          child: FutureBuilder<List<Map<String, double>>>(
-                            future: appState.getDailyRevenueForRange(selectedDateRange!), // [cite: 160]
-                            builder: (context, trendSnapshot) { // [cite: 161]
-                              if (trendSnapshot.connectionState == ConnectionState.waiting) { // [cite: 161]
-                                return const Center(child: ReportSkeleton()); // [cite: 161]
-                              }
-                              if (trendSnapshot.hasError) return Center(child: Text('Lỗi: ${trendSnapshot.error}')); // [cite: 162]
-                              if (trendSnapshot.hasData && trendSnapshot.data!.isNotEmpty) { // [cite: 163]
-                                // *** THAY ĐỔI: Gọi _buildRevenueTrendChartLine thay vì BarChart ***
-                                return _buildRevenueTrendChartLine(appState, selectedDateRange!, trendSnapshot.data!); // [cite: 163]
-                              }
-                              return const Center(child: Text('Không có dữ liệu xu hướng')); // [cite: 164]
-                            },
-                          ),
-                        ),
-                      ],
-                    )),
+                _buildSectionCard(
+                  title: 'Xu hướng doanh thu',
+                  isDarkMode: isDarkMode,
+                  child: SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.35,
+                    child: FutureBuilder<Map<String, List<TimeSeriesChartData>>>( // Sửa kiểu dữ liệu
+                      future: appState.getDailyRevenueForRange(selectedDateRange!),
+                      builder: (context, trendSnapshot) {
+                        if (trendSnapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: ReportSkeleton());
+                        }
+                        if (trendSnapshot.hasError) return Center(child: Text('Lỗi: ${trendSnapshot.error}'));
+                        if (trendSnapshot.hasData && trendSnapshot.data!.isNotEmpty) {
+                          return _buildSyncfusionRevenueTrendChart(context, trendSnapshot.data!); // Gọi hàm mới
+                        }
+                        return const Center(child: Text('Không có dữ liệu xu hướng'));
+                      },
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 20), // [cite: 166]
                 // *** THÊM MỚI: Phần chi tiết sản phẩm cho Báo cáo Doanh thu ***
                 _buildSectionCard( // [cite: 166]
@@ -789,118 +593,6 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
         }
         return const Center(child: Text('Không có dữ liệu doanh thu')); // [cite: 178]
       },
-    );
-  }
-
-  // *** THAY ĐỔI: _buildRevenueTrendChart thành _buildRevenueTrendChartLine để vẽ LineChart ***
-  Widget _buildRevenueTrendChartLine(AppState appState, DateTimeRange range, List<Map<String, double>> dailyData) { // [cite: 179]
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark; // [cite: 179, 180]
-    double maxVal = 0;
-    if (dailyData.isNotEmpty) { // [cite: 180]
-      maxVal = dailyData.map((e) { // [cite: 180]
-        final main = e['mainRevenue'] ?? 0; // [cite: 180]
-        final secondary = e['secondaryRevenue'] ?? 0; // [cite: 180]
-        final other = e['otherRevenue'] ?? 0; // [cite: 180]
-        return [main.abs(), secondary.abs(), other.abs()].reduce((max, val) => val > max ? val : max); // [cite: 180]
-      }).reduce((max, val) => val > max ? val : max); // [cite: 180]
-    }
-    maxVal = maxVal > 0 ? maxVal : 1000000; // [cite: 181]
-    // Giá trị mặc định nếu không có dữ liệu hoặc maxVal = 0
-    double horizontalInterval = (maxVal / 4).roundToDouble(); // [cite: 182]
-    horizontalInterval = horizontalInterval > 0 ? horizontalInterval : 100000; // [cite: 183]
-    return LineChart( // [cite: 183]
-      LineChartData(
-        lineBarsData: [
-          _buildLineData(dailyData, 'mainRevenue', AppColors.chartGreen, isDarkMode), // [cite: 183]
-          _buildLineData(dailyData, 'secondaryRevenue', AppColors.chartBlue, isDarkMode), // [cite: 183]
-          _buildLineData(dailyData, 'otherRevenue', AppColors.chartOrange, isDarkMode), // [cite: 183]
-        ],
-        titlesData: FlTitlesData(
-          bottomTitles: AxisTitles( // [cite: 183]
-            sideTitles: SideTitles(
-              showTitles: true, // [cite: 184]
-              reservedSize: 35, // [cite: 184]
-              interval: 1, // [cite: 184]
-              getTitlesWidget: (value, meta) {
-                int days = range.end.difference(range.start).inDays + 1; // [cite: 184]
-                if (value.toInt() >= 0 && value.toInt() < days) { // [cite: 185]
-                  DateTime date = range.start.add(Duration(days: value.toInt())); // [cite: 185]
-                  if (days > 7 && value.toInt() % (days ~/ 7) != 0 && value.toInt() != days - 1 && value.toInt() !=0) { // [cite: 185]
-                    return const SizedBox.shrink(); // [cite: 185, 186]
-                  }
-                  return SideTitleWidget( // [cite: 186]
-                    axisSide: meta.axisSide, // [cite: 186]
-                    space: 8, // [cite: 186]
-                    child: Text( // [cite: 187]
-                      DateFormat('dd/MM').format(date), // [cite: 187]
-                      style: TextStyle(fontSize: 10, color: AppColors.getTextSecondaryColor(context)), // [cite: 187, 188]
-                    ),
-                  );
-                }
-                return const SizedBox.shrink(); // [cite: 189]
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true, // [cite: 190]
-              reservedSize: 50, // [cite: 190]
-              getTitlesWidget: (value, meta) => Text( // [cite: 190]
-                formatNumberCompact(value), // [cite: 191]
-                style: TextStyle(fontSize: 10, color: AppColors.getTextSecondaryColor(context)), // [cite: 191]
-              ),
-              interval: horizontalInterval, // [cite: 191]
-            ),
-          ),
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // [cite: 191]
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // [cite: 192]
-        ),
-        gridData: FlGridData(
-          show: true, // [cite: 192]
-          drawVerticalLine: false, // [cite: 192]
-          horizontalInterval: horizontalInterval, // [cite: 192]
-          getDrawingHorizontalLine: (value) => FlLine( // [cite: 192]
-            color: AppColors.getBorderColor(context).withOpacity(0.5), // [cite: 192]
-            strokeWidth: 1, // [cite: 192, 193]
-            dashArray: [3, 3], // [cite: 193]
-          ),
-        ),
-        borderData: FlBorderData(show: false), // [cite: 193]
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            tooltipBgColor: AppColors.getCardColor(context).withOpacity(0.9), // [cite: 193, 194]
-            tooltipRoundedRadius: 8, // [cite: 194]
-            getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
-              String label; // [cite: 194]
-              Color spotColor; // [cite: 194]
-              switch (spot.barIndex) {
-                case 0: // [cite: 194]
-                  label = 'Doanh Thu Chính'; // [cite: 195]
-                  spotColor = AppColors.chartGreen; // [cite: 195]
-                  break;
-                case 1:
-                  label = 'Doanh Thu Phụ'; // [cite: 195]
-                  spotColor = AppColors.chartBlue; // [cite: 196]
-                  break;
-                case 2:
-                  label = 'Doanh Thu Khác'; // [cite: 196]
-                  spotColor = AppColors.chartOrange; // [cite: 196]
-                  break; // [cite: 197]
-                default:
-                  label = ''; // [cite: 197]
-                  spotColor = Colors.grey; // [cite: 197]
-              }
-              return LineTooltipItem( // [cite: 197, 198]
-                '$label: ${currencyFormat.format(spot.y)}', // [cite: 198]
-                TextStyle( // [cite: 198]
-                  color: spotColor, // [cite: 198]
-                  fontWeight: FontWeight.bold, // [cite: 198]
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
     );
   }
 
@@ -996,127 +688,6 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
     );
   }
 
-  LineChartBarData _buildLineData(List<Map<String, double>> dailyData, String key, Color color, bool isDarkMode, {List<int>? dashArray}) { // [cite: 222]
-    return LineChartBarData(
-      spots: dailyData.asMap().entries.map((entry) { // [cite: 222]
-        return FlSpot(entry.key.toDouble(), entry.value[key] ?? 0.0); // [cite: 222]
-      }).toList(),
-      isCurved: true, // [cite: 222]
-      color: color, // [cite: 222]
-      barWidth: 3, // [cite: 222]
-      dashArray: dashArray, // [cite: 222]
-      isStrokeCapRound: true, // [cite: 222]
-      dotData: FlDotData( // [cite: 222]
-        show: true, // [cite: 222]
-        getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter( // [cite: 223]
-          radius: 3.5, // [cite: 223]
-          color: color, // [cite: 223]
-          strokeWidth: 1.5, // [cite: 223]
-          strokeColor: AppColors.getCardColor(context), // [cite: 223]
-        ),
-      ),
-      belowBarData: BarAreaData( // [cite: 223]
-        show: true, // [cite: 223]
-        gradient: LinearGradient( // [cite: 223]
-          colors: [color.withOpacity(0.3), color.withOpacity(0.0)], // [cite: 224]
-          begin: Alignment.topCenter, // [cite: 224]
-          end: Alignment.bottomCenter, // [cite: 224]
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModernPieChart(Map<String, double> data, bool isDarkMode, {bool enableTouchInteraction = true}) { // [cite: 225]
-    if (data.isEmpty) return const Center(child: Text("Không có dữ liệu cho biểu đồ tròn.")); // [cite: 225]
-    double total = data.values.fold(0.0, (sum, value) => sum + value); // [cite: 226]
-    final List<MapEntry<String, double>> sortedData = data.entries.toList() // [cite: 227]
-      ..sort((aMapEntry, bMapEntry) => bMapEntry.value.compareTo(aMapEntry.value)); // [cite: 227]
-    return PieChart( // [cite: 228]
-      PieChartData(
-        sections: sortedData.asMap().entries.map((entry) { // [cite: 228]
-          int index = entry.key; // [cite: 228]
-          MapEntry<String, double> entryData = entry.value; // [cite: 228]
-          double percentage = total > 0 ? (entryData.value / total) * 100 : 0.0; // [cite: 228]
-          final color = AppColors.getPieChartColor(entryData.key, index); // [cite: 228]
-          return PieChartSectionData( // [cite: 228]
-            value: entryData.value, // [cite: 229]
-            title: percentage > 5 ? '${percentage.toStringAsFixed(1)}%' : '', // [cite: 229]
-            color: color, // [cite: 229]
-            radius: 90, // [cite: 229]
-            titleStyle: TextStyle( // [cite: 229]
-              fontSize: 11, // [cite: 229]
-              fontWeight: FontWeight.bold, // [cite: 229]
-              color: Colors.white, // [cite: 230]
-              shadows: [Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 2)], // [cite: 230]
-            ),
-            titlePositionPercentageOffset: 0.65, // [cite: 230]
-          );
-        }).toList(),
-        sectionsSpace: 2, // [cite: 230]
-        centerSpaceRadius: 35, // [cite: 230]
-        pieTouchData: PieTouchData( // [cite: 231]
-          touchCallback: (FlTouchEvent event, pieTouchResponse) {
-            if (!enableTouchInteraction) return; // [cite: 231]
-            if (!event.isInterestedForInteractions || pieTouchResponse == null || pieTouchResponse.touchedSection == null) { // [cite: 232]
-              return; // [cite: 232]
-            }
-            int touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex; // [cite: 233]
-            if (touchedIndex < 0 || touchedIndex >= sortedData.length) return; // [cite: 234]
-            String touchedCategory = sortedData.elementAt(touchedIndex).key; // [cite: 234]
-            double touchedValue = sortedData.elementAt(touchedIndex).value; // [cite: 234]
-            if (mounted) { // [cite: 235]
-              ScaffoldMessenger.of(context).showSnackBar( // [cite: 235, 236]
-                SnackBar(
-                  content: Text('$touchedCategory: ${currencyFormat.format(touchedValue)}'), // [cite: 236]
-                  duration: const Duration(seconds: 2), // [cite: 236]
-                  backgroundColor: AppColors.getCardColor(context), // [cite: 236]
-                  behavior: SnackBarBehavior.floating, // [cite: 236]
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), // [cite: 237]
-                  action: SnackBarAction( // [cite: 237]
-                    label: 'Đóng', // [cite: 237]
-                    textColor: AppColors.primaryBlue, // [cite: 237]
-                    onPressed: () { // [cite: 238]
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar(); // [cite: 238]
-                    },
-                  ),
-                ),
-              );
-            }
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLegend(bool isDarkMode, {bool overview = false, bool expense = false, bool revenue = false}) { // [cite: 240]
-    List<Widget> items = []; // [cite: 240]
-    if (overview) { // [cite: 241]
-      items.addAll([
-        _buildLegendItem('Doanh Thu', AppColors.chartGreen, isDarkMode), // [cite: 241]
-        _buildLegendItem('Chi Phí', AppColors.chartRed, isDarkMode), // [cite: 241]
-        _buildLegendItem('Lợi Nhuận', AppColors.chartBlue, isDarkMode), // [cite: 241]
-      ]);
-    } else if (expense) { // [cite: 242]
-      items.addAll([
-        _buildLegendItem('Cố Định', AppColors.chartBlue, isDarkMode), // [cite: 242]
-        _buildLegendItem('Biến Đổi', AppColors.chartOrange, isDarkMode), // [cite: 242]
-        _buildLegendItem('Tổng', AppColors.chartRed, isDarkMode), // [cite: 242]
-      ]);
-    } else if (revenue) { // [cite: 243]
-      items.addAll([
-        _buildLegendItem('Doanh Thu Chính', AppColors.chartGreen, isDarkMode), // [cite: 243]
-        _buildLegendItem('Doanh Thu Phụ', AppColors.chartBlue, isDarkMode), // [cite: 243]
-        _buildLegendItem('Doanh Thu Khác', AppColors.chartOrange, isDarkMode), // [cite: 243]
-      ]);
-    }
-    return Wrap( // [cite: 244]
-      spacing: 16, // [cite: 244]
-      runSpacing: 8, // [cite: 244]
-      alignment: WrapAlignment.center, // [cite: 244]
-      children: items, // [cite: 244]
-    );
-  }
-
   Widget _buildLegendItem(String label, Color color, bool isDarkMode) { // [cite: 245]
     return Row(
       mainAxisSize: MainAxisSize.min, // [cite: 245]
@@ -1138,24 +709,168 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
     );
   }
 
-  // MỚI: Hàm xây dựng Legend cho Pie Chart
-  Widget _buildPieChartLegend(Map<String, double> data, bool isDarkMode) { // [cite: 247]
-    if (data.isEmpty) return const SizedBox.shrink(); // [cite: 247]
-    final List<MapEntry<String, double>> sortedData = data.entries.toList() // [cite: 248]
-      ..sort((aMapEntry, bMapEntry) => bMapEntry.value.compareTo(aMapEntry.value)); // [cite: 248]
-    List<Widget> legendItems = []; // [cite: 248]
-    sortedData.asMap().forEach((index, entry) { // [cite: 249]
-      legendItems.add(_buildLegendItem( // [cite: 249]
-          entry.key, // [cite: 249]
-          AppColors.getPieChartColor(entry.key, index), // [cite: 249]
-          isDarkMode // [cite: 249]
-      ));
-    });
-    return Wrap( // [cite: 250]
-      spacing: 12.0, // [cite: 250]
-      runSpacing: 4.0, // [cite: 250]
-      alignment: WrapAlignment.center, // [cite: 250]
-      children: legendItems, // [cite: 250]
+  Widget _buildSyncfusionOverviewChart(BuildContext context, Map<String, List<TimeSeriesChartData>> data) {
+    final List<TimeSeriesChartData> revenueData = data['revenueData'] ?? [];
+    final List<TimeSeriesChartData> expenseData = data['expenseData'] ?? [];
+    final List<TimeSeriesChartData> profitData = data['profitData'] ?? [];
+
+    return SfCartesianChart(
+      primaryXAxis: DateTimeAxis(
+        dateFormat: DateFormat('dd/MM'),
+        majorGridLines: const MajorGridLines(width: 0),
+      ),
+      primaryYAxis: NumericAxis(
+        numberFormat: NumberFormat.compact(locale: 'vi_VN'),
+        axisLine: const AxisLine(width: 0),
+        majorTickLines: const MajorTickLines(color: Colors.transparent),
+      ),
+      legend: const Legend(isVisible: true, position: LegendPosition.top, overflowMode: LegendItemOverflowMode.wrap),
+      trackballBehavior: TrackballBehavior(
+        enable: true,
+        activationMode: ActivationMode.singleTap,
+        tooltipSettings: const InteractiveTooltip(enable: true, format: 'point.x\n{point.y}',),
+        lineType: TrackballLineType.vertical,
+      ),
+      zoomPanBehavior: ZoomPanBehavior(
+        enablePinching: true,
+        enablePanning: true,
+        zoomMode: ZoomMode.x,
+      ),
+      // *** SỬA LỖI Ở ĐÂY: Thay <ChartSeries> bằng <CartesianSeries> ***
+      series: <CartesianSeries<TimeSeriesChartData, DateTime>>[
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: revenueData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Doanh Thu',
+          color: AppColors.chartGreen,
+        ),
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: expenseData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Chi Phí',
+          color: AppColors.chartRed,
+        ),
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: profitData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Lợi Nhuận',
+          color: AppColors.chartBlue,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSyncfusionExpenseTrendChart(BuildContext context, Map<String, List<TimeSeriesChartData>> data) {
+    final List<TimeSeriesChartData> fixedData = data['fixed'] ?? [];
+    final List<TimeSeriesChartData> variableData = data['variable'] ?? [];
+    final List<TimeSeriesChartData> totalData = data['total'] ?? [];
+
+    return SfCartesianChart(
+      primaryXAxis: DateTimeAxis(dateFormat: DateFormat('dd/MM'), majorGridLines: const MajorGridLines(width: 0)),
+      primaryYAxis: NumericAxis(numberFormat: NumberFormat.compact(locale: 'vi_VN'), axisLine: const AxisLine(width: 0), majorTickLines: const MajorTickLines(color: Colors.transparent)),
+      legend: const Legend(isVisible: true, position: LegendPosition.top, overflowMode: LegendItemOverflowMode.wrap),
+      trackballBehavior: TrackballBehavior(enable: true, activationMode: ActivationMode.singleTap, tooltipSettings: const InteractiveTooltip(enable: true, format: 'point.x\n{point.y}')),
+      zoomPanBehavior: ZoomPanBehavior(enablePinching: true, enablePanning: true, zoomMode: ZoomMode.x),
+      // *** SỬA LỖI Ở ĐÂY: Thay <ChartSeries> bằng <CartesianSeries> ***
+      series: <CartesianSeries<TimeSeriesChartData, DateTime>>[
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: fixedData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Cố định',
+          color: AppColors.chartBlue,
+          dashArray: const <double>[5, 5],
+        ),
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: variableData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Biến đổi',
+          color: AppColors.chartOrange,
+          dashArray: const <double>[5, 5],
+        ),
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: totalData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Tổng',
+          color: AppColors.chartRed,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSyncfusionRevenueTrendChart(BuildContext context, Map<String, List<TimeSeriesChartData>> data) {
+    final List<TimeSeriesChartData> mainData = data['main'] ?? [];
+    final List<TimeSeriesChartData> secondaryData = data['secondary'] ?? [];
+    final List<TimeSeriesChartData> otherData = data['other'] ?? [];
+
+    return SfCartesianChart(
+      primaryXAxis: DateTimeAxis(dateFormat: DateFormat('dd/MM'), majorGridLines: const MajorGridLines(width: 0)),
+      primaryYAxis: NumericAxis(numberFormat: NumberFormat.compact(locale: 'vi_VN'), axisLine: const AxisLine(width: 0), majorTickLines: const MajorTickLines(color: Colors.transparent)),
+      legend: const Legend(isVisible: true, position: LegendPosition.top, overflowMode: LegendItemOverflowMode.wrap),
+      trackballBehavior: TrackballBehavior(enable: true, activationMode: ActivationMode.singleTap, tooltipSettings: const InteractiveTooltip(enable: true, format: 'point.x\n{point.y}')),
+      zoomPanBehavior: ZoomPanBehavior(enablePinching: true, enablePanning: true, zoomMode: ZoomMode.x),
+      // *** SỬA LỖI Ở ĐÂY: Thay <ChartSeries> bằng <CartesianSeries> ***
+      series: <CartesianSeries<TimeSeriesChartData, DateTime>>[
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: mainData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Doanh Thu Chính',
+          color: AppColors.chartGreen,
+        ),
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: secondaryData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Doanh Thu Phụ',
+          color: AppColors.chartBlue,
+        ),
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: otherData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Doanh Thu Khác',
+          color: AppColors.chartOrange,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSyncfusionExpensePieChart(BuildContext context, List<CategoryChartData> data) {
+    // *** BƯỚC 1: Tính tổng giá trị của tất cả các mục trước khi vẽ biểu đồ ***
+    final double totalValue = data.fold(0, (previousValue, element) => previousValue + element.value);
+
+    return SfCircularChart(
+      legend: const Legend(isVisible: true, overflowMode: LegendItemOverflowMode.wrap, position: LegendPosition.bottom),
+      tooltipBehavior: TooltipBehavior(enable: true, format: 'point.x: {point.y} đ'),
+      series: <CircularSeries>[
+        PieSeries<CategoryChartData, String>(
+          dataSource: data,
+          xValueMapper: (CategoryChartData item, _) => item.category,
+          yValueMapper: (CategoryChartData item, _) => item.value,
+          pointColorMapper: (CategoryChartData data, int index) =>
+          AppColors.pieChartColors[index % AppColors.pieChartColors.length],
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            connectorLineSettings: ConnectorLineSettings(type: ConnectorType.curve),
+          ),
+          // *** BƯỚC 2: Sửa lại dataLabelMapper để sử dụng totalValue đã tính sẵn ***
+          dataLabelMapper: (CategoryChartData data, _) {
+            if (totalValue == 0) {
+              return '0%';
+            }
+            final double percentage = (data.value / totalValue) * 100;
+            // Chỉ hiển thị nhãn cho các phần có tỷ lệ lớn hơn 3% để tránh rối mắt
+            return percentage > 5 ? '${percentage.toStringAsFixed(1)}%' : '';
+          },
+        )
+      ],
     );
   }
 }

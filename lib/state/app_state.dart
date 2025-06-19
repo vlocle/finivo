@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../models/transaction.dart' as model;
 import '/screens/expense_manager.dart';
 import '/screens/revenue_manager.dart';
+import '../screens/chart_data_models.dart';
 
 class AppState extends ChangeNotifier {
   bool _isSubscribed = false;
@@ -1784,46 +1785,55 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, double>>> getDailyRevenueForRange(DateTimeRange range) async {
-    if (!_isFirebaseInitialized) return [];
-    try {
-      if (activeUserId == null) return [];
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      List<Map<String, double>> dailyData = [];
-      int days = range.end.difference(range.start).inDays + 1;
+  Future<Map<String, List<TimeSeriesChartData>>> getDailyRevenueForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized || activeUserId == null) return {}; //
 
-      List<Future<DocumentSnapshot>> futures = [];
+    try {
+      final FirebaseFirestore firestore = FirebaseFirestore.instance; //
+      int days = range.end.difference(range.start).inDays + 1; //
+      List<Future<DocumentSnapshot>> futures = []; //
 
       for (int i = 0; i < days; i++) {
-        DateTime date = range.start.add(Duration(days: i));
-        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        DateTime date = range.start.add(Duration(days: i)); //
+        String dateKey = DateFormat('yyyy-MM-dd').format(date); //
         futures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('daily_data')
-              .doc(getKey(dateKey))
-              .get(),
+          firestore.collection('users').doc(activeUserId).collection('daily_data').doc(getKey(dateKey)).get(), //
         );
       }
 
-      List<DocumentSnapshot> docs = await Future.wait(futures);
+      List<DocumentSnapshot> docs = await Future.wait(futures); //
 
-      for (var doc in docs) {
-        double mainRevenue = doc.exists ? doc['mainRevenue']?.toDouble() ?? 0.0 : 0.0;
-        double secondaryRevenue = doc.exists ? doc['secondaryRevenue']?.toDouble() ?? 0.0 : 0.0;
-        double otherRevenue = doc.exists ? doc['otherRevenue']?.toDouble() ?? 0.0 : 0.0;
-        dailyData.add({
-          'mainRevenue': mainRevenue,
-          'secondaryRevenue': secondaryRevenue,
-          'otherRevenue': otherRevenue,
-          'totalRevenue': mainRevenue + secondaryRevenue + otherRevenue,
-        });
+      // *** THAY ĐỔI QUAN TRỌNG: Chuẩn bị các list cho từng series dữ liệu ***
+      List<TimeSeriesChartData> mainSeries = [];
+      List<TimeSeriesChartData> secondarySeries = [];
+      List<TimeSeriesChartData> otherSeries = [];
+      List<TimeSeriesChartData> totalSeries = [];
+
+      for (int i = 0; i < docs.length; i++) {
+        DateTime currentDate = range.start.add(Duration(days: i));
+        final doc = docs[i];
+
+        double mainRevenue = doc.exists ? doc['mainRevenue']?.toDouble() ?? 0.0 : 0.0; //
+        double secondaryRevenue = doc.exists ? doc['secondaryRevenue']?.toDouble() ?? 0.0 : 0.0; //
+        double otherRevenue = doc.exists ? doc['otherRevenue']?.toDouble() ?? 0.0 : 0.0; //
+        double totalRevenue = mainRevenue + secondaryRevenue + otherRevenue; //
+
+        mainSeries.add(TimeSeriesChartData(currentDate, mainRevenue));
+        secondarySeries.add(TimeSeriesChartData(currentDate, secondaryRevenue));
+        otherSeries.add(TimeSeriesChartData(currentDate, otherRevenue));
+        totalSeries.add(TimeSeriesChartData(currentDate, totalRevenue));
       }
 
-      return dailyData;
+      return {
+        'main': mainSeries,
+        'secondary': secondarySeries,
+        'other': otherSeries,
+        'total': totalSeries,
+      };
+
     } catch (e) {
-      return [];
+      print('Error in getDailyRevenueForRange: $e');
+      return {}; //
     }
   }
 
@@ -1885,60 +1895,42 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, double>> getExpenseBreakdown(DateTimeRange range) async {
-    if (!_isFirebaseInitialized) return {};
-    try {
-      if (activeUserId == null) return {};
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      Map<String, double> breakdown = {};
-      int days = range.end.difference(range.start).inDays + 1;
+  Future<List<CategoryChartData>> getExpenseBreakdown(DateTimeRange range) async {
+    if (!_isFirebaseInitialized || activeUserId == null) return []; //
 
-      List<Future<DocumentSnapshot>> fixedFutures = [];
-      List<Future<DocumentSnapshot>> variableFutures = [];
+    try {
+      final FirebaseFirestore firestore = FirebaseFirestore.instance; //
+      Map<String, double> breakdown = {}; //
+      int days = range.end.difference(range.start).inDays + 1; //
+      List<Future<DocumentSnapshot>> fixedFutures = []; //
+      List<Future<DocumentSnapshot>> variableFutures = []; //
 
       for (int i = 0; i < days; i++) {
-        DateTime date = range.start.add(Duration(days: i));
-        String dateKey = DateFormat('yyyy-MM-dd').format(date);
-        String fixedKey = getKey('fixedExpenseList_$dateKey');
-        String variableKey = getKey('variableTransactionHistory_$dateKey');
-
+        DateTime date = range.start.add(Duration(days: i)); //
+        String dateKey = DateFormat('yyyy-MM-dd').format(date); //
+        String fixedKey = getKey('fixedExpenseList_$dateKey'); //
+        String variableKey = getKey('variableTransactionHistory_$dateKey'); //
         fixedFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('fixed')
-              .collection('daily')
-              .doc(fixedKey)
-              .get(),
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get(), //
         );
         variableFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('variable')
-              .collection('daily')
-              .doc(variableKey)
-              .get(),
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get(), //
         );
       }
 
-      // Đoạn code sửa đổi cho getExpenseBreakdown
-      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
-      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures); //
+      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures); //
 
       for (var doc in fixedDocs) {
         if (doc.exists && doc.data() != null) {
-          final data = doc.data() as Map<String, dynamic>;
-          // Đọc đúng trường 'fixedExpenses' cho chi phí cố định
-          if (data.containsKey('fixedExpenses') && data['fixedExpenses'] != null) {
-            List<dynamic> transactions = data['fixedExpenses'] as List<dynamic>;
+          final data = doc.data() as Map<String, dynamic>; //
+          if (data.containsKey('fixedExpenses') && data['fixedExpenses'] != null) { //
+            List<dynamic> transactions = data['fixedExpenses'] as List<dynamic>; //
             for (var item in transactions) {
-              if (item is Map<String, dynamic>) { // Kiểm tra kiểu dữ liệu của item
-                String name = item['name']?.toString() ?? 'Không xác định';
-                double amount = (item['amount'] as num?)?.toDouble() ?? 0.0;
-                breakdown[name] = (breakdown[name] ?? 0.0) + amount;
+              if (item is Map<String, dynamic>) { //
+                String name = item['name']?.toString() ?? 'Không xác định'; //
+                double amount = (item['amount'] as num?)?.toDouble() ?? 0.0; //
+                breakdown[name] = (breakdown[name] ?? 0.0) + amount; //
               }
             }
           }
@@ -1947,96 +1939,98 @@ class AppState extends ChangeNotifier {
 
       for (var doc in variableDocs) {
         if (doc.exists && doc.data() != null) {
-          final data = doc.data() as Map<String, dynamic>;
-          // Đọc đúng trường 'variableExpenses' cho chi phí biến đổi
-          if (data.containsKey('variableExpenses') && data['variableExpenses'] != null) {
-            List<dynamic> transactions = data['variableExpenses'] as List<dynamic>;
+          final data = doc.data() as Map<String, dynamic>; //
+          if (data.containsKey('variableExpenses') && data['variableExpenses'] != null) { //
+            List<dynamic> transactions = data['variableExpenses'] as List<dynamic>; //
             for (var item in transactions) {
-              if (item is Map<String, dynamic>) { // Kiểm tra kiểu dữ liệu của item
-                String name = item['name']?.toString() ?? 'Không xác định';
-                double amount = (item['amount'] as num?)?.toDouble() ?? 0.0;
-                breakdown[name] = (breakdown[name] ?? 0.0) + amount;
+              if (item is Map<String, dynamic>) { //
+                String name = item['name']?.toString() ?? 'Không xác định'; //
+                double amount = (item['amount'] as num?)?.toDouble() ?? 0.0; //
+                breakdown[name] = (breakdown[name] ?? 0.0) + amount; //
               }
             }
           }
         }
       }
 
-      Map<String, double> finalBreakdown = {};
-      double otherTotal = 0.0;
-      double total = breakdown.values.fold(0.0, (sum, value) => sum + value);
+      // Phần logic nhóm "Khác" vẫn giữ nguyên
+      Map<String, double> finalBreakdown = {}; //
+      double otherTotal = 0.0; //
+      double total = breakdown.values.fold(0.0, (sum, value) => sum + value); //
       breakdown.forEach((name, amount) {
-        if (total > 0 && (amount / total) < 0.05) {
-          otherTotal += amount;
+        if (total > 0 && (amount / total) < 0.05) { //
+          otherTotal += amount; //
         } else {
-          finalBreakdown[name] = amount;
+          finalBreakdown[name] = amount; //
         }
       });
-      if (otherTotal > 0) {
-        finalBreakdown['Khác'] = otherTotal;
+      if (otherTotal > 0) { //
+        finalBreakdown['Khác'] = otherTotal; //
       }
 
-      return finalBreakdown;
+      // *** THAY ĐỔI QUAN TRỌNG: Chuyển đổi Map thành List<CategoryChartData> ***
+      final List<CategoryChartData> chartData = finalBreakdown.entries.map((entry) {
+        return CategoryChartData(entry.key, entry.value);
+      }).toList();
+
+      return chartData;
+
     } catch (e) {
-      return {};
+      print('Error in getExpenseBreakdown: $e'); // In ra lỗi để debug
+      return []; //
     }
   }
 
-  Future<List<Map<String, double>>> getDailyExpensesForRange(DateTimeRange range) async {
-    if (!_isFirebaseInitialized) return [];
-    try {
-      if (activeUserId == null) return [];
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      List<Map<String, double>> dailyData = [];
-      int days = range.end.difference(range.start).inDays + 1;
+  Future<Map<String, List<TimeSeriesChartData>>> getDailyExpensesForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized || activeUserId == null) return {}; //
 
-      List<Future<DocumentSnapshot>> fixedFutures = [];
-      List<Future<DocumentSnapshot>> variableFutures = [];
+    try {
+      final FirebaseFirestore firestore = FirebaseFirestore.instance; //
+      int days = range.end.difference(range.start).inDays + 1; //
+      List<Future<DocumentSnapshot>> fixedFutures = []; //
+      List<Future<DocumentSnapshot>> variableFutures = []; //
 
       for (int i = 0; i < days; i++) {
-        DateTime date = range.start.add(Duration(days: i));
-        String dateKey = DateFormat('yyyy-MM-dd').format(date);
-        String fixedKey = getKey('fixedExpenseList_$dateKey');
-        String variableKey = getKey('variableTransactionHistory_$dateKey');
-
+        DateTime date = range.start.add(Duration(days: i)); //
+        String dateKey = DateFormat('yyyy-MM-dd').format(date); //
+        String fixedKey = getKey('fixedExpenseList_$dateKey'); //
+        String variableKey = getKey('variableTransactionHistory_$dateKey'); //
         fixedFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('fixed')
-              .collection('daily')
-              .doc(fixedKey)
-              .get(),
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get(), //
         );
         variableFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('variable')
-              .collection('daily')
-              .doc(variableKey)
-              .get(),
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get(), //
         );
       }
 
-      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
-      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures); //
+      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures); //
+
+      // *** THAY ĐỔI QUAN TRỌNG: Chuẩn bị các list cho từng series dữ liệu ***
+      List<TimeSeriesChartData> fixedSeries = [];
+      List<TimeSeriesChartData> variableSeries = [];
+      List<TimeSeriesChartData> totalSeries = [];
 
       for (int i = 0; i < days; i++) {
-        double fixed = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
-        double variable = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
-        dailyData.add({
-          'fixedExpense': fixed,
-          'variableExpense': variable,
-          'totalExpense': fixed + variable,
-        });
+        DateTime currentDate = range.start.add(Duration(days: i));
+        double fixed = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
+        double variable = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
+        double total = fixed + variable;
+
+        fixedSeries.add(TimeSeriesChartData(currentDate, fixed));
+        variableSeries.add(TimeSeriesChartData(currentDate, variable));
+        totalSeries.add(TimeSeriesChartData(currentDate, total));
       }
 
-      return dailyData;
+      return {
+        'fixed': fixedSeries,
+        'variable': variableSeries,
+        'total': totalSeries,
+      };
+
     } catch (e) {
-      return [];
+      print('Error in getDailyExpensesForRange: $e');
+      return {}; //
     }
   }
 
@@ -2250,75 +2244,56 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, double>>> getDailyOverviewForRange(DateTimeRange range) async {
-    if (!_isFirebaseInitialized) return [];
+  Future<Map<String, List<TimeSeriesChartData>>> getDailyOverviewForRange(DateTimeRange range) async {
+    if (!_isFirebaseInitialized || activeUserId == null) return {}; //
+
+    List<TimeSeriesChartData> revenueSeries = [];
+    List<TimeSeriesChartData> expenseSeries = [];
+    List<TimeSeriesChartData> profitSeries = [];
+
     try {
-      if (activeUserId == null) return [];
-      final FirebaseFirestore firestore = FirebaseFirestore.instance;
-      List<Map<String, double>> dailyData = [];
-      int days = range.end.difference(range.start).inDays + 1;
-
-      List<Future<DocumentSnapshot>> dailyFutures = [];
-      List<Future<DocumentSnapshot>> fixedFutures = [];
-      List<Future<DocumentSnapshot>> variableFutures = [];
+      int days = range.end.difference(range.start).inDays + 1; //
+      List<Future<DocumentSnapshot>> dailyFutures = []; //
+      List<Future<DocumentSnapshot>> fixedFutures = []; //
+      List<Future<DocumentSnapshot>> variableFutures = []; //
 
       for (int i = 0; i < days; i++) {
-        DateTime date = range.start.add(Duration(days: i));
-        String dateKey = DateFormat('yyyy-MM-dd').format(date);
-        String key = getKey(dateKey);
-        String fixedKey = getKey('fixedExpenseList_$dateKey');
-        String variableKey = getKey('variableTransactionHistory_$dateKey');
+        DateTime date = range.start.add(Duration(days: i)); //
+        String dateKey = DateFormat('yyyy-MM-dd').format(date); //
+        String key = getKey(dateKey); //
+        String fixedKey = getKey('fixedExpenseList_$dateKey'); //
+        String variableKey = getKey('variableTransactionHistory_$dateKey'); //
 
-        dailyFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('daily_data')
-              .doc(key)
-              .get(),
-        );
-        fixedFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('fixed')
-              .collection('daily')
-              .doc(fixedKey)
-              .get(),
-        );
-        variableFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('variable')
-              .collection('daily')
-              .doc(variableKey)
-              .get(),
-        );
+        dailyFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('daily_data').doc(key).get()); //
+        fixedFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get()); //
+        variableFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get()); //
       }
 
-      List<DocumentSnapshot> dailyDocs = await Future.wait(dailyFutures);
-      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
-      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> dailyDocs = await Future.wait(dailyFutures); //
+      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures); //
+      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures); //
 
       for (int i = 0; i < days; i++) {
-        double totalRevenue = dailyDocs[i].exists ? dailyDocs[i]['totalRevenue']?.toDouble() ?? 0.0 : 0.0;
-        double fixedExpense = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
-        double variableExpense = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
-        double totalExpense = fixedExpense + variableExpense;
-        double profit = totalRevenue - totalExpense;
-        dailyData.add({
-          'totalRevenue': totalRevenue,
-          'totalExpense': totalExpense,
-          'profit': profit,
-        });
+        DateTime currentDate = range.start.add(Duration(days: i));
+        double totalRevenue = dailyDocs[i].exists ? dailyDocs[i]['totalRevenue']?.toDouble() ?? 0.0 : 0.0; //
+        double fixedExpense = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
+        double variableExpense = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
+        double totalExpense = fixedExpense + variableExpense; //
+        double profit = totalRevenue - totalExpense; //
+
+        revenueSeries.add(TimeSeriesChartData(currentDate, totalRevenue));
+        expenseSeries.add(TimeSeriesChartData(currentDate, totalExpense));
+        profitSeries.add(TimeSeriesChartData(currentDate, profit));
       }
 
-      return dailyData;
+      return {
+        'revenueData': revenueSeries,
+        'expenseData': expenseSeries,
+        'profitData': profitSeries,
+      };
     } catch (e) {
-      return [];
+      print('Error in getDailyOverviewForRange: $e');
+      return {}; //
     }
   }
 
