@@ -668,94 +668,122 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
   Widget _buildUserProfileSection(BuildContext context, User? user) {
     if (user == null) {
-      return const SizedBox.shrink();
+      return const SizedBox.shrink(); //
     }
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24.0),
+      padding: const EdgeInsets.all(24.0), //
       decoration: const BoxDecoration(
-        color: AppColors.primaryBlue,
-      ),
+        color: AppColors.primaryBlue, // Thay bằng màu của bạn
+      ), //
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           CircleAvatar(
             radius: 50,
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withOpacity(0.9), //
             backgroundImage:
-            user.photoURL != null ? NetworkImage(user.photoURL!) : null,
+            user.photoURL != null ? NetworkImage(user.photoURL!) : null, //
             child: user.photoURL == null
                 ? Icon(Icons.person_outline,
-                size: 60, color: AppColors.primaryBlue.withOpacity(0.8))
-                : null,
+                size: 60, color: AppColors.primaryBlue.withOpacity(0.8)) // Thay bằng màu của bạn
+                : null, //
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 16), //
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Flexible(
                 child: Text(
-                  user.displayName ?? "Người dùng",
+                  user.displayName ?? "Người dùng", //
                   style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white),
+                      color: Colors.white), //
                   textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
+                  overflow: TextOverflow.ellipsis, //
                 ),
               ),
               IconButton(
                 icon: const Icon(Icons.edit_outlined,
-                    color: Colors.white, size: 24),
+                    color: Colors.white, size: 24), //
                 onPressed: () async {
-                  // Đợi kết quả trả về từ Bottom Sheet
-                  final bool? updateSuccess = await _showEditNameBottomSheet(context, user);
-
-                  // Nếu kết quả là `true` (cập nhật thành công)
+                  final bool? updateSuccess = await _showEditNameBottomSheet(context, user); //
                   if (updateSuccess == true && mounted) {
-                    // Hiển thị SnackBar tại đây
                     _showModernSnackBar(
                         context: context,
                         message: "Cập nhật tên thành công!",
-                        type: SnackBarType.success);
-                    // Gọi setState để build lại giao diện với tên mới
-                    setState(() {});
+                        type: SnackBarType.success); //
+                    setState(() {}); //
                   }
-                  // (Tùy chọn) Xử lý trường hợp `updateSuccess` là false (lỗi)
                   else if (updateSuccess == false && mounted){
                     _showModernSnackBar(
                         context: context,
                         message: "Đã xảy ra lỗi khi cập nhật tên.",
-                        type: SnackBarType.error);
+                        type: SnackBarType.error); //
                   }
                 },
-                splashRadius: 20,
+                splashRadius: 20, //
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 6), //
           Text(
-            user.email ?? "Không có thông tin email",
-            style: TextStyle(fontSize: 15, color: Colors.white.withOpacity(0.85)),
+            user.email ?? "Không có thông tin email", //
+            style: TextStyle(fontSize: 15, color: Colors.white.withOpacity(0.85)), //
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              "Thành viên cơ bản",
-              style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500),
-            ),
+          const SizedBox(height: 12), //
+
+          // --- PHẦN THAY ĐỔI BẮT ĐẦU TỪ ĐÂY ---
+          Consumer<AppState>(
+            builder: (context, appState, child) {
+              // Kiểm tra trạng thái subscription từ AppState
+              if (appState.isSubscribed) {
+                // Nếu đã đăng ký, hiển thị "Thành viên nâng cao"
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.amber[700], // Màu vàng cho nổi bật
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min, // Để Row chỉ chiếm không gian cần thiết
+                    children: const [
+                      Icon(Icons.workspace_premium_outlined, color: Colors.white, size: 16),
+                      SizedBox(width: 6),
+                      Text(
+                        "Thành viên nâng cao",
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                );
+              } else {
+                // Nếu chưa, hiển thị "Thành viên cơ bản" như cũ
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), //
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2), //
+                    borderRadius: BorderRadius.circular(20), //
+                  ),
+                  child: const Text(
+                    "Thành viên cơ bản", //
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500), //
+                  ),
+                );
+              }
+            },
           ),
+          // --- KẾT THÚC PHẦN THAY ĐỔI ---
+
         ],
       ),
     );
