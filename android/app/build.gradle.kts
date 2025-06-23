@@ -50,7 +50,7 @@ android {
 
     defaultConfig {
         applicationId = "com.vlocle.finivo" // Giữ applicationId từ file của bạn
-        minSdk = 23
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInt()
         versionName = flutterVersionName
