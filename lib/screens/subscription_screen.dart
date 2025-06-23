@@ -8,14 +8,12 @@ class SubscriptionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(
-          color: Theme.of(context).textTheme.bodyLarge?.color,
-        ),
-      ),
       body: PaywallView(
+        onDismiss: () {
+          if (context.mounted) {
+            Navigator.of(context).pop();
+          }
+        },
         onPurchaseCompleted: (CustomerInfo customerInfo, StoreTransaction storeTransaction) {
           if (context.mounted) Navigator.pop(context);
         },

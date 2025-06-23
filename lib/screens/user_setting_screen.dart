@@ -618,9 +618,9 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   icon: Icons.group_add_outlined,
                   title: "Quản lý quyền truy cập",
                   onTap: () {
-                    final subscriptionService = context.read<SubscriptionService>();
+                    final appState = context.read<AppState>();
                     // <<< KIỂM TRA TRẠNG THÁI PREMIUM >>>
-                    if (subscriptionService.isSubscribed) {
+                    if (appState.isSubscribed) {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
                     } else {
                       _showUpgradeDialog(context);
