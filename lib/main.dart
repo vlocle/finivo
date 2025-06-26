@@ -20,14 +20,14 @@ import 'screens/device_utils.dart';
 import 'screens/subscription_service.dart';
 
 Future<void> _configureRevenueCat() async {
-  await Purchases.setLogLevel(LogLevel.debug); // Bật log debug để dễ gỡ lỗi
+  //await Purchases.setLogLevel(LogLevel.debug); // Bật log debug để dễ gỡ lỗi
   PurchasesConfiguration configuration;
   if (Platform.isIOS) {
     // Dán Public Apple API Key của bạn vào đây
     configuration = PurchasesConfiguration("appl_OfoRjYgrjnESgkPaEKnSfIQgINU");
   } else if (Platform.isAndroid) {
     // Dán Public Google API Key của bạn vào đây
-    configuration = PurchasesConfiguration("goog_YOUR_GOOGLE_API_KEY");
+    configuration = PurchasesConfiguration("goog_sFJapfxxtsKfENAnOFxhUSllyKa");
   } else {
     return;
   }
@@ -83,7 +83,6 @@ void main() async {
       ),
     );
   } catch (e) {
-    print('Lỗi khởi tạo ứng dụng: $e'); //
     runApp(MaterialApp( //
       home: Scaffold( //
         body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')),
@@ -153,14 +152,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void initState() {
     super.initState();
-    // Gọi init() của service, không lắng nghe thay đổi ở đây
-    context.read<SubscriptionService>().init();
+    // Sử dụng addPostFrameCallback để đảm bảo hàm init() chỉ được gọi
+    // SAU KHI frame đầu tiên đã được dựng xong.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Bây giờ việc gọi init() là an toàn
+      context.read<SubscriptionService>().init();
+    });
   }
 
   // Hàm helper để xử lý logic đăng nhập và định danh
   Future<void> _identifyUser(User user) async {
     try {
-      print("Attempting to log in to RevenueCat with UID: ${user.uid}");
 
       // 1. Đăng nhập và lấy về đối tượng LogInResult
       final logInResult = await Purchases.logIn(user.uid);
@@ -168,14 +170,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
       // 2. LẤY ĐÚNG ĐỐI TƯỢNG customerInfo TỪ BÊN TRONG logInResult
       final customerInfo = logInResult.customerInfo;
 
-      print("Successfully logged in to RevenueCat. Checking for subscription ownership...");
-
       // 3. Kiểm tra xem người dùng có đang active premium không
       final isSubscribed = customerInfo.entitlements.all["premium"]?.isActive ?? false;
 
       if (isSubscribed && customerInfo.originalAppUserId != user.uid) {
-        print("Conflict detected: Subscription is active but belongs to another user (${customerInfo.originalAppUserId}).");
-
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -190,7 +188,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
 
       // Nếu không có xung đột, tiếp tục cập nhật AppState như bình thường
-      print("Ownership check passed. User is clear to proceed.");
       final appState = Provider.of<AppState>(context, listen: false);
       if (appState.authUserId != user.uid) {
         appState.setUserId(user.uid);
@@ -198,7 +195,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     } catch (e) {
       await Purchases.logOut();
-      print("Error during user identification or ownership check: $e. User has been logged out.");
       rethrow;
     }
   }

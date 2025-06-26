@@ -49,10 +49,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
         if (mounted) {
           Provider.of<AppState>(context, listen: false).setUserId(user.uid); // Dùng user.uid từ đối tượng đã có
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => MainScreen()),
-          );
+          //Navigator.pushReplacement(
+          //  context,
+          //  MaterialPageRoute(builder: (context) => MainScreen()),
+          //);
         }
       }
 

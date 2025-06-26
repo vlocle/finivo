@@ -73,6 +73,11 @@ android {
         getByName("release") {
             // Áp dụng cấu hình ký đã định nghĩa ở trên
             signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
