@@ -77,22 +77,30 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
     );
 
     if (confirm == true) {
+      // Sử dụng mounted check ở đầu để đảm bảo an toàn
+      if (!context.mounted) return;
+
+      // Lấy các service cần thiết từ Provider
+      final appState = Provider.of<AppState>(context, listen: false);
+      final subService = Provider.of<SubscriptionService>(context, listen: false);
+
       try {
-        // Đăng xuất khỏi các dịch vụ xác thực
+        // BƯỚC 1: RESET TRẠNG THÁI CÁC SERVICE TRƯỚC
+        // Phải thực hiện trước khi đăng xuất Firebase để tránh lỗi
+        await subService.logout();
+        await appState.logout(); // Giả định hàm logout trong AppState đã dọn dẹp mọi thứ
+
+        // BƯỚC 2: ĐĂNG XUẤT KHỎI CÁC DỊCH VỤ XÁC THỰC
         await FirebaseAuth.instance.signOut();
         await GoogleSignIn().signOut();
 
-        print("Sign out successful. Navigating to LoginScreen.");
-
-        // **PHỤC HỒI LỆNH ĐIỀU HƯỚNG**
-        // Lệnh này sẽ xóa tất cả các màn hình hiện tại (UserSettings, MainScreen,...)
-        // và đẩy LoginScreen vào làm màn hình gốc mới.
-        if (context.mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => LoginScreen()),
-                (Route<dynamic> route) => false,
-          );
-        }
+        // BƯỚC 3: XÓA BỎ LỆNH ĐIỀU HƯỚNG THỦ CÔNG
+        // AuthWrapper sẽ tự động xử lý việc chuyển về LoginScreen
+        // một cách chính xác sau khi FirebaseAuth.signOut() được gọi.
+        // Navigator.of(context).pushAndRemoveUntil(
+        //   MaterialPageRoute(builder: (context) => LoginScreen()),
+        //       (Route<dynamic> route) => false,
+        // );
 
       } catch (e) {
         print("Lỗi đăng xuất: $e");
