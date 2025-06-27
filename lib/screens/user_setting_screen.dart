@@ -81,6 +81,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
       if (!context.mounted) return;
 
       // Lấy các service cần thiết từ Provider
+      final navigator = Navigator.of(context);
       final appState = Provider.of<AppState>(context, listen: false);
       final subService = Provider.of<SubscriptionService>(context, listen: false);
 
@@ -93,6 +94,8 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
         // BƯỚC 2: ĐĂNG XUẤT KHỎI CÁC DỊCH VỤ XÁC THỰC
         await FirebaseAuth.instance.signOut();
         await GoogleSignIn().signOut();
+
+        navigator.popUntil((route) => route.isFirst);
 
         // BƯỚC 3: XÓA BỎ LỆNH ĐIỀU HƯỚNG THỦ CÔNG
         // AuthWrapper sẽ tự động xử lý việc chuyển về LoginScreen
