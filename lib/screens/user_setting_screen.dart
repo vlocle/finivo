@@ -45,27 +45,28 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
   // --- Hàm đăng xuất ---
   Future<void> _signOut(BuildContext context) async {
-    bool? confirm = await showDialog(
+    // Hiển thị hộp thoại xác nhận
+    final bool? confirm = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            Icon(Icons.logout_outlined, color: AppColors.chartRed), // Thay bằng màu của bạn
+            Icon(Icons.logout_outlined, color: Colors.red),
             SizedBox(width: 10),
-            Text("Xác nhận đăng xuất", style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)), // Thay bằng màu của bạn
+            Text("Xác nhận đăng xuất", style: TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
-        content: Text("Bạn có chắc muốn đăng xuất không?", style: TextStyle(color: AppColors.getTextSecondaryColor(context))), // Thay bằng màu của bạn
+        content: const Text("Bạn có chắc muốn đăng xuất không?"),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text("Hủy", style: TextStyle(color: AppColors.getTextSecondaryColor(context))), // Thay bằng màu của bạn
+            child: const Text("Hủy"),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.chartRed, // Thay bằng màu của bạn
+              backgroundColor: Colors.red,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -76,48 +77,21 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
       ),
     );
 
-    if (confirm == true) {
-      // Sử dụng mounted check ở đầu để đảm bảo an toàn
-      if (!context.mounted) return;
+    // Nếu người dùng không xác nhận, không làm gì cả
+    if (confirm != true) return;
 
-      // Lấy các service cần thiết từ Provider
-      final navigator = Navigator.of(context);
-      final appState = Provider.of<AppState>(context, listen: false);
-      final subService = Provider.of<SubscriptionService>(context, listen: false);
+    // KIỂM TRA `mounted` TRƯỚC KHI TIẾP TỤC
+    // Điều này rất quan trọng vì showDialog là một hành động bất đồng bộ
+    if (!context.mounted) return;
 
-      try {
-        // BƯỚC 1: RESET TRẠNG THÁI CÁC SERVICE TRƯỚC
-        // Phải thực hiện trước khi đăng xuất Firebase để tránh lỗi
-        await subService.logout();
-        await appState.logout(); // Giả định hàm logout trong AppState đã dọn dẹp mọi thứ
+    // Lấy AppState từ Provider
+    final appState = Provider.of<AppState>(context, listen: false);
 
-        // BƯỚC 2: ĐĂNG XUẤT KHỎI CÁC DỊCH VỤ XÁC THỰC
-        await FirebaseAuth.instance.signOut();
-        await GoogleSignIn().signOut();
+    // BƯỚC 1: Đóng màn hình UserSettingsScreen trước.
+    // Hành động này đảm bảo context không còn được sử dụng khi AuthWrapper rebuild.
+    Navigator.of(context).pop();
 
-        navigator.popUntil((route) => route.isFirst);
-
-        // BƯỚC 3: XÓA BỎ LỆNH ĐIỀU HƯỚNG THỦ CÔNG
-        // AuthWrapper sẽ tự động xử lý việc chuyển về LoginScreen
-        // một cách chính xác sau khi FirebaseAuth.signOut() được gọi.
-        // Navigator.of(context).pushAndRemoveUntil(
-        //   MaterialPageRoute(builder: (context) => LoginScreen()),
-        //       (Route<dynamic> route) => false,
-        // );
-
-      } catch (e) {
-        print("Lỗi đăng xuất: $e");
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Đăng xuất thất bại: $e'),
-              backgroundColor: AppColors.chartRed,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    }
+    appState.performFullLogout();
   }
 
   // --- Hàm hiển thị SnackBar hiện đại (Thiết kế mới) ---
@@ -506,7 +480,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
         await GoogleSignIn().signOut();
 
         // Đặt lại AppState (nếu cần, ví dụ: xóa thông tin người dùng cục bộ)
-        appState.logout(); // Đảm bảo hàm này xử lý đúng việc reset state
+        //appState.logout(); // Đảm bảo hàm này xử lý đúng việc reset state
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

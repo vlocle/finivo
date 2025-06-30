@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 import '../models/transaction.dart' as model;
 import '/screens/expense_manager.dart';
 import '/screens/revenue_manager.dart';
@@ -53,6 +56,8 @@ class AppState extends ChangeNotifier {
   String? _cachedDateKey;
   Map<String, dynamic>? _cachedData;
   bool _isFirebaseInitialized = false;
+  bool _isLoggingOut = false;
+  bool get isLoggingOut => _isLoggingOut;
 
   StreamSubscription<DocumentSnapshot>? _revenueSubscription;
   StreamSubscription<DocumentSnapshot>? _fixedExpenseSubscription; // Thêm subscription cho chi phí cố định
@@ -172,35 +177,31 @@ class AppState extends ChangeNotifier {
     return activeUserPermissions[permissionKey] ?? false;
   }
 
-  void setUserId(String id) {
+  Future<void> setUserId(String id) async {
+    // Chỉ thực hiện nếu là một phiên đăng nhập của người dùng mới (hoặc lần đầu)
     if (authUserId != id) {
+      await _clearAllLocalStateAndData();
+
+
+      // BƯỚC 2: Thiết lập ID cho người dùng mới
       authUserId = id;
-      activeUserId = id; // Mặc định, người dùng xem dữ liệu của chính mình
+      activeUserId = id;
 
-      _cachedDateKey = null;
-      _cachedData = null;
-
-      // Hủy các subscription cũ
-      _cancelRevenueSubscription();
-      _cancelFixedExpenseSubscription();
-      _cancelVariableExpenseSubscription();
-      _cancelDailyFixedExpenseSubscription();
-      _cancelProductsSubscription();
-      _cancelVariableExpenseListSubscription();
-      _cancelPermissionSubscription();
-
+      // BƯỚC 3: Tải cài đặt và dữ liệu ban đầu
       _loadSettings();
-      _loadInitialData().then((_) async {
-        _subscribeToPermissions();
+      await _loadInitialData(); // Đợi dữ liệu cơ bản được tải
 
-        _subscribeToFixedExpenses();
-        _subscribeToVariableExpenses();
-        _subscribeToDailyFixedExpenses();
-        _subscribeToDailyData();
-        _subscribeToProducts();
-        _subscribeToAvailableVariableExpenses();
-        notifyListeners();
-      });
+      // BƯỚC 4: Chỉ sau khi có dữ liệu cơ bản, mới bắt đầu lắng nghe thay đổi
+      _subscribeToPermissions();
+      _subscribeToFixedExpenses();
+      _subscribeToVariableExpenses();
+      _subscribeToDailyFixedExpenses();
+      _subscribeToDailyData();
+      _subscribeToProducts();
+      _subscribeToAvailableVariableExpenses();
+
+      // Thông báo cho UI cập nhật lần cuối khi mọi thứ đã sẵn sàng
+      notifyListeners();
     }
   }
 
@@ -243,19 +244,30 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
-    if (authUserId != null) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(authUserId!).update({
-          'lastLoginDeviceId': null, // <-- Đặt trường này về null
-        });
-      } catch (e) {
-        // Ghi lại lỗi nếu có, nhưng không ngăn cản quá trình đăng xuất
-        print('Lỗi khi xóa device ID lúc đăng xuất: $e');
-      }
-    }
+  // HÀM MỚI (private): Chịu trách nhiệm dọn dẹp TOÀN BỘ trạng thái và dữ liệu local.
+  Future<void> _clearAllLocalStateAndData() async {
+    // 1. Hủy tất cả các stream subscriptions đang hoạt động
+    _cancelRevenueSubscription();
+    _cancelFixedExpenseSubscription();
+    _cancelVariableExpenseSubscription();
+    _cancelDailyFixedExpenseSubscription();
+    _cancelDailyDataSubscription();
+    _cancelProductsSubscription();
+    _cancelVariableExpenseListSubscription();
+    _cancelPermissionSubscription();
+
+    // 2. Reset tất cả các biến trạng thái về giá trị mặc định
     authUserId = null;
     activeUserId = null;
+    _isSubscribed = false;
+    _subscriptionExpiryDate = null;
+    _selectedScreenIndex = 0;
+    activeUserPermissions = {};
+    permissionVersion.value = 0;
+    _selectedDate = DateTime.now();
+    selectedDateListenable.value = DateTime.now();
+    isLoadingListenable.value = false;
+    dataReadyListenable.value = false;
     mainRevenue = 0.0;
     secondaryRevenue = 0.0;
     otherRevenue = 0.0;
@@ -266,42 +278,97 @@ class AppState extends ChangeNotifier {
     profitListenable.value = 0.0;
     profitMarginListenable.value = 0.0;
     _fixedExpense = 0.0;
-    fixedExpenseListenable.value = 0.0;
     variableExpense = 0.0;
+    fixedExpenseListenable.value = 0.0;
+    fixedExpenseList.value = [];
+    variableExpenseList.value = [];
     mainRevenueTransactions.value = [];
     secondaryRevenueTransactions.value = [];
     otherRevenueTransactions.value = [];
-    fixedExpenseList.value = [];
-    variableExpenseList.value = [];
-    _cancelRevenueSubscription();
-    _cancelFixedExpenseSubscription();
-    _cancelVariableExpenseSubscription();
-    _cancelDailyFixedExpenseSubscription();
-    _cancelDailyDataSubscription();
-    _cancelProductsSubscription();
-    _cancelVariableExpenseListSubscription();
-    _cancelPermissionSubscription();
-    _saveSettings();
+    _userDisplayNames.clear();
+    productsUpdated.value = false;
+    _isLoading = false;
+    _isLoadingRevenue = false;
     _cachedDateKey = null;
     _cachedData = null;
-    if (!Hive.isBoxOpen('productsBox')) await Hive.openBox('productsBox');
-    if (!Hive.isBoxOpen('transactionsBox')) await Hive.openBox('transactionsBox');
-    if (!Hive.isBoxOpen('revenueBox')) await Hive.openBox('transactionsBox');
-    if (!Hive.isBoxOpen('fixedExpensesBox')) await Hive.openBox('transactionsBox');
-    if (!Hive.isBoxOpen('variableExpensesBox')) await Hive.openBox('transactionsBox');
-    if (!Hive.isBoxOpen('variableExpenseListBox')) await Hive.openBox('transactionsBox');
-    if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) await Hive.openBox('transactionsBox');
-    if (!Hive.isBoxOpen('monthlyFixedAmountsBox')) await Hive.openBox('transactionsBox');
-    Hive.box('productsBox').clear();
-    Hive.box('transactionsBox').clear();
-    Hive.box('revenueBox').clear();
-    Hive.box('fixedExpensesBox').clear();
-    Hive.box('variableExpensesBox').clear();
-    Hive.box('variableExpenseListBox').clear();
-    Hive.box('monthlyFixedExpensesBox').clear();
-    Hive.box('monthlyFixedAmountsBox').clear();
-    notifyListeners();
+
+    // 3. Dọn dẹp tất cả các Hive box
+    try {
+      final boxesToClear = [
+        'productsBox', 'transactionsBox', 'revenueBox',
+        'fixedExpensesBox', 'variableExpensesBox', 'variableExpenseListBox',
+        'monthlyFixedExpensesBox', 'monthlyFixedAmountsBox', 'settingsBox'
+      ];
+      for (var boxName in boxesToClear) {
+        if (Hive.isBoxOpen(boxName)) {
+          await Hive.box(boxName).clear();
+        }
+      }
+    } catch (e) {
+      print("Lỗi khi dọn dẹp Hive boxes: $e");
+    }
+
+    print("====== Toàn bộ trạng thái và dữ liệu local đã được dọn dẹp. ======");
   }
+
+  // HÀM MỚI (public): Thay thế hàm performFullLogout cũ.
+  // Đây là hàm duy nhất mà UI sẽ gọi để đăng xuất.
+  Future<void> performFullLogout() async {
+    // Ngăn chặn việc gọi lại khi đang xử lý để tránh xung đột
+    if (_isLoggingOut) return;
+
+    // Bật cờ, thông báo cho UI (vd: LoginScreen) để khóa nút bấm
+    _isLoggingOut = true;
+    notifyListeners();
+    print("Bắt đầu quy trình đăng xuất, khóa UI.");
+
+    // Giữ lại ID người dùng để thực hiện các tác vụ cuối cùng
+    final String? userIdToLogOut = authUserId;
+
+    try {
+      // TÁC VỤ 1: Cập nhật Firestore (cần ID người dùng)
+      if (userIdToLogOut != null) {
+        // Gán thời gian chờ 5 giây cho tác vụ này
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userIdToLogOut)
+            .update({'lastLoginDeviceId': null})
+            .timeout(const Duration(seconds: 5));
+      }
+
+      // TÁC VỤ 2: Đăng xuất khỏi các dịch vụ bên ngoài một cách song song
+      // để tiết kiệm thời gian, với tổng thời gian chờ là 8 giây.
+      await Future.wait([
+        GoogleSignIn().disconnect(),
+        Purchases.logOut(),
+        FirebaseAuth.instance.signOut(), // Đây là lệnh quan trọng nhất
+      ]).timeout(const Duration(seconds: 8));
+
+      print("Đã đăng xuất thành công khỏi các dịch vụ bên ngoài.");
+
+    } catch (e) {
+      print("Đã xảy ra lỗi hoặc timeout trong quá trình đăng xuất: $e");
+      // TÁC VỤ BẢO VỆ: Dù có lỗi gì, phải đảm bảo người dùng đã đăng xuất khỏi Firebase
+      // vì đây là thứ điều khiển AuthWrapper.
+      try {
+        if (FirebaseAuth.instance.currentUser != null) {
+          await FirebaseAuth.instance.signOut();
+        }
+      } catch (safeguardError) {
+        print("Lỗi khi thực hiện đăng xuất bảo vệ: $safeguardError");
+      }
+    } finally {
+      // TÁC VỤ 3 (LUÔN ĐƯỢC THỰC THI): Dọn dẹp cục bộ
+      await _clearAllLocalStateAndData();
+
+      // TÁC VỤ 4 (LUÔN ĐƯỢC THỰC THI): Mở khóa UI
+      // Đây là bước quan trọng nhất để giải quyết lỗi treo nút
+      _isLoggingOut = false;
+      notifyListeners();
+      print("Kết thúc quy trình đăng xuất, mở khóa UI.");
+    }
+  }
+
 
   String getKey(String baseKey) {
     return activeUserId != null ? '${activeUserId}_$baseKey' : baseKey;

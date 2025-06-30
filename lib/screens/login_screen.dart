@@ -93,85 +93,101 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          Expanded(
-            flex: 7, // [cite: 347]
-            child: ClipRRect(
-              borderRadius: const BorderRadius.only( // [cite: 348]
-                bottomLeft: Radius.circular(50), // [cite: 348]
-                bottomRight: Radius.circular(50), // [cite: 348]
-              ),
-              child: FadeTransition(
-                opacity: _fadeAnimation, // [cite: 349]
-                child: Container(
-                  width: double.infinity, // [cite: 349]
-                  decoration: BoxDecoration(
-                    image: DecorationImage(
-                      image: AssetImage('assets/finance_illustration.jpg'), // [cite: 350]
-                      fit: BoxFit.cover, // [cite: 350]
+    // Sử dụng Consumer để lắng nghe thay đổi từ AppState
+    return Consumer<AppState>(
+      builder: (context, appState, child) {
+        // Kết hợp cả hai trạng thái:
+        // 1. _isLoading: Trạng thái tải cục bộ của màn hình Login.
+        // 2. appState.isLoggingOut: Trạng thái xử lý đăng xuất toàn cục.
+        final bool isProcessing = _isLoading || appState.isLoggingOut;
+
+        return Scaffold(
+          body: Column(
+            children: [
+              // Phần trên chứa ảnh minh họa
+              Expanded(
+                flex: 7,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(50),
+                    bottomRight: Radius.circular(50),
+                  ),
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        image: DecorationImage(
+                          image: AssetImage('assets/finance_illustration.jpg'),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-          Expanded(
-            flex: 3, // [cite: 351]
-            child: Container(
-              color: Colors.white, // [cite: 351, 352]
-              child: SafeArea(
-                top: false, // [cite: 352]
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start, // [cite: 352]
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0), // [cite: 353]
-                      child: ScaleTransition(
-                        scale: _buttonScaleAnimation, // [cite: 354]
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom( // [cite: 355]
-                            backgroundColor: const Color(0xFF42A5F5), // [cite: 355]
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12), // [cite: 355]
+              // Phần dưới chứa nút đăng nhập
+              Expanded(
+                flex: 3,
+                child: Container(
+                  color: Colors.white,
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                          child: ScaleTransition(
+                            scale: _buttonScaleAnimation,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF42A5F5),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                minimumSize: const Size(double.infinity, 50),
+                                // Sử dụng màu xám để chỉ thị nút bị vô hiệu hóa
+                                disabledBackgroundColor: Colors.grey[400],
+                              ),
+                              // Vô hiệu hóa nút bấm nếu isProcessing là true
+                              onPressed: isProcessing
+                                  ? null
+                                  : () {
+                                _controller.reset();
+                                _controller.forward();
+                                _signInWithGoogle(context);
+                              },
+                              // Hiển thị vòng xoay nếu isProcessing là true
+                              icon: isProcessing
+                                  ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                                  : Image.asset(
+                                'assets/google_logo.png',
+                                height: 20,
+                              ),
+                              label: const Text(
+                                "Đăng nhập với Google",
+                                style: TextStyle(color: Colors.white, fontSize: 16),
+                              ),
                             ),
-                            minimumSize: const Size(double.infinity, 50), // [cite: 356, 357]
-                          ),
-                          onPressed: _isLoading // [cite: 357]
-                              ? null // [cite: 358]
-                              : () {
-                            _controller.reset(); // [cite: 358]
-                            _controller.forward(); // [cite: 359]
-                            _signInWithGoogle(context); // [cite: 359]
-                          },
-                          icon: _isLoading // [cite: 359]
-                              ? const SizedBox( // [cite: 360]
-                            width: 20, // [cite: 360]
-                            height: 20, // [cite: 360]
-                            child: CircularProgressIndicator( // [cite: 360]
-                              strokeWidth: 2, // [cite: 361]
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white), // [cite: 361]
-                            ),
-                          )
-                              : Image.asset( // [cite: 362]
-                            'assets/google_logo.png', // [cite: 362]
-                            height: 20, // [cite: 362]
-                          ),
-                          label: const Text( // [cite: 363]
-                            "Đăng nhập với Google", // [cite: 363]
-                            style: TextStyle(color: Colors.white, fontSize: 16), // [cite: 364]
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

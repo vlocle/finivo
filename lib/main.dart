@@ -152,10 +152,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void initState() {
     super.initState();
-    // Sử dụng addPostFrameCallback để đảm bảo hàm init() chỉ được gọi
-    // SAU KHI frame đầu tiên đã được dựng xong.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Bây giờ việc gọi init() là an toàn
       context.read<SubscriptionService>().init();
     });
   }
@@ -163,16 +160,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
   // Hàm helper để xử lý logic đăng nhập và định danh
   Future<void> _identifyUser(User user) async {
     try {
-
-      // 1. Đăng nhập và lấy về đối tượng LogInResult
       final logInResult = await Purchases.logIn(user.uid);
-
-      // 2. LẤY ĐÚNG ĐỐI TƯỢNG customerInfo TỪ BÊN TRONG logInResult
       final customerInfo = logInResult.customerInfo;
-
-      // 3. Kiểm tra xem người dùng có đang active premium không
       final isSubscribed = customerInfo.entitlements.all["premium"]?.isActive ?? false;
-
       if (isSubscribed && customerInfo.originalAppUserId != user.uid) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -182,18 +172,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
             ),
           );
         }
-
         await FirebaseAuth.instance.signOut();
         throw Exception("Subscription ownership conflict.");
       }
 
-      // Nếu không có xung đột, tiếp tục cập nhật AppState như bình thường
       final appState = Provider.of<AppState>(context, listen: false);
       if (appState.authUserId != user.uid) {
-        appState.setUserId(user.uid);
+        await appState.setUserId(user.uid);
       }
-
     } catch (e) {
+      // Khi có lỗi, đảm bảo đăng xuất khỏi RevenueCat để tránh treo trạng thái
       await Purchases.logOut();
       rethrow;
     }
@@ -202,20 +190,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(), //
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnapshot) {
-        if (authSnapshot.connectionState == ConnectionState.waiting) { //
-          return const Scaffold(body: Center(child: CircularProgressIndicator())); //
+        if (authSnapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        if (authSnapshot.hasData && authSnapshot.data != null) { //
-          final user = authSnapshot.data!; //
-
-          // Sử dụng FutureBuilder để đợi quá trình định danh hoàn tất
+        if (authSnapshot.hasData && authSnapshot.data != null) {
+          final user = authSnapshot.data!;
           return FutureBuilder(
             future: _identifyUser(user),
             builder: (context, snapshot) {
-              // Trong khi đang đợi _identifyUser chạy
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(
                   body: Center(
@@ -231,44 +216,60 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 );
               }
 
-              // Nếu có lỗi trong quá trình định danh
               if (snapshot.hasError) {
-                // Lỗi đã được xử lý bên trong _identifyUser,
-                // người dùng sẽ bị đăng xuất và quay về LoginScreen
                 return LoginScreen();
               }
 
-              // Khi _identifyUser đã chạy xong, tiếp tục kiểm tra deviceId
               return StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(), //
+                stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
                 builder: (context, userDocSnapshot) {
-                  if (userDocSnapshot.connectionState == ConnectionState.waiting) { //
+                  if (userDocSnapshot.connectionState == ConnectionState.waiting) {
                     return const Scaffold(body: Center(child: CircularProgressIndicator()));
                   }
-                  if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) { //
-                    FirebaseAuth.instance.signOut(); //
-                    return LoginScreen(); //
+
+                  if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) {
+                    Future.microtask(() => FirebaseAuth.instance.signOut());
+                    return LoginScreen();
                   }
-                  final userData = userDocSnapshot.data!.data() as Map<String, dynamic>; //
-                  final storedDeviceId = userData['lastLoginDeviceId']; //
+
+                  final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
+                  final storedDeviceId = userData['lastLoginDeviceId'];
 
                   return FutureBuilder<String?>(
-                    future: getDeviceId(), //
+                    future: getDeviceId(),
                     builder: (context, deviceIdSnapshot) {
-                      if (deviceIdSnapshot.connectionState == ConnectionState.waiting) { //
+                      if (deviceIdSnapshot.connectionState == ConnectionState.waiting) {
                         return const Scaffold(body: Center(child: CircularProgressIndicator()));
                       }
-                      final currentDeviceId = deviceIdSnapshot.data; //
-                      if (storedDeviceId != null && currentDeviceId != null && storedDeviceId == currentDeviceId) { //
-                        return MainScreen(); //
+
+                      // --- LOGIC KIỂM TRA ĐÃ SỬA LỖI ---
+                      final currentDeviceId = deviceIdSnapshot.data;
+                      bool isAllowed = false;
+
+                      // TRƯỜNG HỢP 1: Chưa có deviceId nào được lưu (đăng nhập lần đầu/sau khi đăng xuất).
+                      // Đây là trường hợp hợp lệ, cho phép đăng nhập.
+                      if (storedDeviceId == null) {
+                        isAllowed = true;
+                      }
+                      // TRƯỜNG HỢP 2: Đã có deviceId được lưu và nó khớp với deviceId hiện tại.
+                      // Đây là trường hợp hợp lệ, cho phép đăng nhập.
+                      else if (currentDeviceId != null && storedDeviceId == currentDeviceId) {
+                        isAllowed = true;
+                      }
+
+                      if (isAllowed) {
+                        // Nếu được phép, hiển thị màn hình chính
+                        return MainScreen();
                       } else {
-                        Future.delayed(Duration.zero, () { //
-                          ScaffoldMessenger.of(context).showSnackBar( //
-                            const SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')), //
+                        // Chỉ khi deviceId được lưu KHÁC với deviceId hiện tại
+                        // thì mới hiển thị thông báo và đăng xuất.
+                        Future.delayed(Duration.zero, () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')),
                           );
-                          FirebaseAuth.instance.signOut(); //
+                          FirebaseAuth.instance.signOut();
                         });
-                        return LoginScreen(); //
+                        return LoginScreen();
                       }
                     },
                   );
@@ -277,20 +278,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             },
           );
         }
-
-        // Khi người dùng đăng xuất (authSnapshot không có data)
-        // Gọi logOut từ RevenueCat và quay về màn hình Login
-        return FutureBuilder(
-          future: Purchases.logOut(), // Đảm bảo logOut cũng được xử lý
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              print("Error logging out from RevenueCat: ${snapshot.error}"); //
-            } else {
-              print("Successfully logged out from RevenueCat."); //
-            }
-            return LoginScreen(); //
-          },
-        );
+        return LoginScreen();
       },
     );
   }
