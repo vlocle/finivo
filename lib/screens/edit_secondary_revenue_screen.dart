@@ -323,7 +323,7 @@ class _EditSecondaryRevenueScreenState
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                       filled: true,
-                      fillColor: Colors.grey.shade200,
+                      fillColor: AppColors.getBackgroundColor(context),
                       prefixIcon: Icon(Icons.local_atm_outlined,
                           color: AppColors.chartGreen)),
                   maxLines: 1,

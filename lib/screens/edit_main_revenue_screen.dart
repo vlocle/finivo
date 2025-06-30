@@ -312,7 +312,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                       labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       filled: true,
-                      fillColor: Colors.grey.shade200,
+                      fillColor: AppColors.getBackgroundColor(context),
                       prefixIcon: Icon(Icons.local_atm_outlined, color: AppColors.primaryBlue)),
                   maxLines: 1,
                 ),

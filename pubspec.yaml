@@ -65,6 +65,7 @@ flutter:
   assets:
     - assets/finance_illustration.jpg
     - assets/google_logo.png
+    - assets/images/
 
 
   uses-material-design: true
