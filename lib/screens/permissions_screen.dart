@@ -139,11 +139,12 @@ class _PermissionsScreenState extends State<PermissionsScreen>
         'permissions': {
           'canEditRevenue': false,
           'canManageProducts': false,
-          'canEditExpense': false,
+          'canManageFixedExpenses': false,
+          'canManageVariableExpenses': false,
+          'canManageExpenseTypes': false,
           'canViewReport': false,
-          'canManagePermissions': false,
         }
-      });
+      }, SetOptions(merge: true));
       if (!mounted) return;
       _showStyledSnackBar('Đã thêm $targetEmail. Hãy cấp quyền chi tiết.', isError: false);
     } catch (e) {

@@ -12,6 +12,7 @@ import 'login_screen.dart';
 import 'permissions_screen.dart';
 import 'package:fingrowth/screens/report_screen.dart';
 import 'subscription_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 enum SnackBarType { success, error }
 
@@ -92,6 +93,17 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
     Navigator.of(context).pop();
 
     appState.performFullLogout();
+  }
+
+  Future<void> _launchURL(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.inAppWebView)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không thể mở đường dẫn: $urlString')),
+        );
+      }
+    }
   }
 
   // --- Hàm hiển thị SnackBar hiện đại (Thiết kế mới) ---
@@ -514,7 +526,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
       backgroundColor: AppColors.getBackgroundColor(context),
       appBar: AppBar(
@@ -524,7 +535,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
         ),
         backgroundColor: AppColors.primaryBlue,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white), // Màu cho nút back
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -564,9 +575,27 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => UserGuideScreen()), // Thêm const nếu UserGuideScreen là const
+                      MaterialPageRoute(builder: (_) => UserGuideScreen()),
                     );
                   },
+                ),
+              ],
+            ),
+            _buildSettingsGroup(
+              context,
+              title: "Pháp lý & Hỗ trợ",
+              children: [
+                _buildSettingsItem(
+                  context,
+                  icon: Icons.shield_outlined, // Icon cho chính sách
+                  title: "Chính sách Quyền riêng tư",
+                  onTap: () => _launchURL("https://vlocle.github.io/finivo-policy/"),
+                ),
+                _buildSettingsItem(
+                  context,
+                  icon: Icons.gavel_outlined, // Icon cho điều khoản
+                  title: "Điều khoản Dịch vụ",
+                  onTap: () => _launchURL("https://vlocle.github.io/finivo-policy/terms-of-service.html"),
                 ),
               ],
             ),
@@ -575,21 +604,17 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
               title: "Tài khoản",
               children: [
                 Consumer<AppState>(
-                  builder: (context, subscriptionService, child) {
-                    // Nếu người dùng đã đăng ký Premium, không hiển thị gì cả
-                    if (subscriptionService.isSubscribed) {
+                  builder: (context, appState, child) {
+                    if (appState.isSubscribed) {
                       return const SizedBox.shrink();
                     }
-
-                    // Nếu là người dùng miễn phí, hiển thị nút "Nâng Cấp"
                     return _buildSettingsItem(
                       context,
                       icon: Icons.workspace_premium_outlined,
                       title: "Nâng Cấp lên Premium",
-                      iconColor: Colors.amber[700], // Màu vàng cho nổi bật
+                      iconColor: Colors.amber[700],
                       textColor: Colors.amber[700],
                       onTap: () {
-                        // Khi nhấn vào, điều hướng tới màn hình SubscriptionScreen
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
@@ -604,7 +629,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   title: "Quản lý quyền truy cập",
                   onTap: () {
                     final appState = context.read<AppState>();
-                    // <<< KIỂM TRA TRẠNG THÁI PREMIUM >>>
                     if (appState.isSubscribed) {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
                     } else {

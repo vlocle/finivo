@@ -4,7 +4,11 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import '/screens/firestore_service.dart';
 import '/screens/device_utils.dart';
-
+import 'dart:io';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 import '../state/app_state.dart';
 import 'main_screen.dart';
 
@@ -91,6 +95,73 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     super.dispose();
   }
 
+  String _generateNonce([int length = 32]) {
+    final charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+  }
+
+  String _sha256(String input) {
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  Future<void> _signInWithApple(BuildContext context) async {
+    final currentContext = context;
+    if (!mounted) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      // TẠO NONCE TRƯỚC KHI GỌI API
+      final rawNonce = _generateNonce();
+      final hashedNonce = _sha256(rawNonce);
+
+      // 1. Yêu cầu thông tin xác thực, gửi kèm NONCE ĐÃ HASH
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce, // <--- SỬA Ở ĐÂY
+      );
+
+      // 2. Tạo credential cho Firebase, dùng NONCE GỐC (chưa hash)
+      final oauthProvider = OAuthProvider("apple.com");
+      final credential = oauthProvider.credential(
+        idToken: appleCredential.identityToken,
+        rawNonce: rawNonce, // <--- SỬA Ở ĐÂY
+      );
+
+      // 3. Đăng nhập vào Firebase
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final User? user = userCredential.user;
+
+      // 4. Nếu đăng nhập thành công, tiến hành lưu thông tin
+      if (user != null) {
+        final deviceId = await getDeviceId();
+
+        // DÒNG NÀY SẼ HẾT BÁO LỖI SAU KHI BẠN LÀM BƯỚC 5
+        await FirestoreService().saveUserInfoToFirestore(
+          user,
+          deviceId,
+          appleCredential: appleCredential,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(currentContext).showSnackBar(
+          SnackBar(content: Text('Đăng nhập bằng Apple thất bại: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Sử dụng Consumer để lắng nghe thay đổi từ AppState
@@ -138,45 +209,70 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       children: [
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-                          child: ScaleTransition(
-                            scale: _buttonScaleAnimation,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF42A5F5),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                          // Bọc các nút trong Column để xếp chồng lên nhau
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // NÚT ĐĂNG NHẬP VỚI GOOGLE (giữ nguyên code cũ của bạn)
+                              ScaleTransition(
+                                scale: _buttonScaleAnimation,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF42A5F5),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    minimumSize: const Size(double.infinity, 50),
+                                    disabledBackgroundColor: Colors.grey[400],
+                                  ),
+                                  onPressed: isProcessing
+                                      ? null
+                                      : () {
+                                    _controller.reset();
+                                    _controller.forward();
+                                    _signInWithGoogle(context);
+                                  },
+                                  icon: isProcessing
+                                      ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                      : Image.asset(
+                                    'assets/google_logo.png',
+                                    height: 20,
+                                  ),
+                                  label: const Text(
+                                    "Đăng nhập với Google",
+                                    style: TextStyle(color: Colors.white, fontSize: 16),
+                                  ),
                                 ),
-                                minimumSize: const Size(double.infinity, 50),
-                                // Sử dụng màu xám để chỉ thị nút bị vô hiệu hóa
-                                disabledBackgroundColor: Colors.grey[400],
                               ),
-                              // Vô hiệu hóa nút bấm nếu isProcessing là true
-                              onPressed: isProcessing
-                                  ? null
-                                  : () {
-                                _controller.reset();
-                                _controller.forward();
-                                _signInWithGoogle(context);
-                              },
-                              // Hiển thị vòng xoay nếu isProcessing là true
-                              icon: isProcessing
-                                  ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+
+                              // === THÊM ĐOẠN CODE NÀY VÀO ===
+                              // Chỉ hiển thị nút Apple trên các thiết bị iOS
+                              if (Platform.isIOS)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12.0),
+                                  // Sử dụng widget chính thức để đảm bảo tuân thủ nguyên tắc của Apple
+                                  child: SignInWithAppleButton(
+                                    text: "Đăng nhập với Apple",
+                                    style: SignInWithAppleButtonStyle.black,
+                                    borderRadius: const BorderRadius.all(Radius.circular(12)),
+                                    height: 50,
+                                    onPressed: isProcessing
+                                        ? () {} // Không làm gì khi đang xử lý
+                                        : () {
+                                      // Gọi hàm xử lý logic sẽ được tạo ở bước 4
+                                      _signInWithApple(context);
+                                    },
+                                  ),
                                 ),
-                              )
-                                  : Image.asset(
-                                'assets/google_logo.png',
-                                height: 20,
-                              ),
-                              label: const Text(
-                                "Đăng nhập với Google",
-                                style: TextStyle(color: Colors.white, fontSize: 16),
-                              ),
-                            ),
+                              // === KẾT THÚC ĐOẠN CODE THÊM VÀO ===
+                            ],
                           ),
                         ),
                       ],
