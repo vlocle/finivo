@@ -132,6 +132,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       final credential = oauthProvider.credential(
         idToken: appleCredential.identityToken,
         rawNonce: rawNonce, // <--- SỬA Ở ĐÂY
+        accessToken: appleCredential.authorizationCode,
       );
 
       // 3. Đăng nhập vào Firebase
