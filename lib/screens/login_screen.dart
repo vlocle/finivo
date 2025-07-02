@@ -63,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(currentContext).showSnackBar(
-          SnackBar(content: Text('Đăng nhập bằng Google thất bại: $e')), // Sửa thông báo lỗi [cite: 339, 340]
+          SnackBar(content: Text('Đăng nhập bằng Google thất bại')), // Sửa thông báo lỗi [cite: 339, 340]
         );
       }
     } finally {
@@ -153,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(currentContext).showSnackBar(
-          SnackBar(content: Text('Đăng nhập bằng Apple thất bại: $e')),
+          SnackBar(content: Text('Đăng nhập bằng Apple thất bại')),
         );
       }
     } finally {
@@ -244,11 +244,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   )
                                       : Image.asset(
                                     'assets/google_logo.png',
-                                    height: 20,
+                                    height: 24,
                                   ),
                                   label: const Text(
                                     "Đăng nhập với Google",
-                                    style: TextStyle(color: Colors.white, fontSize: 16),
+                                    style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
                                   ),
                                 ),
                               ),

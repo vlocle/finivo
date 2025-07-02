@@ -705,7 +705,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
             children: [
               Flexible(
                 child: Text(
-                  user.displayName ?? "Người dùng", //
+                  user.displayName ?? "Finivo", //
                   style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
