@@ -14,36 +14,41 @@ class SubscriptionScreen extends StatefulWidget {
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
   @override
   Widget build(BuildContext context) {
-    // Lớp phủ loading này vẫn hữu ích để ngăn người dùng tương tác
-    // trong lúc giao dịch đang được xử lý.
+    // Theo dõi trạng thái isLoading từ service
     final isLoading = context.watch<SubscriptionService>().isLoading;
 
     return Scaffold(
       body: Stack(
         children: [
+          // Lớp dưới cùng là Paywall của RevenueCat
           PaywallView(
             onDismiss: () {
               if (context.mounted) {
                 Navigator.of(context).pop();
               }
             },
-            // ✅ Xử lý chính khi mua hàng thành công
             onPurchaseCompleted: (CustomerInfo customerInfo, StoreTransaction storeTransaction) {
-              print("Purchase completed successfully on store!");
+              // ✅ ĐÂY LÀ THAY ĐỔI QUAN TRỌNG NHẤT
+              // Bật lớp phủ loading ngay sau khi cửa sổ của Apple/Google đóng lại.
+              if (context.mounted) {
+                context.read<SubscriptionService>().setLoading(true);
+              }
 
-              // Kiểm tra xem entitlement 'premium' đã active chưa.
+              // Logic kiểm tra và điều hướng vẫn giữ nguyên
+              // Service sẽ tự động tắt loading và pop màn hình khi có kết quả.
               final isSubscribed = customerInfo.entitlements.all["premium"]?.isActive ?? false;
-
               if (isSubscribed && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Đăng ký thành công!")),
                 );
-                // Đóng màn hình paywall và quay về.
                 Navigator.of(context).pop();
               }
             },
-            // ✅ Xử lý chính khi khôi phục giao dịch
             onRestoreCompleted: (CustomerInfo customerInfo) {
+              // Bật loading khi bắt đầu khôi phục
+              if(context.mounted) {
+                context.read<SubscriptionService>().setLoading(true);
+              }
               final isSubscribed = customerInfo.entitlements.all.values.any((e) => e.isActive);
               if (context.mounted) {
                 final message = isSubscribed
@@ -51,7 +56,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     : "Không tìm thấy giao dịch nào để khôi phục.";
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
-                // Chỉ đóng màn hình nếu khôi phục thành công.
                 if (isSubscribed) {
                   Navigator.pop(context);
                 }
@@ -59,12 +63,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             },
           ),
 
-          // Lớp phủ Loading (tùy chọn nhưng khuyến khích)
+          // Lớp trên cùng: Lớp phủ loading
+          // Chỉ hiển thị khi isLoading là true
           if (isLoading)
             Container(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withOpacity(0.5),
               child: const Center(
-                child: CircularProgressIndicator(),
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                ),
               ),
             ),
         ],
