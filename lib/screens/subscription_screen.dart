@@ -43,6 +43,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   void _onSubscriptionChange() {
     if (_subscriptionService.isSubscribed && mounted) {
+      _fallbackTimer?.cancel();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Đăng ký thành công!")),
       );
@@ -55,31 +56,42 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     final isLoading = context.watch<SubscriptionService>().isLoading;
 
     return Scaffold(
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : PaywallView(
-        onDismiss: () {
-          if (context.mounted) {
-            Navigator.of(context).pop();
-          }
-        },
-        onPurchaseCompleted: (CustomerInfo customerInfo, StoreTransaction storeTransaction) {
-          print("Purchase completed successfully!");
-          // Không cần pop ở đây vì listener sẽ xử lý
-        },
-        onRestoreCompleted: (CustomerInfo customerInfo) {
-          final isSubscribed = customerInfo.entitlements.all.values.any((e) => e.isActive);
-          if (context.mounted) {
-            final message = isSubscribed
-                ? "Đã khôi phục giao dịch thành công!"
-                : "Không tìm thấy giao dịch nào để khôi phục.";
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      body: Stack(
+        children: [
+          // Giao diện chính: Paywall
+          PaywallView(
+            onDismiss: () {
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            onPurchaseCompleted: (CustomerInfo customerInfo, StoreTransaction storeTransaction) {
+              print("Purchase completed successfully!");
+            },
+            onRestoreCompleted: (CustomerInfo customerInfo) {
+              final isSubscribed = customerInfo.entitlements.all.values.any((e) => e.isActive);
+              if (context.mounted) {
+                final message = isSubscribed
+                    ? "Đã khôi phục giao dịch thành công!"
+                    : "Không tìm thấy giao dịch nào để khôi phục.";
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
-            if (!isSubscribed) {
-              Navigator.pop(context);
-            }
-          }
-        },
+                if (!isSubscribed) {
+                  Navigator.pop(context);
+                }
+              }
+            },
+          ),
+
+          // ✅ Loading overlay nếu đang xử lý
+          if (isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+        ],
       ),
     );
   }
