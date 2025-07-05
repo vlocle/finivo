@@ -265,11 +265,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
                       } else {
                         // Chỉ khi deviceId được lưu KHÁC với deviceId hiện tại
                         // thì mới hiển thị thông báo và đăng xuất.
-                        Future.delayed(Duration.zero, () {
+                        Future.delayed(Duration.zero, () async {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Tài khoản đã đăng nhập ở thiết bị khác.')),
                           );
                           FirebaseAuth.instance.signOut();
+                          await Purchases.logOut();
                         });
                         return LoginScreen();
                       }
