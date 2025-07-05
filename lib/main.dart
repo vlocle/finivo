@@ -163,6 +163,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       final logInResult = await Purchases.logIn(user.uid);
       final customerInfo = logInResult.customerInfo;
       final isSubscribed = customerInfo.entitlements.all["premium"]?.isActive ?? false;
+
       if (isSubscribed && customerInfo.originalAppUserId != user.uid) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -173,6 +174,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
         await FirebaseAuth.instance.signOut();
+        await Purchases.logOut();
         throw Exception("Subscription ownership conflict.");
       }
 
@@ -181,7 +183,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         await appState.setUserId(user.uid);
       }
     } catch (e) {
-      // Khi có lỗi, đảm bảo đăng xuất khỏi RevenueCat để tránh treo trạng thái
+      // Luôn dọn dẹp trạng thái RevenueCat nếu có bất kỳ lỗi nào khác xảy ra
       await Purchases.logOut();
       rethrow;
     }
