@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:fingrowth/screens/loading_indicator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -194,17 +195,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
             future: _identifyUser(user),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
+                // Sử dụng widget mới thay cho giao diện cũ
                 return const Scaffold(
-                  body: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 10),
-                        Text("Đang định danh người dùng...")
-                      ],
-                    ),
-                  ),
+                  body: CustomLoadingIndicator(),
                 );
               }
 
