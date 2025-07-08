@@ -160,31 +160,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
   // Hàm helper để xử lý logic đăng nhập và định danh
   Future<void> _identifyUser(User user) async {
     try {
-      final logInResult = await Purchases.logIn(user.uid);
-      final customerInfo = logInResult.customerInfo;
-      final isSubscribed = customerInfo.entitlements.all["premium"]?.isActive ?? false;
-
-      if (isSubscribed && customerInfo.originalAppUserId != user.uid) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Gói đăng ký này đã được sử dụng bởi một tài khoản khác trên thiết bị."),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        await FirebaseAuth.instance.signOut();
-        await Purchases.logOut();
-        throw Exception("Subscription ownership conflict.");
-      }
-
+      await Purchases.logIn(user.uid);
       final appState = Provider.of<AppState>(context, listen: false);
       if (appState.authUserId != user.uid) {
         await appState.setUserId(user.uid);
       }
+
     } catch (e) {
-      // Luôn dọn dẹp trạng thái RevenueCat nếu có bất kỳ lỗi nào khác xảy ra
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Đã xảy ra lỗi khi xác thực tài khoản. Vui lòng thử lại.")),
+        );
+      }
       await Purchases.logOut();
+      // Ném lại lỗi để FutureBuilder có thể xử lý và hiển thị lại LoginScreen
       rethrow;
     }
   }
