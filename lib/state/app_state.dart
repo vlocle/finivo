@@ -133,6 +133,7 @@ class AppState extends ChangeNotifier {
       _notificationsEnabled = settingsBox.get(getKey('notificationsEnabled'), defaultValue: true);
       _isDarkMode = settingsBox.get(getKey('isDarkMode'), defaultValue: false);
       _lastRecommendation = settingsBox.get(getKey('lastRecommendation'), defaultValue: "Nhấn vào nút để nhận khuyến nghị từ A.I");
+      notifyListeners();
     } catch (e) {
       print('Lỗi khi tải cài đặt: $e');
     }

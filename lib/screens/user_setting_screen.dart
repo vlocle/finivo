@@ -13,6 +13,7 @@ import 'permissions_screen.dart';
 import 'package:fingrowth/screens/report_screen.dart';
 import 'subscription_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:io';
 
 enum SnackBarType { success, error }
 
@@ -24,24 +25,131 @@ class UserSettingsScreen extends StatefulWidget {
 }
 
 class _UserSettingsScreenState extends State<UserSettingsScreen> {
-  void _showUpgradeDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Tính năng Premium"),
-        content: const Text("Bạn cần nâng cấp tài khoản để sử dụng chức năng này."),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text("Để sau")),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop(); // Đóng dialog
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
-            },
-            child: const Text("Nâng Cấp Ngay"),
+
+  Widget _buildBenefitRow(BuildContext context, {required IconData icon, required String text}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.green.shade600, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 15, color: AppColors.getTextColor(context)),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  void _showImprovedUpgradeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          titlePadding: const EdgeInsets.only(top: 24),
+          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          backgroundColor: AppColors.getCardColor(context),
+          title: Column(
+            children: [
+              Icon(Icons.workspace_premium_rounded, color: Colors.amber.shade700, size: 50),
+              const SizedBox(height: 16),
+              Text(
+                "Mở Khóa Tính Năng Premium",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.getTextColor(context),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Nâng cấp tài khoản để tận hưởng toàn bộ quyền lợi:",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, color: AppColors.getTextSecondaryColor(context)),
+                ),
+                const SizedBox(height: 20),
+                _buildBenefitRow(context, icon: Icons.group_add_outlined, text: "Quản lý quyền truy cập cho nhân viên."),
+                _buildBenefitRow(context, icon: Icons.bar_chart_rounded, text: "Xem báo cáo phân tích không giới hạn."),
+                _buildBenefitRow(context, icon: Icons.lightbulb_outline_rounded, text: "Nhận các đề xuất thông minh từ A.I."),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
+                    },
+                    icon: const Icon(Icons.star_rounded),
+                    label: const Text(
+                      "Nâng Cấp Ngay",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(
+                      "Để sau",
+                      style: TextStyle(color: AppColors.getTextSecondaryColor(context))
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _requestReview() async {
+    final InAppReview inAppReview = InAppReview.instance;
+
+    if (await inAppReview.isAvailable()) {
+      // Nếu thiết bị hỗ trợ, hiển thị hộp thoại trong ứng dụng
+      inAppReview.requestReview();
+    } else {
+      // Nếu không, mở trực tiếp trang trên cửa hàng ứng dụng
+      String? storeUrl;
+
+      // THAY THẾ ID ỨNG DỤNG CỦA BẠN VÀO ĐÂY
+      const String appleAppId = "6746059564"; // Ví dụ: 123456789
+      const String googlePackageName = "com.vlocle.finivo"; // Ví dụ: com.example.app
+
+      if (Platform.isIOS) {
+        storeUrl = "https://apps.apple.com/app/id$appleAppId";
+      } else if (Platform.isAndroid) {
+        storeUrl = "https://play.google.com/store/apps/details?id=$googlePackageName";
+      }
+
+      if (storeUrl != null) {
+        // Gọi hàm _launchURL mà bạn đã có sẵn
+        _launchURL(storeUrl);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Nền tảng không được hỗ trợ để đánh giá."))
+          );
+        }
+      }
+    }
   }
 
   // --- Hàm đăng xuất ---
@@ -564,8 +672,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   icon: Icons.star_outline,
                   title: "Đánh giá ứng dụng",
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Chức năng đang phát triển")));
+                    _requestReview();
                   },
                 ),
                 _buildSettingsItem(
@@ -632,7 +739,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                     if (appState.isSubscribed) {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
                     } else {
-                      _showUpgradeDialog(context);
+                      _showImprovedUpgradeDialog(context);
                     }
                   },
                 ),
