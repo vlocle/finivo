@@ -6,15 +6,13 @@ class CustomLoadingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Lấy màu từ theme hiện tại để phù hợp với cả chế độ sáng và tối
-    final color = Theme.of(context).colorScheme.primary;
 
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SpinKitFadingCube(
-            color: color,
+          const SpinKitFadingCube(
+            color: Color(0xFF007aff),
             size: 50.0,
           ),
           const SizedBox(height: 20),
