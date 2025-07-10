@@ -4,6 +4,7 @@ import 'package:fingrowth/screens/user_guide_screen.dart'; // Giả sử bạn c
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'firestore_service.dart';

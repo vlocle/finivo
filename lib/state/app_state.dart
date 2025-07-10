@@ -179,31 +179,32 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setUserId(String id) async {
-    // Chỉ thực hiện nếu là một phiên đăng nhập của người dùng mới (hoặc lần đầu)
-    if (authUserId != id) {
+    // Nếu ID người dùng không thay đổi (đã được thiết lập trước đó) thì không cần làm gì cả.
+    // Điều này ngăn việc chạy lại logic không cần thiết.
+    if (authUserId == id) return;
+
+    // BƯỚC 1: Dọn dẹp dữ liệu của người dùng CŨ (chỉ khi chuyển đổi người dùng)
+    // Chỉ dọn dẹp khi đang có một người dùng đăng nhập (authUserId != null) và
+    // người dùng mới (id) khác với người dùng cũ.
+    if (authUserId != null && authUserId != id) {
       await _clearAllLocalStateAndData();
-
-
-      // BƯỚC 2: Thiết lập ID cho người dùng mới
-      authUserId = id;
-      activeUserId = id;
-
-      // BƯỚC 3: Tải cài đặt và dữ liệu ban đầu
-      _loadSettings();
-      await _loadInitialData(); // Đợi dữ liệu cơ bản được tải
-
-      // BƯỚC 4: Chỉ sau khi có dữ liệu cơ bản, mới bắt đầu lắng nghe thay đổi
-      _subscribeToPermissions();
-      _subscribeToFixedExpenses();
-      _subscribeToVariableExpenses();
-      _subscribeToDailyFixedExpenses();
-      _subscribeToDailyData();
-      _subscribeToProducts();
-      _subscribeToAvailableVariableExpenses();
-
-      // Thông báo cho UI cập nhật lần cuối khi mọi thứ đã sẵn sàng
-      notifyListeners();
     }
+
+    authUserId = id;
+    activeUserId = id;
+    _loadSettings();
+
+    await _loadInitialData(); // Tải dữ liệu chính
+    _subscribeToPermissions();
+    _subscribeToFixedExpenses();
+    _subscribeToVariableExpenses();
+    _subscribeToDailyFixedExpenses();
+    _subscribeToDailyData();
+    _subscribeToProducts();
+    _subscribeToAvailableVariableExpenses();
+
+    // BƯỚC 4: Thông báo cho toàn bộ UI rằng trạng thái đã thay đổi và sẵn sàng
+    notifyListeners();
   }
 
   // Thay thế hàm switchActiveUser cũ bằng phiên bản này
