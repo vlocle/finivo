@@ -1,4 +1,5 @@
 import 'package:fingrowth/screens/report_screen.dart';
+import 'package:fingrowth/screens/subscription_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -90,7 +91,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
 
     final productInputState = _productInputSectionKey.currentState;
     if (productInputState == null) {
-      _showStyledSnackBar("Lỗi nội bộ: Không tìm thấy productInputState.", isError: true); //
+      _showStyledSnackBar("Không tìm thấy sản phẩm.", isError: true); //
       return;
     }
 
@@ -117,6 +118,10 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
 
     // --- PHẦN 2: CHUẨN BỊ DỮ LIỆU GIAO DỊCH VÀ GIÁ VỐN (Giữ nguyên) ---
     double totalRevenueForSale = priceToUse * quantity; //
+    if (!appState.isSubscribed && (appState.totalRevenueListenable.value + totalRevenueForSale > 2000000)) {
+      _showUpgradeDialog(context);
+      return; // Dừng việc thêm giao dịch
+    }
     var uuid = Uuid(); //
     String transactionId = uuid.v4(); //
 
@@ -218,7 +223,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
         _showStyledSnackBar("Đã tự động ghi nhận giá vốn cho $selectedProduct"); //
       }
     }).catchError((e) {
-      _showStyledSnackBar("Lỗi khi thêm giao dịch: $e", isError: true);
+      _showStyledSnackBar("Lỗi khi thêm giao dịch", isError: true);
     });
 
     // --- PHẦN 4: RESET FORM (Giữ nguyên) ---
@@ -259,6 +264,36 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
         _showStyledSnackBar("Lỗi khi xóa giao dịch: $e", isError: true);
       }
     });
+  }
+
+  void _showUpgradeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text("Vượt giới hạn doanh thu", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          "Người dùng miễn phí chỉ có thể ghi nhận tối đa 2.000.000đ doanh thu mỗi ngày. Vui lòng nâng cấp để ghi nhận không giới hạn.",
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            child: Text("Để sau", style: GoogleFonts.poppins()),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryBlue),
+            child: Text("Nâng cấp ngay", style: GoogleFonts.poppins(color: Colors.white)),
+            onPressed: () {
+              Navigator.of(dialogContext).pop(); // Đóng dialog
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SubscriptionScreen(),
+              ));
+            },
+          ),
+        ],
+      ),
+    );
   }
 
 

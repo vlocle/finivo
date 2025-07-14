@@ -103,7 +103,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
   void initState() {
     super.initState(); // [cite: 30]
     selectedDateRange = DateTimeRange( // [cite: 31]
-      start: DateTime.now().subtract(const Duration(days: 6)), // [cite: 31]
+      start: DateTime.now().subtract(const Duration(days: 2)), // [cite: 31]
       end: DateTime.now(), // [cite: 31]
     );
     _controller = AnimationController( // [cite: 32]

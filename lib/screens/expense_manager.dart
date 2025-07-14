@@ -371,40 +371,66 @@ class ExpenseManager {
   }
 
   static Future<List<Map<String, dynamic>>> loadFixedExpenseList(AppState appState, DateTime month) async {
-    final String? userId = appState.activeUserId; // [cite: 952]
-    if (userId == null) return []; // [cite: 953]
-    final String monthKey = DateFormat('yyyy-MM').format(month); // [cite: 953]
-    final String hiveKey = '$userId-fixedExpenseList-$monthKey'; // [cite: 953]
+    final String? userId = appState.activeUserId;
+    if (userId == null) return [];
+    final String monthKey = DateFormat('yyyy-MM').format(month);
+    final String hiveKey = '$userId-fixedExpenseList-$monthKey';
     if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) {
       await Hive.openBox('monthlyFixedExpensesBox');
     }
-    final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox'); // [cite: 954]
-    final cachedData = monthlyFixedExpensesBox.get(hiveKey); // [cite: 954]
-    if (cachedData != null) { // [cite: 955]
-      return List<Map<String, dynamic>>.from(cachedData); // [cite: 955]
-    }
-    try {
-      final FirebaseFirestore firestore = FirebaseFirestore.instance; // [cite: 956]
-      DocumentSnapshot doc = await firestore // [cite: 957]
-          .collection('users') // [cite: 957]
-          .doc(userId) // [cite: 957]
-          .collection('expenses') // [cite: 957]
-          .doc('fixed') // [cite: 957]
-          .collection('monthly') // [cite: 957]
-          .doc(monthKey) // [cite: 957]
-          .get();
-      List<Map<String, dynamic>> expenses = []; // [cite: 958]
-      if (doc.exists && doc.data() != null) { // [cite: 958]
-        final data = doc.data() as Map<String, dynamic>; // [cite: 958]
-        if (data['products'] != null) { // [cite: 959]
-          expenses = List<Map<String, dynamic>>.from(data['products']); // [cite: 959]
+    final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox');
+
+    // Đọc dữ liệu từ cache trên điện thoại trước
+    final cachedData = monthlyFixedExpensesBox.get(hiveKey);
+
+    if (cachedData != null) {
+      if (cachedData is Map) {
+        final List<Map<String, dynamic>> resultList = [];
+        // Lặp qua dữ liệu từ cache một cách an toàn
+        for (final entry in cachedData.entries) {
+          final key = entry.key?.toString();
+          final value = entry.value;
+
+          // Đảm bảo key là chuỗi và value là một Map
+          if (key != null && value is Map) {
+            // Xây dựng lại Map của từng khoản chi với kiểu dữ liệu chính xác
+            resultList.add({
+              'name': key,
+              // Chuyển đổi Map con bên trong sang đúng kiểu Map<String, dynamic>
+              ...Map<String, dynamic>.from(value),
+            });
+          }
         }
+        return resultList;
       }
-      await monthlyFixedExpensesBox.put(hiveKey, expenses); // [cite: 960]
-      return expenses; // [cite: 961]
+    }
+
+    // Nếu không có cache, đọc từ máy chủ Firestore
+    try {
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      DocumentSnapshot doc = await firestore
+          .collection('users')
+          .doc(userId)
+          .collection('expenses')
+          .doc('fixed')
+          .collection('monthly')
+          .doc(monthKey)
+          .get();
+
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data() as Map<String, dynamic>;
+        final expensesMap = data['expenses'] as Map<String, dynamic>? ?? {};
+
+        // Lưu cấu trúc Map này vào cache để dùng cho lần sau
+        await monthlyFixedExpensesBox.put(hiveKey, expensesMap);
+
+        // Chuyển đổi Map thành List để giao diện hiển thị
+        return expensesMap.entries.map((e) => {'name': e.key, ...e.value as Map<String, dynamic>}).toList();
+      }
+      return [];
     } catch (e) {
-      print("Error loading fixed expense list: $e"); // [cite: 961]
-      return cachedData != null ? List<Map<String, dynamic>>.from(cachedData) : []; // [cite: 961, 962]
+      print("Error loading fixed expense list: $e");
+      return [];
     }
   }
 
@@ -478,97 +504,157 @@ class ExpenseManager {
 
   static Future<void> saveOrUpdateMonthlyFixedAmount(
       AppState appState,
-      String name,
-      double newAmount, // Số tiền mới người dùng nhập
-      double? oldMonthlyAmount, // Số tiền cũ, null nếu là lưu mới
-      DateTime month,
-      {required DateTimeRange dateRange} // Bắt buộc phải có dateRange
-      ) async {
-    final String? userId = appState.activeUserId; //
+      String newName,
+      double newAmount,
+      {
+        required DateTimeRange newDateRange,
+        String? oldName,
+        DateTimeRange? oldDateRange,
+        double? oldAmount,
+      }) async {
+    final String? userId = appState.activeUserId;
     if (userId == null) return;
-
-    final firestore = FirebaseFirestore.instance; //
+    final firestore = FirebaseFirestore.instance;
     final batch = firestore.batch();
 
-    // Thao tác 1: Cập nhật tài liệu của tháng (metadata)
-    final monthKey = DateFormat('yyyy-MM').format(month); //
-    final monthlyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('monthly').doc(monthKey); //
-    batch.set(
-        monthlyDocRef,
-        { 'amounts': { name: newAmount }, 'updatedAt': FieldValue.serverTimestamp() }, //
-        SetOptions(merge: true) // Dùng merge để không ghi đè các amounts khác
-    );
+    // --- BƯỚC 1: DỌN DẸP DỮ LIỆU CŨ (CHỈ THỰC HIỆN KHI CẬP NHẬT) ---
+    // Chỉ chạy logic dọn dẹp nếu đây là thao tác "sửa" (có đầy đủ dữ liệu cũ).
+    if (oldName != null && oldAmount != null && oldDateRange != null) {
+      final nameToRemove = oldName;
+      final dateRangeToRemoveFrom = oldDateRange;
 
-    // Thao tác 2: Phân bổ chi phí cho các ngày
-    final daysInRange = dateRange.end.difference(dateRange.start).inDays + 1; //
-    final newDailyAmount = (daysInRange > 0) ? newAmount / daysInRange : 0.0; //
-    final oldDailyAmount = (oldMonthlyAmount != null && daysInRange > 0) ? oldMonthlyAmount / daysInRange : 0.0;
-
-    for (int i = 0; i < daysInRange; i++) {
-      final currentDate = dateRange.start.add(Duration(days: i)); //
-      final dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
-      final firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); //
-      final dailyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('daily').doc(firestoreDocId); //
-
-      // Nếu là chỉnh sửa, trước tiên phải xóa mục cũ đi
-      if (oldMonthlyAmount != null && oldDailyAmount > 0) {
-        // Dữ liệu cần xóa phải khớp 100% với dữ liệu trên server
-        final expenseToRemove = {'name': name, 'amount': oldDailyAmount};
-        batch.update(dailyDocRef, {'fixedExpenses': FieldValue.arrayRemove([expenseToRemove])});
+      // 1a. Xóa metadata ở các tháng không còn được áp dụng
+      final oldMonthKeys = _getMonthsInRange(dateRangeToRemoveFrom);
+      final newMonthKeysSet = _getMonthsInRange(newDateRange).toSet();
+      final monthsToDeleteFrom = oldMonthKeys.where((key) => !newMonthKeysSet.contains(key));
+      for (final monthKey in monthsToDeleteFrom) {
+        final monthlyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('monthly').doc(monthKey);
+        batch.update(monthlyDocRef, {'expenses.${nameToRemove}': FieldValue.delete()});
       }
 
-      // Luôn thêm mục mới vào
-      final expenseToAdd = {'name': name, 'amount': newDailyAmount};
-      // Dùng set + merge để tự tạo doc nếu chưa có, và arrayUnion để thêm vào mảng một cách an toàn
+      // 1b. Xóa phân bổ hàng ngày cũ
+      final daysInOldRange = dateRangeToRemoveFrom.end.difference(dateRangeToRemoveFrom.start).inDays + 1;
+      if (daysInOldRange > 0) {
+        final oldDailyAmount = oldAmount / daysInOldRange;
+        final expenseToRemove = {'name': nameToRemove, 'amount': oldDailyAmount};
+        for (int i = 0; i < daysInOldRange; i++) {
+          final date = dateRangeToRemoveFrom.start.add(Duration(days: i));
+          final dateKey = DateFormat('yyyy-MM-dd').format(date);
+          final firestoreDocId = appState.getKey('fixedExpenseList_$dateKey');
+          final dailyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('daily').doc(firestoreDocId);
+          batch.update(dailyDocRef, {'fixedExpenses': FieldValue.arrayRemove([expenseToRemove])});
+        }
+      }
+    }
+
+    // --- BƯỚC 2: LƯU/CẬP NHẬT DỮ LIỆU MỚI (LUÔN THỰC HIỆN) ---
+    // 2a. Lưu metadata mới vào các tháng liên quan
+    final newMonthKeys = _getMonthsInRange(newDateRange);
+    final expenseData = {
+      'totalAmount': newAmount,
+      'startDate': newDateRange.start.toIso8601String(),
+      'endDate': newDateRange.end.toIso8601String(),
+    };
+
+    for (final monthKey in newMonthKeys) {
+      final monthlyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('monthly').doc(monthKey);
+      // Nếu đổi tên khoản chi, cần đảm bảo key cũ đã bị xóa
+      if (oldName != null && oldName != newName) {
+        batch.update(monthlyDocRef, {'expenses.${oldName}': FieldValue.delete()});
+      }
       batch.set(
-          dailyDocRef,
-          {'fixedExpenses': FieldValue.arrayUnion([expenseToAdd])},
-          SetOptions(merge: true) // Rất quan trọng!
+          monthlyDocRef,
+          {'expenses': {newName: expenseData}, 'updatedAt': FieldValue.serverTimestamp()},
+          SetOptions(merge: true)
       );
     }
 
-    // Gửi tất cả lên server một lần duy nhất
+    // 2b. Thêm phân bổ hàng ngày mới
+    final daysInNewRange = newDateRange.end.difference(newDateRange.start).inDays + 1;
+    if (daysInNewRange > 0) {
+      final newDailyAmount = newAmount / daysInNewRange;
+      final expenseToAdd = {'name': newName, 'amount': newDailyAmount};
+      for (int i = 0; i < daysInNewRange; i++) {
+        final date = newDateRange.start.add(Duration(days: i));
+        final dateKey = DateFormat('yyyy-MM-dd').format(date);
+        final firestoreDocId = appState.getKey('fixedExpenseList_$dateKey');
+        final dailyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('daily').doc(firestoreDocId);
+        batch.set(
+            dailyDocRef,
+            {'fixedExpenses': FieldValue.arrayUnion([expenseToAdd])},
+            SetOptions(merge: true)
+        );
+      }
+    }
+
+    // --- BƯỚC 3: GỬI TẤT CẢ LỆNH LÊN SERVER ---
     await batch.commit();
+  }
+
+// <<< THÊM HÀM HELPER MỚI NÀY VÀO CLASS ExpenseManager >>>
+  /// Lấy danh sách các tháng (dưới dạng key 'yyyy-MM') trong một khoảng thời gian.
+  static List<String> _getMonthsInRange(DateTimeRange range) {
+    final Set<String> months = {};
+    DateTime currentDate = range.start;
+    while (currentDate.isBefore(range.end) || currentDate.isAtSameMomentAs(range.end)) {
+      months.add(DateFormat('yyyy-MM').format(currentDate));
+      currentDate = DateTime(currentDate.year, currentDate.month + 1, 1);
+    }
+    return months.toList();
   }
 
   static Future<void> deleteMonthlyFixedExpense(
       AppState appState,
       String name,
-      double monthlyAmount, // Số tiền của tháng đang bị xóa
-      DateTime month
+      double amount,
+      {required DateTimeRange dateRange}
       ) async {
-    final String? userId = appState.activeUserId; //
-    if (userId == null) return; //
+    final String? userId = appState.activeUserId;
+    if (userId == null) return;
 
-    final firestore = FirebaseFirestore.instance; //
+    final firestore = FirebaseFirestore.instance;
     final batch = firestore.batch();
 
-    // Thao tác 1: Xóa trong tài liệu của tháng (metadata)
-    final monthKey = DateFormat('yyyy-MM').format(month); //
-    final monthlyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('monthly').doc(monthKey); //
-    batch.update(monthlyDocRef, {
-      'amounts.$name': FieldValue.delete(), // Xóa một key trong map
-      'products': FieldValue.arrayRemove([{'name': name}]),
-      'updatedAt': FieldValue.serverTimestamp()
-    });
+    // Mở sẵn hộp cache
+    if (!Hive.isBoxOpen('monthlyFixedExpensesBox')) {
+      await Hive.openBox('monthlyFixedExpensesBox');
+    }
+    final monthlyFixedExpensesBox = Hive.box('monthlyFixedExpensesBox');
 
-    // Thao tác 2: Xóa khỏi tất cả các ngày trong tháng
-    // Giả định rằng một khoản chi tháng được phân bổ đều cho tất cả các ngày
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day; //
-    final dailyAmount = (daysInMonth > 0) ? monthlyAmount / daysInMonth : 0.0;
-    final expenseToRemove = {'name': name, 'amount': dailyAmount};
+    // --- BƯỚC 1: XÓA DỮ LIỆU Ở CẢ MÁY CHỦ VÀ CACHE ---
+    final monthKeys = _getMonthsInRange(dateRange);
+    for (final monthKey in monthKeys) {
+      // Lên lịch xóa trên máy chủ
+      final monthlyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('monthly').doc(monthKey);
+      batch.update(monthlyDocRef, {
+        'expenses.$name': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp()
+      });
 
-    for (int i = 1; i <= daysInMonth; i++) {
-      final currentDate = DateTime(month.year, month.month, i);
-      final dateKey = DateFormat('yyyy-MM-dd').format(currentDate); //
-      final firestoreDocId = appState.getKey('fixedExpenseList_$dateKey'); //
-      final dailyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('daily').doc(firestoreDocId); //
-
-      // Thêm lệnh xóa vào batch
-      batch.update(dailyDocRef, {'fixedExpenses': FieldValue.arrayRemove([expenseToRemove])});
+      // <<< SỬA LỖI: Xóa trực tiếp trong bộ nhớ đệm trên điện thoại >>>
+      final hiveKey = '$userId-fixedExpenseList-$monthKey';
+      if (monthlyFixedExpensesBox.containsKey(hiveKey)) {
+        final cachedMap = Map<String, dynamic>.from(monthlyFixedExpensesBox.get(hiveKey));
+        cachedMap.remove(name); // Xóa khoản chi ra khỏi map trong cache
+        await monthlyFixedExpensesBox.put(hiveKey, cachedMap); // Lưu lại map đã được cập nhật
+      }
     }
 
-    // Gửi tất cả lên server một lần duy nhất
+    // --- BƯỚC 2: XÓA PHÂN BỔ HÀNG NGÀY (trên máy chủ) ---
+    final daysInRange = dateRange.end.difference(dateRange.start).inDays + 1;
+    if (daysInRange > 0) {
+      final dailyAmount = amount / daysInRange;
+      final expenseToRemove = {'name': name, 'amount': dailyAmount};
+      for (int i = 0; i < daysInRange; i++) {
+        final currentDate = dateRange.start.add(Duration(days: i));
+        final dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
+        final firestoreDocId = appState.getKey('fixedExpenseList_$dateKey');
+        final dailyDocRef = firestore.collection('users').doc(userId).collection('expenses').doc('fixed').collection('daily').doc(firestoreDocId);
+        batch.update(dailyDocRef, {'fixedExpenses': FieldValue.arrayRemove([expenseToRemove])});
+      }
+    }
+
+    // --- BƯỚC 3: GỬI TẤT CẢ LỆNH XÓA LÊN MÁY CHỦ ---
     await batch.commit();
   }
 }

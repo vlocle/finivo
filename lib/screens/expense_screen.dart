@@ -280,306 +280,382 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   // BẠN HÃY DÁN TOÀN BỘ ĐOẠN CODE NÀY ĐỂ THAY THẾ CHO HÀM _showMonthlyFixedExpenseDialog CŨ
 // TRONG FILE expense_screen.docx (từ source 979 đến 1252)
 
-  Future<void> _showMonthlyFixedExpenseDialog(AppState appState, {required bool canEdit}) async {
-    if (_isDialogOpen) return;
-    _isDialogOpen = true;
-    DateTime _currentDialogMonth = appState.selectedDate;
-    DateTimeRange? _currentDialogDateRange = null;
-    final TextEditingController _newExpenseNameController = TextEditingController();
+  Future<Map<String, dynamic>?> _showEditDetailDialog({
+    required BuildContext context,
+    required String oldName,
+    required double oldAmount,
+    required DateTimeRange oldDateRange,
+  }) async {
+    final nameController = TextEditingController(text: oldName);
+    final amountController = TextEditingController(text: oldAmount.toString());
+    DateTimeRange? newDateRange = oldDateRange;
 
-    List<Map<String, dynamic>>? fixedExpensesList;
-    Map<String, double>? savedMonthlyAmounts;
-    List<TextEditingController>? monthlyAmountControllers;
-
-    showDialog<void>(
+    return await showDialog<Map<String, dynamic>?>(
       context: context,
-      builder: (dialogMainContext) => StatefulBuilder(
-        builder: (dialogContext, setStateDialog) {
-          return FutureBuilder<Map<String, dynamic>>(
-            key: ValueKey(_currentDialogMonth.toIso8601String()),
-            future: Future.wait([
-              ExpenseManager.loadFixedExpenseList(appState, _currentDialogMonth),
-              ExpenseManager.loadMonthlyFixedAmounts(appState, _currentDialogMonth),
-            ]).then((results) => {
-              'fixedExpenses': results[0],
-              'monthlyAmounts': results[1],
-            }),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), content: Container(height: 120, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(color: AppColors.chartRed), SizedBox(height: 20), Text("Đang tải...", style: TextStyle(color: AppColors.getTextSecondaryColor(context)))] ))));
-              }
-              if (snapshot.hasError || !snapshot.hasData) {
-                return AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: Row(children: [Icon(Icons.error_outline, color: AppColors.chartRed), SizedBox(width: 10), Text("Lỗi")]), content: Text("Có lỗi xảy ra khi tải dữ liệu.\nVui lòng thử lại.", style: TextStyle(color: AppColors.getTextColor(context))), actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text("Đóng", style: TextStyle(color: AppColors.chartRed)))]);
-              }
-
-              if (fixedExpensesList == null) {
-                fixedExpensesList = List<Map<String, dynamic>>.from(snapshot.data!['fixedExpenses'] ?? []);
-                savedMonthlyAmounts = Map<String, double>.from(snapshot.data!['monthlyAmounts'] ?? {});
-                monthlyAmountControllers = List.generate(
-                  fixedExpensesList!.length,
-                      (index) {
-                    final name = fixedExpensesList![index]['name'];
-                    final savedAmount = savedMonthlyAmounts![name];
-                    return TextEditingController(text: savedAmount != null ? savedAmount.toString() : '');
-                  },
-                );
-              }
-
-              final daysInSelectedMonth = DateTime(_currentDialogMonth.year, _currentDialogMonth.month + 1, 0).day;
-
-              return AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                titlePadding: const EdgeInsets.fromLTRB(20, 20, 12, 10),
-                title: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateInDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text("Chỉnh sửa chi phí"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(DateFormat('MMMM y', 'vi').format(_currentDialogMonth), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.getTextColor(context))),
-                    IconButton(
-                      icon: Icon(Icons.calendar_month_outlined, color: AppColors.chartRed),
-                      onPressed: () async {
-                        final DateTime? pickedMonth = await showMonthPicker(context: dialogContext, initialDate: _currentDialogMonth, firstDate: DateTime(2020), lastDate: DateTime(2030));
-                        if (pickedMonth != null) {
-                          setStateDialog(() {
-                            _currentDialogMonth = pickedMonth;
-                            _currentDialogDateRange = null;
-                            fixedExpensesList = null;
+                    _buildModernDialogTextField(
+                      controller: nameController,
+                      labelText: "Tên khoản chi",
+                      prefixIcon: Icons.drive_file_rename_outline,
+                    ),
+                    SizedBox(height: 16),
+                    _buildModernDialogTextField(
+                      controller: amountController,
+                      labelText: "Tổng số tiền",
+                      keyboardType: TextInputType.number,
+                      prefixIcon: Icons.monetization_on_outlined,
+                    ),
+                    SizedBox(height: 16),
+                    // Widget chọn khoảng thời gian
+                    GestureDetector(
+                      onTap: () async {
+                        final picked = await showDateRangePicker(
+                          context: context,
+                          initialDateRange: newDateRange,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) {
+                          setStateInDialog(() {
+                            newDateRange = picked;
                           });
                         }
                       },
-                      splashRadius: 22,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(12)),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                                "${DateFormat('dd/MM/yy', 'vi').format(newDateRange!.start)} - ${DateFormat('dd/MM/yy', 'vi').format(newDateRange!.end)}",
+                                style: TextStyle(fontSize: 14.5, color: AppColors.getTextColor(context))
+                            ),
+                            Icon(Icons.date_range_outlined, color: AppColors.chartRed, size: 20),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                content: SizedBox(
-                  width: double.maxFinite,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(height: 10),
-                        Text("Phân bổ chi phí cho các ngày:", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13.5, fontWeight: FontWeight.w500)),
-                        SizedBox(height: 6),
-                        GestureDetector(
-                          onTap: () async {
-                            final DateTimeRange? pickedDateRange = await showDateRangePicker(
-                                context: dialogContext,
-                                initialDateRange: _currentDialogDateRange ??
-                                    DateTimeRange(
-                                        start: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1),
-                                        end: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, daysInSelectedMonth)),
-                                firstDate: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1),
-                                lastDate: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, daysInSelectedMonth),
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: Theme.of(context).colorScheme.copyWith(
-                                        primary: AppColors.chartRed,
-                                        onPrimary: Colors.white,
-                                        surface: AppColors.getCardColor(context),
-                                        onSurface: AppColors.getTextColor(context),
-                                      ),
-                                      dialogBackgroundColor: AppColors.getCardColor(context),
-                                      textButtonTheme: TextButtonThemeData(
-                                          style: TextButton.styleFrom(foregroundColor: AppColors.chartRed)
-                                      ),
-                                    ),
-                                    child: child!,
-                                  );
-                                });
-                            if (pickedDateRange != null) {
-                              setStateDialog(() => _currentDialogDateRange = pickedDateRange);
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, null),
+                  child: Text("Hủy"),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final newAmount = double.tryParse(amountController.text) ?? 0.0;
+                    if (nameController.text.isNotEmpty && newAmount > 0) {
+                      Navigator.pop(dialogContext, {
+                        'newName': nameController.text,
+                        'newAmount': newAmount,
+                        'newDateRange': newDateRange,
+                      });
+                    }
+                  },
+                  child: Text("Lưu"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showMonthlyFixedExpenseDialog(AppState appState, {required bool canEdit}) async {
+    if (_isDialogOpen) return;
+    _isDialogOpen = true;
+
+    DateTime _currentDialogMonth = appState.selectedDate;
+    final TextEditingController _newExpenseNameController = TextEditingController();
+    List<Map<String, dynamic>>? _expensesData;
+    bool _isLoading = true;
+    String? _errorMessage;
+    bool _isMounted = true;
+    DateTimeRange? _selectedDateRange;
+
+    // Hàm tải dữ liệu, chỉ gọi khi cần (khi mở dialog hoặc đổi tháng)
+    Future<void> _fetchDataForMonth(DateTime month, Function(void Function()) setStateDialog) async {
+      if (!_isMounted) return;
+      setStateDialog(() {
+        _isLoading = true;
+      });
+      try {
+        final data = await ExpenseManager.loadFixedExpenseList(appState, month);
+        if (_isMounted) {
+          setStateDialog(() {
+            _expensesData = data;
+            _isLoading = false;
+            _errorMessage = null;
+            _selectedDateRange = DateTimeRange(
+              start: DateTime(month.year, month.month, 1),
+              end: DateTime(month.year, month.month + 1, 0),
+            );
+          });
+        }
+      } catch (e) {
+        if (_isMounted) {
+          setStateDialog(() {
+            _isLoading = false;
+            _errorMessage = "Lỗi tải dữ liệu: ${e.toString()}";
+          });
+        }
+      }
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogMainContext) => StatefulBuilder(
+        builder: (dialogContext, setStateDialog) {
+          if (_expensesData == null && _isLoading) {
+            _fetchDataForMonth(_currentDialogMonth, setStateDialog);
+          }
+
+          Widget buildContent() {
+            if (_isLoading) {
+              return Container(height: 120, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(color: AppColors.chartRed), SizedBox(height: 20), Text("Đang tải...", style: TextStyle(color: AppColors.getTextColor(context)))])));
+            }
+            if (_errorMessage != null) {
+              return Text(_errorMessage!, style: TextStyle(color: AppColors.chartRed));
+            }
+
+            final List<TextEditingController> monthlyAmountControllers = List.generate(
+                _expensesData!.length,
+                    (index) => TextEditingController(text: _expensesData![index]['totalAmount']?.toString() ?? '')
+            );
+
+            return SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(height: 10),
+                    Text("Phân bổ chi phí cho các ngày:", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13.5, fontWeight: FontWeight.w500)),
+                    SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () async {
+                        final DateTimeRange? pickedDateRange = await showDateRangePicker(
+                            context: dialogContext,
+                            initialDateRange: _selectedDateRange,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030),
+                            builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: Theme.of(context).colorScheme.copyWith(primary: AppColors.chartRed, onPrimary: Colors.white, surface: AppColors.getCardColor(context), onSurface: AppColors.getTextColor(context)), dialogBackgroundColor: AppColors.getCardColor(context), textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: AppColors.chartRed))), child: child!)
+                        );
+                        if (pickedDateRange != null) {
+                          setStateDialog(() => _selectedDateRange = pickedDateRange);
+                        }
+                      },
+                      child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(12)),
+                          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                            Text("${DateFormat('dd/MM/yy', 'vi').format(_selectedDateRange!.start)} - ${DateFormat('dd/MM/yy', 'vi').format(_selectedDateRange!.end)}", style: TextStyle(fontSize: 14.5, color: AppColors.getTextColor(context))),
+                            Icon(Icons.date_range_outlined, color: AppColors.chartRed, size: 20)
+                          ])
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    Text("Thêm chi phí cố định mới:", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13.5, fontWeight: FontWeight.w500)),
+                    SizedBox(height: 6),
+                    Row(children: [
+                      Expanded(child: _buildModernDialogTextField(controller: _newExpenseNameController, labelText: "Tên khoản chi", prefixIcon: Icons.add_shopping_cart_outlined)),
+                      SizedBox(width: 8),
+                      IconButton(
+                          icon: Icon(Icons.add_circle, color: AppColors.chartRed, size: 30),
+                          onPressed: canEdit ? () {
+                            if (_newExpenseNameController.text.isNotEmpty) {
+                              final newExpenseName = _newExpenseNameController.text;
+                              if (_expensesData!.any((exp) => exp['name'] == newExpenseName)) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Khoản chi '$newExpenseName' đã tồn tại."), backgroundColor: Colors.orangeAccent, behavior: SnackBarBehavior.floating));
+                                return;
+                              }
+                              setStateDialog(() {
+                                _expensesData!.add({'name': newExpenseName, 'totalAmount': null, 'startDate': _selectedDateRange!.start.toIso8601String(), 'endDate': _selectedDateRange!.end.toIso8601String()});
+                                _expensesData!.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+                              });
+                              _newExpenseNameController.clear();
                             }
-                          },
-                          child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(12)),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                    _currentDialogDateRange == null
-                                        ? "Cả tháng (${DateFormat('MM/yyyy', 'vi').format(_currentDialogMonth)})"
-                                        : "${DateFormat('dd/MM/yy', 'vi').format(_currentDialogDateRange!.start)} - ${DateFormat('dd/MM/yy', 'vi').format(_currentDialogDateRange!.end)}",
-                                    style: TextStyle(fontSize: 14.5, color: AppColors.getTextColor(context))),
-                                Icon(Icons.date_range_outlined, color: AppColors.chartRed, size: 20),
-                              ],
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: 16),
-                        Text("Thêm chi phí cố định mới vào danh sách tháng:", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13.5, fontWeight: FontWeight.w500)),
-                        SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Expanded(child: _buildModernDialogTextField(controller: _newExpenseNameController, labelText: "Tên khoản chi", prefixIcon: Icons.add_shopping_cart_outlined)),
-                            SizedBox(width: 8),
-                            IconButton(
-                              icon: Icon(Icons.add_circle, color: AppColors.chartRed, size: 30),
-                              onPressed: canEdit ? () async {
-                                if (_newExpenseNameController.text.isNotEmpty) {
-                                  final newExpenseName = _newExpenseNameController.text;
-                                  if (fixedExpensesList!.any((exp) => exp['name'] == newExpenseName)) {
-                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Khoản chi '$newExpenseName' đã tồn tại."), backgroundColor: Colors.orangeAccent, behavior: SnackBarBehavior.floating));
-                                    return;
-                                  }
-                                  await ExpenseManager.saveFixedExpenseList(appState, [...fixedExpensesList!, {'name': newExpenseName}], _currentDialogMonth);
-                                  _newExpenseNameController.clear();
-                                  setStateDialog(() => fixedExpensesList = null);
-                                  Future.microtask(() => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã thêm '$newExpenseName'."), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating)));
-                                }
-                              } : null,
-                              tooltip: "Thêm vào danh sách chi phí của tháng",
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Text("Danh sách chi phí và số tiền tháng:", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13.5, fontWeight: FontWeight.w500)),
-                        SizedBox(height: 6),
-                        fixedExpensesList!.isEmpty
-                            ? Padding(padding: const EdgeInsets.symmetric(vertical: 20.0), child: Center(child: Text("Chưa có mục chi phí cố định nào được định nghĩa.", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontStyle: FontStyle.italic))))
-                            : Container(
-                          constraints: BoxConstraints(maxHeight: 200),
-                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.getBorderColor(context))),
-                          child: ListView.builder(
+                          } : null,
+                          tooltip: "Thêm vào danh sách"
+                      ),
+                    ]),
+                    const SizedBox(height: 20),
+                    Text("Danh sách chi phí và số tiền:", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13.5, fontWeight: FontWeight.w500)),
+                    SizedBox(height: 6),
+                    _expensesData!.isEmpty
+                        ? Padding(padding: const EdgeInsets.symmetric(vertical: 20.0), child: Center(child: Text("Chưa có mục chi phí cố định nào.", style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontStyle: FontStyle.italic))))
+                        : Container(
+                        constraints: BoxConstraints(maxHeight: 200),
+                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.getBorderColor(context))),
+                        child: ListView.builder(
                             shrinkWrap: true,
-                            itemCount: fixedExpensesList!.length,
+                            itemCount: _expensesData!.length,
                             itemBuilder: (lvContext, index) {
-                              final expenseMap = fixedExpensesList![index];
-                              final name = expenseMap['name'] as String;
-                              final currentSavedAmount = savedMonthlyAmounts![name];
-                              bool isEditingThisAmount = !((currentSavedAmount ?? 0) > 0);
+                              final expenseData = _expensesData![index];
+                              final name = expenseData['name'] as String;
+                              final savedAmount = expenseData['totalAmount'] as double?;
+                              final isEditingThisAmount = savedAmount == null;
+                              final dateRange = DateTimeRange(start: DateTime.parse(expenseData['startDate']), end: DateTime.parse(expenseData['endDate']));
+
                               return Card(
-                                elevation: 1.0,
-                                margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 14.0, right: 6, top: 10, bottom: 10),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            // Dòng 1: Tên khoản chi
-                                            Text(
-                                              name,
-                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            SizedBox(height: 5),
-                                            // Dòng 2: Số tiền hoặc ô nhập liệu
-                                            isEditingThisAmount
-                                                ? _buildModernDialogTextField(
-                                                controller: monthlyAmountControllers![index],
-                                                labelText: "Số tiền",
-                                                keyboardType: TextInputType.number,
-                                                isDense: true)
-                                                : Text(
-                                                currencyFormat.format(currentSavedAmount),
-                                                style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: AppColors.chartRed)
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      SizedBox(width: 8),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
+                                  elevation: 1.0,
+                                  margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  child: Padding(
+                                      padding: const EdgeInsets.only(left: 14.0, right: 6, top: 10, bottom: 10),
+                                      child: Row(children: [
+                                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                                          Text(name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)), overflow: TextOverflow.ellipsis),
+                                          SizedBox(height: 5),
+                                          isEditingThisAmount
+                                              ? _buildModernDialogTextField(controller: monthlyAmountControllers[index], labelText: "Số tiền", keyboardType: TextInputType.number, isDense: true)
+                                              : Text(currencyFormat.format(savedAmount), style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: AppColors.chartRed)),
+                                          Padding(
+                                              padding: const EdgeInsets.only(top: 6.0),
+                                              child: Text("(Áp dụng: ${DateFormat('dd/MM/yy').format(dateRange.start)} - ${DateFormat('dd/MM/yy').format(dateRange.end)})", style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.getTextSecondaryColor(context)))
+                                          )
+                                        ])),
+                                        SizedBox(width: 8),
+                                        Row(mainAxisSize: MainAxisSize.min, children: [
+                                          // Nút Lưu
                                           if (isEditingThisAmount)
                                             IconButton(
                                               icon: const Icon(Icons.check_circle, color: Colors.green, size: 28),
                                               tooltip: "Lưu số tiền",
-                                              onPressed: canEdit ? () {
-                                                final newAmount = double.tryParse(monthlyAmountControllers![index].text.replaceAll('.', '')) ?? 0.0;
+                                              onPressed: canEdit ? () async {
+                                                final newAmount = double.tryParse(monthlyAmountControllers[index].text.replaceAll('.', '')) ?? 0.0;
                                                 if (newAmount > 0) {
-                                                  setStateDialog(() => savedMonthlyAmounts![name] = newAmount);
-                                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã lưu '$name'."), backgroundColor: Colors.green));
-                                                  ExpenseManager.saveOrUpdateMonthlyFixedAmount(appState, name, newAmount, null, _currentDialogMonth, dateRange: _currentDialogDateRange ?? DateTimeRange(start: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1), end: DateTime(_currentDialogMonth.year, _currentDialogMonth.month + 1, 0))).catchError((e) {
-                                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi đồng bộ: $e"), backgroundColor: Colors.red));
-                                                    setStateDialog(() => savedMonthlyAmounts!.remove(name));
+                                                  await ExpenseManager.saveOrUpdateMonthlyFixedAmount(appState, name, newAmount, newDateRange: dateRange);
+
+                                                  // <<< SỬA LỖI 1: CẬP NHẬT GIAO DIỆN TỨC THÌ KHI LƯU >>>
+                                                  setStateDialog(() {
+                                                    final savedIndex = _expensesData!.indexWhere((exp) => exp['name'] == name);
+                                                    if (savedIndex != -1) {
+                                                      _expensesData![savedIndex]['totalAmount'] = newAmount;
+                                                    }
                                                   });
+
+                                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã lưu '$name'."), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
                                                 }
                                               } : null,
                                             ),
+                                          // Nút Sửa
                                           if (!isEditingThisAmount)
                                             IconButton(
                                               icon: Icon(Icons.edit, color: AppColors.primaryBlue, size: 22),
-                                              tooltip: "Chỉnh sửa số tiền",
+                                              tooltip: "Chỉnh sửa",
                                               onPressed: canEdit ? () async {
-                                                final editAmountController = TextEditingController(text: currentSavedAmount.toString());
-                                                final bool? shouldSave = await showDialog<bool>(
-                                                  context: dialogContext,
-                                                  builder: (editDialogContext) => AlertDialog(
-                                                    title: Text("Sửa tiền cho: $name"),
-                                                    content: _buildModernDialogTextField(controller: editAmountController, labelText: "Số tiền mới", keyboardType: TextInputType.number, prefixIcon: Icons.monetization_on_outlined),
-                                                    actions: [
-                                                      TextButton(onPressed: () => Navigator.pop(editDialogContext, false), child: Text("Hủy")),
-                                                      ElevatedButton(onPressed: () => Navigator.pop(editDialogContext, true), child: Text("Lưu")),
-                                                    ],
-                                                  ),
-                                                );
-                                                if (shouldSave == true) {
-                                                  final newAmount = double.tryParse(editAmountController.text.replaceAll('.', '')) ?? 0.0;
-                                                  if (newAmount > 0) {
-                                                    setStateDialog(() => savedMonthlyAmounts![name] = newAmount);
-                                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã cập nhật '$name'."), backgroundColor: Colors.green));
-                                                    ExpenseManager.saveOrUpdateMonthlyFixedAmount(appState, name, newAmount, currentSavedAmount, _currentDialogMonth, dateRange: _currentDialogDateRange ?? DateTimeRange(start: DateTime(_currentDialogMonth.year, _currentDialogMonth.month, 1), end: DateTime(_currentDialogMonth.year, _currentDialogMonth.month + 1, 0))).catchError((e) {
-                                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi đồng bộ: $e"), backgroundColor: Colors.red));
-                                                      setStateDialog(() => savedMonthlyAmounts![name] = currentSavedAmount!);
-                                                    });
-                                                  }
+                                                final result = await _showEditDetailDialog(context: context, oldName: name, oldAmount: savedAmount!, oldDateRange: dateRange);
+                                                if (result != null) {
+                                                  final newName = result['newName'] as String;
+                                                  final newAmount = result['newAmount'] as double;
+                                                  final newDateRange = result['newDateRange'] as DateTimeRange;
+
+                                                  await ExpenseManager.saveOrUpdateMonthlyFixedAmount(appState, newName, newAmount, oldName: name, oldAmount: savedAmount, oldDateRange: dateRange, newDateRange: newDateRange);
+
+                                                  // <<< SỬA LỖI 2: CẬP NHẬT GIAO DIỆN TỨC THÌ KHI SỬA >>>
+                                                  setStateDialog(() {
+                                                    final editedIndex = _expensesData!.indexWhere((exp) => exp['name'] == name);
+                                                    if (editedIndex != -1) {
+                                                      _expensesData![editedIndex]['name'] = newName;
+                                                      _expensesData![editedIndex]['totalAmount'] = newAmount;
+                                                      _expensesData![editedIndex]['startDate'] = newDateRange.start.toIso8601String();
+                                                      _expensesData![editedIndex]['endDate'] = newDateRange.end.toIso8601String();
+                                                      _expensesData!.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+                                                    }
+                                                  });
+
+                                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã cập nhật '${result['newName']}'."), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
                                                 }
                                               } : null,
                                             ),
+                                          // Nút Xóa
                                           IconButton(
                                             icon: Icon(Icons.delete_forever, color: AppColors.chartRed, size: 22),
                                             tooltip: "Xóa khoản chi",
                                             onPressed: canEdit ? () async {
-                                              bool? confirm = await showDialog(context: dialogContext, builder: (ctx) => AlertDialog(title: Text("Xác nhận xóa"), content: Text("Bạn có chắc muốn xóa '$name' và tất cả phân bổ của nó không?"), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text("Hủy")), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: Text("Xóa"), style: ElevatedButton.styleFrom(backgroundColor: AppColors.chartRed, foregroundColor: Colors.white))]));
+                                              bool? confirm = await showDialog(context: dialogContext, builder: (ctx) => AlertDialog(title: Text("Xác nhận xóa"), content: Text("Bạn có chắc muốn xóa '$name' không?"), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text("Hủy")), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: Text("Xóa"), style: ElevatedButton.styleFrom(backgroundColor: AppColors.chartRed, foregroundColor: Colors.white))]));
                                               if (confirm == true) {
-                                                final amountToDelete = currentSavedAmount ?? 0.0;
+                                                await ExpenseManager.deleteMonthlyFixedExpense(appState, name, savedAmount ?? 0.0, dateRange: dateRange);
+
+                                                // <<< SỬA LỖI 3: CẬP NHẬT GIAO DIỆN TỨC THÌ KHI XÓA >>>
                                                 setStateDialog(() {
-                                                  savedMonthlyAmounts!.remove(name);
-                                                  monthlyAmountControllers!.removeAt(index);
-                                                  fixedExpensesList!.removeAt(index);
+                                                  _expensesData!.removeWhere((exp) => exp['name'] == name);
                                                 });
-                                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã xóa '$name'."), backgroundColor: AppColors.chartRed));
-                                                ExpenseManager.deleteMonthlyFixedExpense(appState, name, amountToDelete, _currentDialogMonth).catchError((e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi đồng bộ khi xóa."), backgroundColor: Colors.red)));
+
+                                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Đã xóa '$name'."), backgroundColor: AppColors.chartRed, behavior: SnackBarBehavior.floating));
                                               }
                                             } : null,
-                                          ),
-                                        ],
-                                      )
-                                    ],
-                                  ),
-                                ),
+                                          )
+                                        ])
+                                      ])
+                                  )
                               );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Center(child: Text(_currentDialogDateRange == null ? "Các khoản chi sẽ được phân bổ đều cho $daysInSelectedMonth ngày trong tháng." : "Các khoản chi sẽ được phân bổ đều cho ${_currentDialogDateRange!.end.difference(_currentDialogDateRange!.start).inDays + 1} ngày đã chọn.", style: TextStyle(fontSize: 12.5, color: AppColors.getTextSecondaryColor(context), fontStyle: FontStyle.italic), textAlign: TextAlign.center)),
-                      ],
+                            }
+                        )
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
-                actionsAlignment: MainAxisAlignment.end,
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogMainContext),
-                    child: Text("Đóng", style: TextStyle(color: AppColors.chartRed, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                ],
-              );
-            },
+              ),
+            );
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 12, 10),
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(DateFormat('MMMM y', 'vi').format(_currentDialogMonth), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.getTextColor(context))),
+                IconButton(
+                  icon: Icon(Icons.calendar_month_outlined, color: AppColors.chartRed),
+                  onPressed: () async {
+                    final DateTime? pickedMonth = await showMonthPicker(context: dialogContext, initialDate: _currentDialogMonth, firstDate: DateTime(2020), lastDate: DateTime(2030));
+                    if (pickedMonth != null && pickedMonth != _currentDialogMonth) {
+                      _currentDialogMonth = pickedMonth;
+                      // Chỉ tải lại toàn bộ khi đổi tháng
+                      _fetchDataForMonth(_currentDialogMonth, setStateDialog);
+                    }
+                  },
+                  splashRadius: 22,
+                ),
+              ],
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            content: buildContent(),
+            actionsAlignment: MainAxisAlignment.end,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogMainContext),
+                child: Text("Đóng", style: TextStyle(color: AppColors.chartRed, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ],
           );
         },
       ),
     ).then((_) {
+      _isMounted = false;
       _isDialogOpen = false;
+      if (mounted) {
+        _resetAnimation();
+        _runAnimation();
+      }
     });
   }
 

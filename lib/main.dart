@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:fingrowth/screens/loading_indicator.dart';
+import 'package:fingrowth/screens/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 // <<< THÊM CÁC IMPORT CẦN THIẾT >>>
 import 'state/app_state.dart';
@@ -35,57 +37,51 @@ Future<void> _configureRevenueCat() async {
   await Purchases.configure(configuration);
 }
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  print("Handling a background message: ${message.messageId}");
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // <<< CÁC LỆNH KHỞI TẠO ĐẦY ĐỦ VÀ ĐÚNG THỨ TỰ >>>
+  await Hive.initFlutter();
+  await initializeDateFormatting('vi', null); // Khởi tạo định dạng ngày tháng TV
+  await Firebase.initializeApp();
+  await _configureRevenueCat();
+
+  // Đăng ký các dịch vụ liên quan đến thông báo
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  await NotificationService.initializeLocalNotifications();
+
+  // Phần code còn lại để chạy ứng dụng
   try {
-    int retries = 3;
-    for (int i = 0; i < retries; i++) {
-      try {
-        await Firebase.initializeApp();
-        await _configureRevenueCat();
-        break;
-      } catch (e) {
-        if (i == retries - 1) throw e;
-        await Future.delayed(const Duration(seconds: 1));
-      }
-    }
-    FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
-    await Hive.initFlutter();
-    await initializeDateFormatting('vi', null);
-    final appState = AppState(); //
+    final appState = AppState();
     final connectivityResult = await Connectivity().checkConnectivity();
     if (connectivityResult != ConnectivityResult.none) {
       await appState.syncWithFirestore();
     }
     initConnectivityListener(appState);
-    // Chạy ứng dụng và cung cấp các services bằng MultiProvider
+
     runApp(
       MultiProvider(
         providers: [
-          // 1. Cung cấp SubscriptionService như một ChangeNotifier bình thường
           ChangeNotifierProvider(create: (_) => SubscriptionService()),
-          // 2. Dùng ProxyProvider để AppState có thể "lắng nghe" SubscriptionService
           ChangeNotifierProxyProvider<SubscriptionService, AppState>(
-            // create: Tạo ra AppState lần đầu tiên
             create: (context) => AppState(),
-            // update: Được gọi mỗi khi SubscriptionService thay đổi
             update: (context, subscriptionService, previousAppState) {
-              // Lấy trạng thái isSubscribed mới nhất từ service
               final newSubStatus = subscriptionService.isSubscribed;
-              // Cập nhật AppState với trạng thái mới và trả về
               return previousAppState!..updateSubscriptionStatus(newSubStatus);
             },
           ),
         ],
-        child: const MyApp(), //
+        child: const MyApp(),
       ),
     );
   } catch (e) {
-    runApp(MaterialApp( //
-      home: Scaffold( //
+    runApp(MaterialApp(
+      home: Scaffold(
         body: Center(child: Text('Lỗi khởi tạo ứng dụng: $e')),
       ),
     ));
@@ -166,6 +162,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       if (appState.authUserId != user.uid) {
         await appState.setUserId(user.uid);
       }
+      await NotificationService().initialize();
 
     } catch (e) {
       if (context.mounted) {

@@ -209,41 +209,57 @@ class AppState extends ChangeNotifier {
 
   // Thay thế hàm switchActiveUser cũ bằng phiên bản này
   Future<void> switchActiveUser(String newActiveUserId) async {
-    if (activeUserId != newActiveUserId) {
-      activeUserId = newActiveUserId;
+    if (activeUserId == newActiveUserId) return; // Không thay đổi thì không làm gì
 
-      mainRevenue = 0.0;
-      secondaryRevenue = 0.0;
-      otherRevenue = 0.0;
-      _fixedExpense = 0.0;
-      variableExpense = 0.0;
-      _cachedDateKey = null;
-      _cachedData = null;
+    if (newActiveUserId != authUserId) {
+      try {
+        final ownerDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(newActiveUserId)
+            .get();
 
-      _cancelRevenueSubscription();
-      _cancelFixedExpenseSubscription();
-      _cancelVariableExpenseSubscription();
-      _cancelDailyFixedExpenseSubscription();
-      _cancelProductsSubscription();
-      _cancelVariableExpenseListSubscription();
-      _cancelPermissionSubscription();
+        // Đọc trường isPremium từ Firestore (được cập nhật bởi Cloud Function)
+        final bool isOwnerSubscribed = ownerDoc.data()?['isPremium'] ?? false;
 
-      print("Switching to user $newActiveUserId and reloading data...");
-
-      // Tải quyền của người dùng mới TRƯỚC khi tải dữ liệu chính
-      _subscribeToPermissions();// <-- GỌI HÀM TẢI QUYỀN
-
-      await _loadInitialData();
-
-      _subscribeToFixedExpenses();
-      _subscribeToVariableExpenses();
-      _subscribeToDailyFixedExpenses();
-      _subscribeToDailyData();
-      _subscribeToProducts();
-      _subscribeToAvailableVariableExpenses();
-
-      notifyListeners();
+        if (!isOwnerSubscribed) {
+          print("Access Denied: Owner account is not subscribed.");
+          return;
+        }
+      } catch (e) {
+        print("Error checking owner subscription status: $e");
+        // Dừng lại nếu có lỗi xảy ra khi kiểm tra
+        return;
+      }
     }
+    // === KẾT THÚC THAY ĐỔI ===
+
+    // Nếu việc kiểm tra vượt qua, tiếp tục logic cũ như bình thường
+    activeUserId = newActiveUserId;
+    mainRevenue = 0.0;
+    secondaryRevenue = 0.0;
+    otherRevenue = 0.0;
+    _fixedExpense = 0.0;
+    variableExpense = 0.0;
+    _cachedDateKey = null;
+    _cachedData = null;
+    _cancelRevenueSubscription();
+    _cancelFixedExpenseSubscription();
+    _cancelVariableExpenseSubscription();
+    _cancelDailyFixedExpenseSubscription();
+    _cancelProductsSubscription();
+    _cancelVariableExpenseListSubscription();
+    _cancelPermissionSubscription();
+    print("Switching to user $newActiveUserId and reloading data...");
+
+    _subscribeToPermissions();
+    await _loadInitialData();
+    _subscribeToFixedExpenses();
+    _subscribeToVariableExpenses();
+    _subscribeToDailyFixedExpenses();
+    _subscribeToDailyData();
+    _subscribeToProducts();
+    _subscribeToAvailableVariableExpenses();
+    notifyListeners();
   }
 
   // HÀM MỚI (private): Chịu trách nhiệm dọn dẹp TOÀN BỘ trạng thái và dữ liệu local.

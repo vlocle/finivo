@@ -1,3 +1,4 @@
+import 'package:fingrowth/screens/subscription_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -113,6 +114,10 @@ class _EditSecondaryRevenueScreenState
 
     // --- PHẦN 2: CHUẨN BỊ DỮ LIỆU (Tương tự, nhưng với các key _Secondary) ---
     double totalRevenueForSale = priceToUse * quantity; //
+    if (!appState.isSubscribed && (appState.totalRevenueListenable.value + totalRevenueForSale > 2000000)) {
+      _showUpgradeDialog(context);
+      return; // Dừng việc thêm giao dịch
+    }
     var uuid = Uuid(); //
     String transactionId = uuid.v4(); //
 
@@ -254,6 +259,36 @@ class _EditSecondaryRevenueScreenState
         _showStyledSnackBar("Lỗi khi xóa giao dịch: $e", isError: true);
       }
     });
+  }
+
+  void _showUpgradeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text("Vượt giới hạn doanh thu", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          "Người dùng miễn phí chỉ có thể ghi nhận tối đa 2.000.000đ doanh thu mỗi ngày. Vui lòng nâng cấp để ghi nhận không giới hạn.",
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            child: Text("Để sau", style: GoogleFonts.poppins()),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.chartGreen), // Màu của màn hình DTP
+            child: Text("Nâng cấp ngay", style: GoogleFonts.poppins(color: Colors.white)),
+            onPressed: () {
+              Navigator.of(dialogContext).pop(); // Đóng dialog
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SubscriptionScreen(),
+              ));
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   // Dành cho file edit_secondary_revenue_screen.docx
