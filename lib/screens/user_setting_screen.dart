@@ -1,10 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fingrowth/screens/subscription_service.dart';
-import 'package:fingrowth/screens/user_guide_screen.dart'; // Giả sử bạn có màn hình này
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'firestore_service.dart';
@@ -121,34 +118,29 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
   }
 
   Future<void> _requestReview() async {
-    final InAppReview inAppReview = InAppReview.instance;
+    String? storeUrl;
 
-    if (await inAppReview.isAvailable()) {
-      // Nếu thiết bị hỗ trợ, hiển thị hộp thoại trong ứng dụng
-      inAppReview.requestReview();
+    // Vui lòng đảm bảo các ID này là chính xác cho ứng dụng của bạn.
+    const String appleAppId = "6746059564";
+    const String googlePackageName = "com.vlocle.finivo";
+
+    if (Platform.isIOS) {
+      // URL này sẽ mở thẳng trang viết nhận xét trên App Store.
+      storeUrl = "https://apps.apple.com/app/id$appleAppId?action=write-review";
+    } else if (Platform.isAndroid) {
+      // Đối với Google Play, cách đáng tin cậy nhất là mở trang chi tiết của ứng dụng.
+      // Người dùng sẽ thấy ngay phần đánh giá ở vị trí nổi bật.
+      storeUrl = "https://play.google.com/store/apps/details?id=$googlePackageName";
+    }
+
+    if (storeUrl != null) {
+      // Gọi hàm _launchURL mà bạn đã có sẵn
+      _launchURL(storeUrl);
     } else {
-      // Nếu không, mở trực tiếp trang trên cửa hàng ứng dụng
-      String? storeUrl;
-
-      // THAY THẾ ID ỨNG DỤNG CỦA BẠN VÀO ĐÂY
-      const String appleAppId = "6746059564"; // Ví dụ: 123456789
-      const String googlePackageName = "com.vlocle.finivo"; // Ví dụ: com.example.app
-
-      if (Platform.isIOS) {
-        storeUrl = "https://apps.apple.com/app/id$appleAppId";
-      } else if (Platform.isAndroid) {
-        storeUrl = "https://play.google.com/store/apps/details?id=$googlePackageName";
-      }
-
-      if (storeUrl != null) {
-        // Gọi hàm _launchURL mà bạn đã có sẵn
-        _launchURL(storeUrl);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Nền tảng không được hỗ trợ để đánh giá."))
-          );
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Nền tảng không được hỗ trợ để đánh giá."))
+        );
       }
     }
   }
@@ -206,7 +198,8 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
   Future<void> _launchURL(String urlString) async {
     final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url, mode: LaunchMode.inAppWebView)) {
+    // Change the mode to launch in an external browser
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Không thể mở đường dẫn: $urlString')),
@@ -681,10 +674,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   icon: Icons.description_outlined,
                   title: "Hướng dẫn sử dụng",
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => UserGuideScreen()),
-                    );
+                    _launchURL("https://www.youtube.com/watch?v=RKSfwkiE_c8&list=PL2InoI8TNIdIp4tll4dKh7Jy1TjYzgDgq");
                   },
                 ),
               ],
@@ -697,13 +687,13 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   context,
                   icon: Icons.shield_outlined, // Icon cho chính sách
                   title: "Chính sách Quyền riêng tư",
-                  onTap: () => _launchURL("https://vlocle.github.io/finivo-policy/"),
+                  onTap: () => _launchURL("https://finivoapp.com/policy/privacy-policy/"),
                 ),
                 _buildSettingsItem(
                   context,
                   icon: Icons.gavel_outlined, // Icon cho điều khoản
                   title: "Điều khoản Dịch vụ",
-                  onTap: () => _launchURL("https://vlocle.github.io/finivo-policy/terms-of-service.html"),
+                  onTap: () => _launchURL("https://finivoapp.com/policy/terms-and-conditions-of-use/"),
                 ),
               ],
             ),
