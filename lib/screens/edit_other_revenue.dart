@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../state/app_state.dart'; // Ensure this path is correct
 import 'package:fingrowth/screens/report_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -59,20 +60,85 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
     );
   }
 
+  void _showCollectPaymentDialog(BuildContext context, AppState appState, Map<String, dynamic> transaction) {
+    String? selectedWalletId;
+    DateTime paymentDate = DateTime.now(); // Mặc định là hôm nay
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            title: Text('Xác nhận Thu tiền', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Giao dịch: "${transaction['name']}"'),
+                const SizedBox(height: 4),
+                Text('Số tiền: ${currencyFormat.format(transaction['total'] ?? 0.0)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 20),
+                // Widget chọn ví tiền
+                ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: appState.wallets,
+                  builder: (context, walletList, child) {
+                    if (walletList.isEmpty) return const Text("Vui lòng tạo ví tiền trước.");
+                    // Tự động chọn ví mặc định
+                    selectedWalletId ??= appState.defaultWallet?['id'] ?? walletList.first['id'];
+                    return DropdownButtonFormField<String>(
+                      value: selectedWalletId,
+                      items: walletList.map((w) => DropdownMenuItem<String>(value: w['id'] as String, child: Text(w['name']))).toList(),
+                      onChanged: (val) => setDialogState(() => selectedWalletId = val),
+                      decoration: InputDecoration(
+                        labelText: 'Thu vào ví',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Hủy')),
+              ElevatedButton(
+                onPressed: () async {
+                  if (selectedWalletId != null) {
+                    try {
+                      // Gọi hàm core trong AppState với tham số category đã được cập nhật
+                      await appState.collectPaymentForTransaction(
+                        category: 'Doanh thu khác', // Cung cấp đúng category
+                        transactionToUpdate: transaction,
+                        paymentDate: paymentDate,
+                        walletId: selectedWalletId!,
+                        transactionRecordDate: appState.selectedDate,
+                      );
+                      Navigator.pop(dialogContext);
+                      _showStyledSnackBar("Đã ghi nhận thu tiền thành công!");
+                    } catch (e) {
+                      _showStyledSnackBar("Lỗi khi thu tiền: $e", isError: true);
+                    }
+                  }
+                },
+                child: const Text('Xác nhận'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   // Thay thế hàm _addTransaction [14] trong file edit_other_revenue.docx
 
-  void _addTransaction(AppState appState) {
-    double total = double.tryParse(
-        _totalController.text.replaceAll('.', '').replaceAll(',', '')) ??
-        0.0;
+  void _addTransaction(AppState appState, bool isCashReceived, String? walletId) {
+    double total = double.tryParse(_totalController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
 
     if (!appState.isSubscribed && (appState.totalRevenueListenable.value + total > 2000000)) {
       _showUpgradeDialog(context);
-      return; // Dừng việc thêm giao dịch
+      return;
     }
 
     String name = _nameController.text.trim();
-
     if (name.isEmpty) {
       _showStyledSnackBar('Vui lòng nhập tên giao dịch!', isError: true);
       return;
@@ -82,17 +148,21 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       return;
     }
 
-    // Chuẩn bị giao dịch mới
     final newTransaction = {
+      'id': Uuid().v4(), // Thêm ID để xử lý dễ dàng hơn
       'name': name,
+      'category': 'Doanh thu khác',
       'total': total,
       'quantity': 1.0,
       'date': DateTime.now().toIso8601String(),
       'createdBy': appState.authUserId,
     };
 
-    // THAY ĐỔI CỐT LÕI: Gọi hàm tập trung của AppState
-    appState.addOtherRevenueAndUpdateState(newTransaction).then((_) {
+    appState.addOtherRevenueAndUpdateState(
+      newTransaction,
+      isCashReceived: isCashReceived,
+      walletId: walletId,
+    ).then((_) {
       _showStyledSnackBar('Đã thêm giao dịch: $name');
       _totalController.clear();
       _nameController.clear();
@@ -239,17 +309,27 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
     );
   }
 
-  void _deleteTransaction(AppState appState, int originalIndexInValueNotifier) {
-    final transactionName = appState.otherRevenueTransactions.value[originalIndexInValueNotifier]['name'];
+  // Thay thế hàm removeTransaction/deleteTransaction cũ
+  void _deleteTransaction(int index) {
+    final appState = context.read<AppState>();
+    final transactionsNotifier = appState.otherRevenueTransactions;
 
-    // THAY ĐỔI CỐT LÕI: Gọi hàm tập trung của AppState
-    appState
-        .deleteOtherRevenueAndUpdateState(originalIndexInValueNotifier)
-        .then((_) {
-      _showStyledSnackBar('Đã xóa giao dịch: $transactionName');
-      widget.onUpdate();
+    if (index < 0 || index >= transactionsNotifier.value.length) return;
+    final transactionToRemove = transactionsNotifier.value[index];
+
+    appState.deleteTransactionAndUpdateAll(
+      transactionToRemove: transactionToRemove,
+    ).then((_) {
+      if (mounted) {
+        _showStyledSnackBar(
+          "Đã xóa: ${transactionToRemove['name']}. Mọi dữ liệu liên quan đã được cập nhật.",
+        );
+        widget.onUpdate();
+      }
     }).catchError((e) {
-      _showStyledSnackBar('Lỗi khi xóa: $e', isError: true);
+      if (mounted) {
+        _showStyledSnackBar('Lỗi khi xóa: $e', isError: true);
+      }
     });
   }
 
@@ -356,8 +436,10 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                     key: const ValueKey('otherRevenueInput'),
                     totalController: _totalController,
                     nameController: _nameController,
-                    // `canEditThisRevenue` đã được cập nhật
-                    onAddTransaction: canEditThisRevenue ? () => _addTransaction(appState) : null,
+                    // --- CẬP NHẬT LỜI GỌI HÀM ---
+                    onAddTransaction: canEditThisRevenue
+                        ? (isCashReceived, walletId) => _addTransaction(appState, isCashReceived, walletId)
+                        : null,
                     appState: appState,
                     inputPriceFormatter: _inputPriceFormatter,
                   ),
@@ -448,11 +530,11 @@ void _showUpgradeDialog(BuildContext context) {
   );
 }
 
-class TransactionInputSection extends StatelessWidget {
+class TransactionInputSection extends StatefulWidget {
   final TextEditingController totalController;
   final TextEditingController nameController;
-  final VoidCallback? onAddTransaction;
-  final AppState appState; // Keep if needed for other reasons, though not for clearing
+  final Function(bool isCashReceived, String? walletId)? onAddTransaction; // THAY ĐỔI
+  final AppState appState;
   final NumberFormat inputPriceFormatter;
 
   const TransactionInputSection({
@@ -465,9 +547,17 @@ class TransactionInputSection extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<TransactionInputSection> createState() => _TransactionInputSectionState();
+}
+
+class _TransactionInputSectionState extends State<TransactionInputSection> {
+  // THÊM MỚI: State để quản lý UI
+  bool _isCashReceived = true;
+  String? _selectedWalletId;
+
+  @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -475,8 +565,7 @@ class TransactionInputSection extends StatelessWidget {
         children: [
           Card(
             elevation: 3,
-            shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             color: AppColors.getCardColor(context),
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -491,17 +580,17 @@ class TransactionInputSection extends StatelessWidget {
                         color: AppColors.primaryBlue),
                   ),
                   const SizedBox(height: 24),
-                  _buildInputTextField( // Uses local helper
+                  _buildInputTextField(
                     context: context,
-                    controller: nameController,
+                    controller: widget.nameController,
                     labelText: 'Tên giao dịch',
                     prefixIconData: Icons.description_outlined,
                     maxLength: 100,
                   ),
                   const SizedBox(height: 16),
-                  _buildInputTextField( // Uses local helper
+                  _buildInputTextField(
                     context: context,
-                    controller: totalController,
+                    controller: widget.totalController,
                     labelText: 'Số tiền',
                     prefixIconData: Icons.monetization_on_outlined,
                     keyboardType: TextInputType.numberWithOptions(decimal: false),
@@ -510,39 +599,94 @@ class TransactionInputSection extends StatelessWidget {
                       TextInputFormatter.withFunction(
                             (oldValue, newValue) {
                           if (newValue.text.isEmpty) return newValue;
-                          final String plainNumberText = newValue.text
-                              .replaceAll('.', '')
-                              .replaceAll(',', '');
-                          final number = int.tryParse(plainNumberText);
+                          final number = int.tryParse(newValue.text.replaceAll('.', '').replaceAll(',', ''));
                           if (number == null) return oldValue;
-                          final formattedText =
-                          inputPriceFormatter.format(number);
+                          final formattedText = widget.inputPriceFormatter.format(number);
                           return newValue.copyWith(
                             text: formattedText,
-                            selection: TextSelection.collapsed(
-                                offset: formattedText.length),
+                            selection: TextSelection.collapsed(offset: formattedText.length),
                           );
                         },
                       ),
                     ],
                     maxLength: 15,
                   ),
+
+                  // --- BẮT ĐẦU CODE MỚI ---
+                  const SizedBox(height: 20),
+                  SwitchListTile.adaptive(
+                    title: Text("Thực thu vào quỹ?", style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context), fontWeight: FontWeight.w500)),
+                    value: _isCashReceived,
+                    onChanged: (bool value) {
+                      setState(() {
+                        _isCashReceived = value;
+                        if (!value) {
+                          _selectedWalletId = null;
+                        }
+                      });
+                    },
+                    activeColor: AppColors.primaryBlue,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+
+                  if (_isCashReceived)
+                    ValueListenableBuilder<List<Map<String, dynamic>>>(
+                      valueListenable: widget.appState.wallets,
+                      builder: (context, walletList, child) {
+                        if (walletList.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text("Chưa có ví tiền nào được tạo.", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context))),
+                          );
+                        }
+
+                        final defaultWallet = widget.appState.defaultWallet;
+                        if (_selectedWalletId == null || !walletList.any((w) => w['id'] == _selectedWalletId)) {
+                          _selectedWalletId = defaultWallet != null ? defaultWallet['id'] : walletList.first['id'];
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 16.0),
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedWalletId,
+                            items: walletList.map((wallet) {
+                              return DropdownMenuItem<String>(
+                                value: wallet['id'],
+                                child: Text(wallet['isDefault'] == true ? "${wallet['name']} (Mặc định)" : wallet['name'], overflow: TextOverflow.ellipsis),
+                              );
+                            }).toList(),
+                            onChanged: (String? newValue) {
+                              setState(() {
+                                _selectedWalletId = newValue;
+                              });
+                            },
+                            decoration: InputDecoration(
+                              labelText: 'Chọn ví nhận tiền',
+                              prefixIcon: Icon(Icons.account_balance_wallet_outlined, color: AppColors.primaryBlue),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  // --- KẾT THÚC CODE MỚI ---
+
                   const SizedBox(height: 28),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryBlue,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       minimumSize: Size(screenWidth, 52),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       elevation: 2,
                     ),
-                    onPressed: onAddTransaction,
+                    onPressed: widget.onAddTransaction != null
+                        ? () => widget.onAddTransaction!(_isCashReceived, _selectedWalletId)
+                        : null,
                     child: Text(
                       "Thêm giao dịch",
-                      style: GoogleFonts.poppins(
-                          fontSize: 16.5, fontWeight: FontWeight.w600),
+                      style: GoogleFonts.poppins(fontSize: 16.5, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
@@ -554,7 +698,6 @@ class TransactionInputSection extends StatelessWidget {
     );
   }
 
-  // Helper for TextFields within TransactionInputSection for consistency
   Widget _buildInputTextField({
     required BuildContext context,
     required TextEditingController controller,
@@ -565,7 +708,6 @@ class TransactionInputSection extends StatelessWidget {
     int maxLines = 1,
     IconData? prefixIconData,
   }) {
-
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
@@ -581,7 +723,7 @@ class TransactionInputSection extends StatelessWidget {
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primaryBlue, width: 1.5)),
         filled: true,
-        fillColor: AppColors.getBackgroundColor(context).withOpacity(0.5), // Consistent fill color for inputs
+        fillColor: AppColors.getBackgroundColor(context).withOpacity(0.5),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         counterText: "",
       ),
@@ -592,7 +734,7 @@ class TransactionInputSection extends StatelessWidget {
 class TransactionHistorySection extends StatelessWidget {
   final ValueNotifier<List<Map<String, dynamic>>> transactionsNotifier; // MODIFIED: Changed name for clarity
   final Function(AppState, int)? onEditTransaction;
-  final Function(AppState, int)? onDeleteTransaction;
+  final Function(int)? onDeleteTransaction;
   final AppState appState; // Passed to be available for callbacks
   final NumberFormat currencyFormat;
   final Color primaryColor;
@@ -678,6 +820,7 @@ class TransactionHistorySection extends StatelessWidget {
                 itemCount: sortedHistory.length,
                 itemBuilder: (context, index) {
                   final transaction = sortedHistory[index];
+                  final bool isUnpaid = transaction['paymentStatus'] == 'unpaid';
                   final bool isOwner = appState.isOwner();
                   final bool isCreator = (transaction['createdBy'] ?? "") == appState.authUserId;
                   final originalIndex = currentHistory.indexOf(transaction);
@@ -699,7 +842,7 @@ class TransactionHistorySection extends StatelessWidget {
                       // THAY ĐỔI 2: Thêm kiểm tra đầy đủ trước khi thực thi
                       if (onDeleteTransaction != null && canModifyThisRecord) {
                         if (originalIndex != -1) {
-                          onDeleteTransaction!(appState, originalIndex);
+                          onDeleteTransaction!(originalIndex);
                         }
                       }
                     },
@@ -755,23 +898,55 @@ class TransactionHistorySection extends StatelessWidget {
                                   style: GoogleFonts.poppins(fontSize: 11.0, color: textColorSecondary.withOpacity(0.8)),
                                 ),
                               ),
+                            if (isUnpaid)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Chip(
+                                  label: Text('Chưa thu tiền', style: GoogleFonts.poppins(fontSize: 10, color: Colors.orange.shade900)),
+                                  backgroundColor: Colors.orange.withOpacity(0.2),
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  labelPadding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
                           ],
                         ),
-                        trailing: IconButton(
-                          icon: Icon(Icons.edit_note_outlined,
-                              color: AppColors.primaryBlue.withOpacity(0.8), size: 22),
-                          onPressed: (onEditTransaction != null && canModifyThisRecord)
-                              ? () {
-                            if (originalIndex != -1) {
-                              onEditTransaction!(appState, originalIndex);
-                            }
-                          }
-                              : null,
-                          splashRadius: 18,
-                          padding: EdgeInsets.zero,
-                          constraints:
-                          const BoxConstraints(minWidth: 30, minHeight: 30),
-                        ),
+                          trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                          // --- THÊM MỚI: NÚT "THU TIỀN" ---
+                          if (isUnpaid && onEditTransaction != null && canModifyThisRecord)
+                          IconButton(
+                          icon: Icon(Icons.price_check_outlined, color: Colors.green.shade600),
+                      onPressed: () {
+                        // Gọi dialog đã tạo ở Bước 1
+                        (context.findAncestorStateOfType<_EditOtherRevenueScreenState>())
+                            ?._showCollectPaymentDialog(context, appState, transaction);
+                      },
+                      tooltip: 'Thu tiền',
+                      splashRadius: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                    ),
+                    // Nút sửa hiện tại
+                    IconButton(
+                        icon: Icon(Icons.edit_note_outlined,
+                            color: AppColors.primaryBlue.withOpacity(0.8), size: 22), // [cite: 6775-6776]
+                    onPressed: (onEditTransaction != null && canModifyThisRecord)
+                        ? () {
+                      if (originalIndex != -1) {
+                        onEditTransaction!(appState, originalIndex);
+                      }
+                    }
+                        : null, // [cite: 6777-6784]
+                    splashRadius: 18,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                    const BoxConstraints(minWidth: 30, minHeight: 30), // [cite: 6784-6787]
+                  ),
+                  ],
+                  ),
                       ),
                     ),
                   );

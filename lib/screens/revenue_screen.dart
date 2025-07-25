@@ -1,4 +1,5 @@
 import 'package:fingrowth/screens/report_screen.dart';
+import 'package:fingrowth/screens/wallet_management_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -245,45 +246,30 @@ class _RevenueScreenState extends State<RevenueScreen>
 
   // Dán để thay thế hàm _removeTransaction cũ trong class _RevenueScreenState
 
-  void _removeTransaction(
-      AppState appState,
-      List<Map<String, dynamic>> transactions,
-      int index,
-      String category,
-      ) {
+  void _removeTransaction(AppState appState, List<Map<String, dynamic>> transactions, int index) {
     // Kiểm tra chỉ số hợp lệ
     if (index < 0 || index >= transactions.length) return;
 
-    // Lấy thông tin giao dịch cần xóa để hiển thị thông báo
+    // Lấy thông tin giao dịch cần xóa
     final transactionToRemove = transactions[index];
-    final removedItemName =
-        transactionToRemove['name'] as String? ?? "Giao dịch không rõ";
+    final removedItemName = transactionToRemove['name'] as String? ?? "Giao dịch không rõ";
 
-    // THAY ĐỔI CỐT LÕI:
-    // Toàn bộ logic xóa COGS, xóa doanh thu, cập nhật notifier...
-    // đã được chuyển vào hàm removeTransactionAndUpdateState trong AppState.
-    // Giờ đây, chúng ta chỉ cần gọi một hàm duy nhất.
-    appState
-        .removeTransactionAndUpdateState(
-      category: category,
+    // Gọi hàm xóa toàn năng mới trong AppState
+    appState.deleteTransactionAndUpdateAll(
       transactionToRemove: transactionToRemove,
-    )
-        .then((_) {
-      // Chỉ hiển thị thông báo sau khi logic đã chạy xong
+    ).then((_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Đã xóa giao dịch: $removedItemName'),
             backgroundColor: Colors.redAccent,
             behavior: SnackBarBehavior.floating,
-            shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             margin: EdgeInsets.all(10),
           ),
         );
       }
     }).catchError((e) {
-      // Xử lý nếu có lỗi xảy ra trong quá trình cập nhật
       if (mounted) {
         _showStyledSnackBar("Lỗi khi xóa giao dịch: $e", isError: true);
       }
@@ -295,33 +281,27 @@ class _RevenueScreenState extends State<RevenueScreen>
   // Thêm hàm này vào trong class _RevenueScreenState
   // Dành cho file revenue_screen.docx
 
-  void _editTransaction(AppState appState,
-      List<Map<String, dynamic>> transactions, int index, String category) {
+  void _editTransaction(AppState appState, List<Map<String, dynamic>> transactions, int index, String category) {
     if (index < 0 || index >= transactions.length) return;
-
     final transactionToEdit = transactions[index];
-    final String? salesTransactionId = transactionToEdit['id'] as String?;
-    final String originalProductName =
-        transactionToEdit['name'] as String? ?? "Giao dịch không rõ";
-    final String originalTransactionDate =
-        transactionToEdit['date'] as String? ?? DateTime.now().toIso8601String();
-
-    final TextEditingController editQuantityController = TextEditingController(
-        text: (transactionToEdit['quantity'] as num? ?? 1).toString());
+    final originalProductName = transactionToEdit['name'] as String? ?? "Giao dịch không rõ";
     final NumberFormat internalPriceFormatter = NumberFormat("#,##0", "vi_VN");
-    bool canHandleCogs =
-    (category == 'Doanh thu chính' || category == 'Doanh thu phụ');
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => GestureDetector(
-        onTap: () => FocusScope.of(dialogContext).unfocus(),
-        behavior: HitTestBehavior.opaque,
-        child: AlertDialog(
+    // KIỂM TRA LOẠI DOANH THU ĐỂ HIỂN THỊ DIALOG TƯƠNG ỨNG
+    if (category == 'Doanh thu chính' || category == 'Doanh thu phụ') {
+      // --- LOGIC CHO DOANH THU CHÍNH & PHỤ (Sửa số lượng) ---
+      final String? salesTransactionId = transactionToEdit['id'] as String?;
+      final String originalTransactionDate = transactionToEdit['date'] as String? ?? DateTime.now().toIso8601String();
+      final num quantity = transactionToEdit['quantity'] as num? ?? 1;
+      final String quantityText = quantity.truncateToDouble() == quantity ? quantity.toInt().toString() : quantity.toString();
+      final TextEditingController editQuantityController = TextEditingController(text: quantityText);
+      bool canHandleCogs = (category == 'Doanh thu chính' || category == 'Doanh thu phụ');
+
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          title: Text("Chỉnh sửa: $originalProductName",
-              style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
+          title: Text("Chỉnh sửa: $originalProductName", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -331,20 +311,11 @@ class _RevenueScreenState extends State<RevenueScreen>
                   controller: editQuantityController,
                   decoration: InputDecoration(
                       labelText: "Nhập số lượng mới",
-                      labelStyle:
-                      GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      filled: true,
-                      fillColor: AppColors.getBackgroundColor(context),
-                      prefixIcon: Icon(
-                          Icons.production_quantity_limits_outlined,
-                          color: AppColors.primaryBlue)),
-                  maxLines: 1,
-                  maxLength: 5,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly
-                  ],
+                      labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      prefixIcon: Icon(Icons.production_quantity_limits_outlined, color: AppColors.primaryBlue)
+                  ),
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 ),
                 if (canHandleCogs) ...[
                   const SizedBox(height: 16),
@@ -369,71 +340,39 @@ class _RevenueScreenState extends State<RevenueScreen>
               ],
             ),
           ),
-          actionsPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text("Hủy",
-                  style: GoogleFonts.poppins(
-                      color: AppColors.getTextSecondaryColor(context),
-                      fontWeight: FontWeight.w500)),
-            ),
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text("Hủy")),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryBlue,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              ),
               onPressed: () {
-                // PHẦN 1: CHUẨN BỊ DỮ LIỆU
-                int newQuantity = int.tryParse(editQuantityController.text) ??
-                    (transactionToEdit['quantity'] as int? ?? 1);
-                if (newQuantity <= 0) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(
-                      content: Text("Số lượng phải lớn hơn 0",
-                          style: GoogleFonts.poppins(color: Colors.white)),
-                      backgroundColor: AppColors.chartGreen,
-                      behavior: SnackBarBehavior.floating));
-                  return;
-                }
+                int newQuantity = int.tryParse(editQuantityController.text) ?? (transactionToEdit['quantity'] as num? ?? 1).toInt();
+                if (newQuantity <= 0) return;
 
-                Map<String, dynamic> updatedTransaction =
-                Map.from(transactionToEdit);
+                Map<String, dynamic> updatedTransaction = Map.from(transactionToEdit);
                 List<Map<String, dynamic>> newAutoGeneratedCogs = [];
+                double price = (transactionToEdit['price'] as num? ?? 0.0).toDouble();
+                double unitVariableCost = (transactionToEdit['unitVariableCost'] as double? ?? 0.0);
 
-                double price =
-                (transactionToEdit['price'] as num? ?? 0.0).toDouble();
-                double unitVariableCost =
-                (transactionToEdit['unitVariableCost'] as double? ?? 0.0);
-
-                updatedTransaction['quantity'] = newQuantity;
+                updatedTransaction['quantity'] = newQuantity.toDouble();
                 updatedTransaction['total'] = price * newQuantity;
-                updatedTransaction['totalVariableCost'] =
-                    unitVariableCost * newQuantity;
+                updatedTransaction['totalVariableCost'] = unitVariableCost * newQuantity;
 
                 if (salesTransactionId != null && canHandleCogs) {
-                  final String? originalCogsSourceType = (category ==
-                      'Doanh thu phụ'
+                  final String? originalCogsSourceType = (category == 'Doanh thu phụ'
                       ? updatedTransaction['cogsSourceType_Secondary']
-                      : updatedTransaction['cogsSourceType']) as String?;
+                      : updatedTransaction['cogsSourceType'])
+                  as String?;
                   final List<dynamic>? rawCogs = (category == 'Doanh thu phụ'
                       ? updatedTransaction['cogsComponentsUsed_Secondary']
-                      : updatedTransaction['cogsComponentsUsed']) as List<dynamic>?;
-                  final List<Map<String, dynamic>>? components = rawCogs
-                      ?.map((i) => Map<String, dynamic>.from(i as Map))
-                      .toList();
+                      : updatedTransaction['cogsComponentsUsed'])
+                  as List<dynamic>?;
+                  final List<Map<String, dynamic>>? components =
+                  rawCogs?.map((i) => Map<String, dynamic>.from(i as Map)).toList();
 
                   if (components != null && components.isNotEmpty) {
                     for (var component in components) {
-                      // SỬA LỖI Ở ĐÂY: Thêm .toDouble()
                       double cost = (component['cost'] as num? ?? 0.0).toDouble();
                       newAutoGeneratedCogs.add({
-                        "name":
-                        "${component['name']} (Cho: $originalProductName)",
+                        "name": "${component['name']} (Cho: $originalProductName)",
                         "amount": cost * newQuantity,
                         "date": originalTransactionDate,
                         "source": originalCogsSourceType,
@@ -451,31 +390,97 @@ class _RevenueScreenState extends State<RevenueScreen>
                   }
                 }
 
-                // PHẦN 2: GỌI HÀM CẬP NHẬT TẬP TRUNG
-                appState
-                    .editTransactionAndUpdateState(
+                appState.editTransactionAndUpdateState(
                   category: category,
+                  originalTransaction: transactionToEdit,
                   updatedTransaction: updatedTransaction,
                   newCogsTransactions: newAutoGeneratedCogs,
-                )
-                    .then((_) {
-                  if (mounted) {
-                    _showStyledSnackBar("Đã cập nhật: $originalProductName");
-                  }
+                ).then((_) {
+                  if (mounted) _showStyledSnackBar("Đã cập nhật: $originalProductName");
                 }).catchError((e) {
-                  if (mounted) {
-                    _showStyledSnackBar("Lỗi khi cập nhật: $e", isError: true);
-                  }
+                  if (mounted) _showStyledSnackBar("Lỗi khi cập nhật: $e", isError: true);
                 });
 
                 Navigator.pop(dialogContext);
               },
-              child: Text("Lưu", style: GoogleFonts.poppins()),
+              child: const Text("Lưu"),
             ),
           ],
         ),
-      ),
-    );
+      );
+
+    } else {
+      // --- LOGIC MỚI CHO DOANH THU KHÁC (Sửa tên và số tiền) ---
+      final TextEditingController editNameController = TextEditingController(text: transactionToEdit['name']?.toString() ?? '');
+      final TextEditingController editTotalController = TextEditingController(text: internalPriceFormatter.format(transactionToEdit['total'] ?? 0.0));
+
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: Text('Chỉnh sửa giao dịch', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: editNameController,
+                decoration: InputDecoration(labelText: 'Tên giao dịch', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: editTotalController,
+                decoration: InputDecoration(labelText: 'Số tiền', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  TextInputFormatter.withFunction((oldValue, newValue) {
+                    if (newValue.text.isEmpty) return newValue.copyWith(text: "0");
+                    final number = int.tryParse(newValue.text.replaceAll('.', ''));
+                    if (number == null) return oldValue;
+                    final formattedText = internalPriceFormatter.format(number);
+                    return newValue.copyWith(text: formattedText, selection: TextSelection.collapsed(offset: formattedText.length));
+                  }),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Hủy')),
+            ElevatedButton(
+              onPressed: () {
+                double newTotal = double.tryParse(editTotalController.text.replaceAll('.', '')) ?? 0.0;
+                String newName = editNameController.text.trim();
+
+                if (newName.isEmpty || newTotal <= 0) {
+                  _showStyledSnackBar('Tên và số tiền không hợp lệ!', isError: true);
+                  return;
+                }
+
+                final updatedTransaction = {
+                  ...transactionToEdit,
+                  'name': newName,
+                  'total': newTotal,
+                };
+
+                appState.editTransactionAndUpdateState(
+                  category: 'Doanh thu khác',
+                  originalTransaction: transactionToEdit,
+                  updatedTransaction: updatedTransaction,
+                  newCogsTransactions: [], // Doanh thu khác không có COGS
+                ).then((_) {
+                  if (mounted) _showStyledSnackBar('Đã cập nhật giao dịch: $newName');
+                }).catchError((e) {
+                  if (mounted) _showStyledSnackBar('Lỗi khi cập nhật: $e', isError: true);
+                });
+
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Lưu'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _showStyledSnackBar(String message, {bool isError = false}) {
@@ -525,9 +530,29 @@ class _RevenueScreenState extends State<RevenueScreen>
     final appState = Provider.of<AppState>(context, listen: false);
     final bool canEditRevenue = appState.hasPermission('canEditRevenue');
     final bool canManageProducts = appState.hasPermission('canManageProducts');
+    final bool canManageWallets = appState.hasPermission('canManageWallets');
 
     return Scaffold(
       backgroundColor: AppColors.getBackgroundColor(context),
+      floatingActionButton: ValueListenableBuilder<int>(
+        valueListenable: appState.permissionVersion,
+        builder: (context, version, child) {
+          final bool canManageWallets = appState.hasPermission('canManageWallets');
+          return canManageWallets
+              ? FloatingActionButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const WalletManagementScreen()),
+              );
+            },
+            backgroundColor: AppColors.primaryBlue,
+            tooltip: 'Quản lý Ví tiền',
+            child: const Icon(Icons.wallet_outlined, color: Colors.white),
+          )
+              : const SizedBox.shrink(); // <-- SỬA Ở ĐÂY: Thay thế null bằng SizedBox.shrink()
+        },
+      ),
       body: CustomScrollView(
         slivers: [
           _buildSliverAppBar(user, appState),
@@ -540,7 +565,7 @@ class _RevenueScreenState extends State<RevenueScreen>
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-              child: _buildNavigationActions(),
+              child: _buildNavigationActions(canEditRevenue, canManageProducts),
             ),
           ),
           SliverToBoxAdapter(
@@ -734,51 +759,63 @@ class _RevenueScreenState extends State<RevenueScreen>
     );
   }
 
-  Widget _buildNavigationActions() {
+  Widget _buildNavigationActions(bool canEditRevenue, bool canManageProducts) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
         _buildModernNavigationIcon(
           icon: Icons.monetization_on_outlined,
           label: 'Chính',
-          onTap: () => _navigateToEditRevenue('Doanh thu chính'),
+          isEnabled: canEditRevenue,
+          onTap: canEditRevenue ? () => _navigateToEditRevenue('Doanh thu chính') : null,
         ),
         _buildModernNavigationIcon(
           icon: Icons.account_balance_wallet_outlined,
           label: 'Phụ',
-          onTap: () => _navigateToEditRevenue('Doanh thu phụ'),
+          isEnabled: canEditRevenue,
+          onTap: canEditRevenue ? () => _navigateToEditRevenue('Doanh thu phụ') : null,
         ),
         _buildModernNavigationIcon(
           icon: Icons.add_business_outlined,
           label: 'Khác',
-          onTap: () => _navigateToEditRevenue('Doanh thu khác'),
+          isEnabled: canEditRevenue,
+          onTap: canEditRevenue ? () => _navigateToEditRevenue('Doanh thu khác') : null,
         ),
         _buildModernNavigationIcon(
           icon: Icons.inventory_2_outlined,
           label: 'Sản phẩm',
-          onTap: () => _navigateToEditRevenue('Sản phẩm'),
+          isEnabled: canManageProducts,
+          onTap: canManageProducts ? () => _navigateToEditRevenue('Sản phẩm') : null,
         ),
       ],
     );
   }
 
-  Widget _buildModernNavigationIcon(
-      {required IconData icon,
-        required String label,
-        required VoidCallback onTap}) {
+  Widget _buildModernNavigationIcon({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap, // Cho phép giá trị null
+    bool isEnabled = true, // Thêm biến để kiểm soát trạng thái
+  }) {
+    // Xác định màu sắc dựa trên trạng thái isEnabled
+    final iconColor = isEnabled ? AppColors.primaryBlue : Colors.grey.shade400;
+    final labelColor = isEnabled ? AppColors.getTextSecondaryColor(context) : Colors.grey.shade400;
+    final cardColor = isEnabled ? AppColors.getCardColor(context) : AppColors.getCardColor(context).withOpacity(0.6);
+    final shadowColor = isEnabled ? Colors.grey.withOpacity(0.1) : Colors.transparent;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         GestureDetector(
-          onTap: onTap,
+          onTap: onTap, // onTap sẽ là null nếu isEnabled là false, vô hiệu hóa tương tác
           child: Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.getCardColor(context),
+              color: cardColor, // Sử dụng màu đã xác định
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: shadowColor, // Sử dụng màu đổ bóng đã xác định
                   spreadRadius: 1,
                   blurRadius: 8,
                   offset: Offset(0, 4),
@@ -788,14 +825,18 @@ class _RevenueScreenState extends State<RevenueScreen>
             child: Icon(
               icon,
               size: 28,
-              color: AppColors.primaryBlue,
+              color: iconColor, // Sử dụng màu icon đã xác định
             ),
           ),
         ),
         const SizedBox(height: 8),
         Text(
           label,
-          style: TextStyle(color: AppColors.getTextSecondaryColor(context), fontSize: 13, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            color: labelColor, // Sử dụng màu nhãn đã xác định
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
     );
@@ -996,7 +1037,7 @@ class _RevenueScreenState extends State<RevenueScreen>
                                   ),
                                 );
                                 if (confirm == true) {
-                                  _removeTransaction(appState, transactions, index, _selectedTransactionCategory);
+                                  _removeTransaction(appState, transactions, index);
                                 }
                               },
                               backgroundColor: Colors.redAccent.shade400,

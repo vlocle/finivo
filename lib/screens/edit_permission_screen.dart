@@ -29,7 +29,8 @@ class _EditPermissionScreenState extends State<EditPermissionScreen> {
     'canManageProducts': 'Quản lý Sản phẩm/Dịch vụ',
     'canManageFixedExpenses': 'Sửa/Xóa Chi phí Cố định',
     'canManageVariableExpenses': 'Sửa/Xóa Chi phí Biến đổi',
-    'canManageExpenseTypes': 'Quản lý DS Chi phí Biến đổi',
+    'canManageOtherExpenses': 'Sửa/Xóa Chi phí Khác',
+    'canManageWallets': 'Quản lý Ví tiền',
     'canViewReport': 'Xem Báo cáo & Phân tích',
   };
 

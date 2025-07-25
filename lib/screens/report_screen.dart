@@ -430,33 +430,39 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
   }
 
   // --- Báo cáo Chi Phí ---
-  Widget _buildExpenseReport(AppState appState, {Key? key}) { // [cite: 114]
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark; // [cite: 114, 115]
+  Widget _buildExpenseReport(AppState appState, {Key? key}) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return FutureBuilder<Map<String, double>>(
-      key: key, // [cite: 115]
-      future: appState.getExpensesForRange(selectedDateRange!), // [cite: 115]
+      key: key,
+      future: appState.getExpensesForRange(selectedDateRange!),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const ReportSkeleton(); // [cite: 115]
-        if (snapshot.hasError) return Center(child: Text('Lỗi tải dữ liệu: ${snapshot.error}')); // [cite: 115]
-        if (snapshot.hasData && snapshot.data!.isNotEmpty) { // [cite: 115]
-          final data = snapshot.data!; // [cite: 115]
-          double fixedExpense = data['fixedExpense'] ?? 0.0; // [cite: 115]
-          double variableExpense = data['variableExpense'] ?? 0.0; // [cite: 116]
-          double totalExpense = data['totalExpense'] ?? 0.0; // [cite: 116]
-          return SingleChildScrollView( // [cite: 116]
-            padding: const EdgeInsets.only(top: 16, bottom: 16), // [cite: 116]
+        if (snapshot.connectionState == ConnectionState.waiting) return const ReportSkeleton();
+        if (snapshot.hasError) return Center(child: Text('Lỗi tải dữ liệu: ${snapshot.error}'));
+        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+          final data = snapshot.data!;
+          double fixedExpense = data['fixedExpense'] ?? 0.0;
+          double variableExpense = data['variableExpense'] ?? 0.0;
+          double otherExpense = data['otherExpense'] ?? 0.0; // <<< LẤY DỮ LIỆU MỚI
+          double totalExpense = data['totalExpense'] ?? 0.0;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.only(top: 16, bottom: 16),
             child: Column(
               children: [
-                _buildModernInfoCard('Chi Phí Cố Định', fixedExpense, Icons.lock_outline, AppColors.chartBlue), // [cite: 116, 117]
-                const SizedBox(height: 12), // [cite: 117]
-                _buildModernInfoCard('Chi Phí Biến Đổi', variableExpense, Icons.compare_arrows_outlined, AppColors.chartOrange), // [cite: 117, 118]
-                const SizedBox(height: 12), // [cite: 118]
-                _buildModernInfoCard('Tổng Chi Phí', totalExpense, Icons.receipt_long_outlined, AppColors.chartRed), // [cite: 118]
-                const SizedBox(height: 20), // [cite: 118]
+                _buildModernInfoCard('Chi Phí Cố Định', fixedExpense, Icons.lock_outline, AppColors.chartBlue),
+                const SizedBox(height: 12),
+                _buildModernInfoCard('Chi Phí Biến Đổi', variableExpense, Icons.compare_arrows_outlined, AppColors.chartOrange),
+                const SizedBox(height: 12),
+                // <<< THÊM THẺ THÔNG TIN CHO CHI PHÍ KHÁC >>>
+                _buildModernInfoCard('Chi Phí Khác', otherExpense, Icons.receipt_long_outlined, AppColors.chartPurple),
+                const SizedBox(height: 12),
+                _buildModernInfoCard('Tổng Chi Phí', totalExpense, Icons.functions, AppColors.chartRed),
+                const SizedBox(height: 20),
                 _buildSectionCard(
                     title: 'Phân Tích Chi Phí',
                     isDarkMode: isDarkMode,
-                    child: FutureBuilder<List<CategoryChartData>>( // Sửa kiểu dữ liệu ở đây
+                    // <<< CẬP NHẬT FUTUREBUILDER CHO BIỂU ĐỒ TRÒN >>>
+                    child: FutureBuilder<List<Map<String, dynamic>>>( // Sửa kiểu dữ liệu Future
                       future: appState.getExpenseBreakdown(selectedDateRange!),
                       builder: (context, breakdownSnapshot) {
                         if (breakdownSnapshot.connectionState == ConnectionState.waiting) {
@@ -464,30 +470,59 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
                         }
                         if (breakdownSnapshot.hasError) return Center(child: Text('Lỗi: ${breakdownSnapshot.error}'));
                         if (breakdownSnapshot.hasData && breakdownSnapshot.data!.isNotEmpty) {
+
+                          // --- LOGIC GỘP NHÓM "CHI PHÍ KHÁC" ---
+                          final detailedData = breakdownSnapshot.data!;
+                          final Map<String, double> pieChartMap = {};
+                          double otherExpensesTotal = 0.0;
+
+                          for (var item in detailedData) {
+                            if (item['type'] == 'other') {
+                              otherExpensesTotal += item['amount'] as double;
+                            } else {
+                              final name = item['name'] as String;
+                              final amount = item['amount'] as double;
+                              pieChartMap[name] = (pieChartMap[name] ?? 0) + amount;
+                            }
+                          }
+
+                          if (otherExpensesTotal > 0) {
+                            pieChartMap['Chi phí khác'] = otherExpensesTotal;
+                          }
+
+                          final List<CategoryChartData> pieChartData = pieChartMap.entries.map((entry) {
+                            return CategoryChartData(entry.key, entry.value);
+                          }).toList();
+
+                          // Sắp xếp để các mục lớn hơn hiển thị trước
+                          pieChartData.sort((a, b) => b.value.compareTo(a.value));
+
                           return SizedBox(
-                            height: 300, // Tăng chiều cao để chứa cả legend
-                            child: _buildSyncfusionExpensePieChart(context, breakdownSnapshot.data!), // Gọi hàm mới
+                            height: 300,
+                            child: _buildSyncfusionExpensePieChart(context, pieChartData),
                           );
                         }
                         return const Center(child: Text('Không có dữ liệu chi tiết'));
                       },
                     )
                 ),
-                const SizedBox(height: 20), // [cite: 126]
+                const SizedBox(height: 20),
                 _buildSectionCard(
                   title: 'Xu hướng chi phí',
                   isDarkMode: isDarkMode,
-                  child: SizedBox( // Bọc trong SizedBox để giới hạn chiều cao
+                  child: SizedBox(
                     height: MediaQuery.of(context).size.height * 0.35,
-                    child: FutureBuilder<Map<String, List<TimeSeriesChartData>>>( // Sửa kiểu dữ liệu
+                    child: FutureBuilder<Map<String, List<TimeSeriesChartData>>>(
                       future: appState.getDailyExpensesForRange(selectedDateRange!),
                       builder: (context, trendSnapshot) {
                         if (trendSnapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: ReportSkeleton());
                         }
+
                         if (trendSnapshot.hasError) return Center(child: Text('Lỗi: ${trendSnapshot.error}'));
+
                         if (trendSnapshot.hasData && trendSnapshot.data!.isNotEmpty) {
-                          return _buildSyncfusionExpenseTrendChart(context, trendSnapshot.data!); // Gọi hàm mới
+                          return _buildSyncfusionExpenseTrendChart(context, trendSnapshot.data!);
                         }
                         return const Center(child: Text('Không có dữ liệu xu hướng'));
                       },
@@ -498,7 +533,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
             ),
           );
         }
-        return const Center(child: Text('Không có dữ liệu chi phí')); // [cite: 135]
+        return const Center(child: Text('Không có dữ liệu chi phí'));
       },
     );
   }
@@ -766,6 +801,7 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
   Widget _buildSyncfusionExpenseTrendChart(BuildContext context, Map<String, List<TimeSeriesChartData>> data) {
     final List<TimeSeriesChartData> fixedData = data['fixed'] ?? [];
     final List<TimeSeriesChartData> variableData = data['variable'] ?? [];
+    final List<TimeSeriesChartData> otherData = data['other'] ?? []; // <<< THÊM MỚI
     final List<TimeSeriesChartData> totalData = data['total'] ?? [];
 
     return SfCartesianChart(
@@ -774,7 +810,6 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
       legend: const Legend(isVisible: true, position: LegendPosition.top, overflowMode: LegendItemOverflowMode.wrap),
       trackballBehavior: TrackballBehavior(enable: true, activationMode: ActivationMode.singleTap, tooltipSettings: const InteractiveTooltip(enable: true, format: 'point.x\n{point.y}')),
       zoomPanBehavior: ZoomPanBehavior(enablePinching: true, enablePanning: true, zoomMode: ZoomMode.x),
-      // *** SỬA LỖI Ở ĐÂY: Thay <ChartSeries> bằng <CartesianSeries> ***
       series: <CartesianSeries<TimeSeriesChartData, DateTime>>[
         LineSeries<TimeSeriesChartData, DateTime>(
           dataSource: fixedData,
@@ -792,12 +827,22 @@ class _ReportScreenState extends State<ReportScreen> with SingleTickerProviderSt
           color: AppColors.chartOrange,
           dashArray: const <double>[5, 5],
         ),
+        // <<< THÊM MỚI: LINE CHO CHI PHÍ KHÁC >>>
+        LineSeries<TimeSeriesChartData, DateTime>(
+          dataSource: otherData,
+          xValueMapper: (TimeSeriesChartData item, _) => item.x,
+          yValueMapper: (TimeSeriesChartData item, _) => item.y,
+          name: 'Khác',
+          color: AppColors.chartPurple, // Chọn một màu mới
+          dashArray: const <double>[5, 5],
+        ),
         LineSeries<TimeSeriesChartData, DateTime>(
           dataSource: totalData,
           xValueMapper: (TimeSeriesChartData item, _) => item.x,
           yValueMapper: (TimeSeriesChartData item, _) => item.y,
           name: 'Tổng',
           color: AppColors.chartRed,
+          width: 2.5, // Làm cho đường tổng đậm hơn
         ),
       ],
     );

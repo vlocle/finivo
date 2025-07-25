@@ -80,99 +80,94 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
   void addTransaction(
       AppState appState,
       String? selectedProduct,
-      double currentSelectedPriceInDropdown, // Giá bán từ dropdown
-      bool isFlexiblePriceEnabled, // Giá bán có linh hoạt không
+      double currentSelectedPriceInDropdown,
+      bool isFlexiblePriceEnabled,
+      bool isCashReceived,
+      String? walletId,
       ) {
-    // --- PHẦN 1: VALIDATE DỮ LIỆU ĐẦU VÀO (Giữ nguyên) ---
+    // --- PHẦN 1 & 2: VALIDATE VÀ CHUẨN BỊ DỮ LIỆU ---
     if (selectedProduct == null) {
-      _showStyledSnackBar("Vui lòng chọn sản phẩm/dịch vụ!", isError: true); //
+      _showStyledSnackBar("Vui lòng chọn sản phẩm/dịch vụ!", isError: true);
       return;
     }
-
     final productInputState = _productInputSectionKey.currentState;
     if (productInputState == null) {
-      _showStyledSnackBar("Không tìm thấy sản phẩm.", isError: true); //
+      _showStyledSnackBar("Không tìm thấy sản phẩm.", isError: true);
       return;
     }
-
     double priceToUse;
     if (isFlexiblePriceEnabled) {
-      priceToUse = double.tryParse(priceController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0; //
+      priceToUse = double.tryParse(priceController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
       if (priceToUse <= 0.0) {
-        _showStyledSnackBar("Vui lòng nhập giá trị hợp lệ cho giá bán!", isError: true); //
+        _showStyledSnackBar("Vui lòng nhập giá trị hợp lệ cho giá bán!", isError: true);
         return;
       }
     } else {
-      priceToUse = currentSelectedPriceInDropdown; //
+      priceToUse = currentSelectedPriceInDropdown;
       if (priceToUse <= 0.0) {
-        _showStyledSnackBar("Giá sản phẩm không hợp lệ trong danh mục!", isError: true); //
+        _showStyledSnackBar("Giá sản phẩm không hợp lệ trong danh mục!", isError: true);
         return;
       }
     }
 
-    int quantity = int.tryParse(quantityController.text) ?? 1; //
+    // SỬA LỖI Ở ĐÂY: Đảm bảo quantity là int để validation, nhưng khi lưu sẽ là double
+    final int quantity = int.tryParse(quantityController.text) ?? 1;
     if (quantity <= 0) {
-      _showStyledSnackBar("Số lượng phải lớn hơn 0!", isError: true); //
+      _showStyledSnackBar("Số lượng phải lớn hơn 0!", isError: true);
       return;
     }
 
-    // --- PHẦN 2: CHUẨN BỊ DỮ LIỆU GIAO DỊCH VÀ GIÁ VỐN (Giữ nguyên) ---
-    double totalRevenueForSale = priceToUse * quantity; //
+    double totalRevenueForSale = priceToUse * quantity;
     if (!appState.isSubscribed && (appState.totalRevenueListenable.value + totalRevenueForSale > 2000000)) {
       _showUpgradeDialog(context);
-      return; // Dừng việc thêm giao dịch
+      return;
     }
-    var uuid = Uuid(); //
-    String transactionId = uuid.v4(); //
-
-    List<Map<String, dynamic>> currentUnitCostComponents = productInputState.currentUnitVariableCostComponents; //
-    double unitVariableCostForSale = 0; //
-    List<Map<String, dynamic>> cogsComponentsForStorage = []; //
-
+    var uuid = Uuid();
+    String transactionId = uuid.v4();
+    List<Map<String, dynamic>> currentUnitCostComponents = productInputState.currentUnitVariableCostComponents;
+    double unitVariableCostForSale = 0;
+    List<Map<String, dynamic>> cogsComponentsForStorage = [];
     for (var component in currentUnitCostComponents) {
-      double cost = component['cost'] as double? ?? 0.0; //
-      unitVariableCostForSale += cost; //
+      double cost = component['cost'] as double? ?? 0.0;
+      unitVariableCostForSale += cost;
       cogsComponentsForStorage.add({
         'name': component['name'],
         'cost': cost,
         'originalCost': component['originalCost']
-      }); //
+      });
     }
-    double totalUnitVariableCostForSale = unitVariableCostForSale * quantity; //
-
+    double totalUnitVariableCostForSale = unitVariableCostForSale * quantity;
     String? cogsSourceType;
-    bool cogsWasFlexible = productInputState.isUnitVariableCostFlexible; //
-    double cogsDefaultCostAtTimeOfSale = 0; //
-    bool isAnyComponentModified = false; //
-
+    bool cogsWasFlexible = productInputState.isUnitVariableCostFlexible;
+    double cogsDefaultCostAtTimeOfSale = 0;
+    bool isAnyComponentModified = false;
     for (var component in currentUnitCostComponents) {
-      double currentCost = component['cost'] as double? ?? 0.0; //
-      double originalCost = component['originalCost'] as double? ?? 0.0; //
-      cogsDefaultCostAtTimeOfSale += originalCost; //
+      double currentCost = component['cost'] as double? ?? 0.0;
+      double originalCost = component['originalCost'] as double? ?? 0.0;
+      cogsDefaultCostAtTimeOfSale += originalCost;
       if (currentCost != originalCost) {
-        isAnyComponentModified = true; //
+        isAnyComponentModified = true;
       }
     }
-
-    List<Map<String, dynamic>>? cogsComponentsUsed = cogsComponentsForStorage.isNotEmpty ? cogsComponentsForStorage : null; //
-
+    List<Map<String, dynamic>>? cogsComponentsUsed = cogsComponentsForStorage.isNotEmpty ? cogsComponentsForStorage : null;
     if (cogsComponentsUsed != null && cogsComponentsUsed.isNotEmpty) {
       cogsSourceType = (cogsWasFlexible && isAnyComponentModified)
-          ? "AUTO_COGS_COMPONENT_OVERRIDE" //
-          : "AUTO_COGS_COMPONENT"; //
+          ? "AUTO_COGS_COMPONENT_OVERRIDE"
+          : "AUTO_COGS_COMPONENT";
     } else if (unitVariableCostForSale > 0) {
-      cogsSourceType = "AUTO_COGS_ESTIMATED"; //
+      cogsSourceType = "AUTO_COGS_ESTIMATED";
     }
 
     Map<String, dynamic> newSalesTransaction = {
       "id": transactionId,
       "name": selectedProduct,
+      "category": "Doanh thu chính",
       "price": priceToUse,
-      "quantity": quantity,
+      "quantity": quantity.toDouble(), // SỬA LỖI Ở ĐÂY: Chuyển sang double
       "total": totalRevenueForSale,
       "date": DateTime.now().toIso8601String(),
-      "unitVariableCost": unitVariableCostForSale, //
-      "totalVariableCost": totalUnitVariableCostForSale, //
+      "unitVariableCost": unitVariableCostForSale,
+      "totalVariableCost": totalUnitVariableCostForSale,
       "createdBy": appState.authUserId,
       if (cogsSourceType != null) "cogsSourceType": cogsSourceType,
       "cogsWasFlexible": cogsWasFlexible,
@@ -180,13 +175,13 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
         "cogsDefaultCostAtTimeOfSale": cogsDefaultCostAtTimeOfSale,
       if (cogsComponentsUsed != null && cogsComponentsUsed.isNotEmpty)
         "cogsComponentsUsed": cogsComponentsUsed,
-    }; //
+    };
 
     List<Map<String, dynamic>> autoGeneratedExpenseTransactions = [];
-    if (cogsSourceType == "AUTO_COGS_COMPONENT" || cogsSourceType == "AUTO_COGS_COMPONENT_OVERRIDE") { //
+    if (cogsSourceType == "AUTO_COGS_COMPONENT" || cogsSourceType == "AUTO_COGS_COMPONENT_OVERRIDE") {
       if (cogsComponentsUsed != null) {
         for (var component in cogsComponentsUsed) {
-          double componentCostForTransaction = (component['cost'] as double? ?? 0.0) * quantity; //
+          double componentCostForTransaction = (component['cost'] as double? ?? 0.0) * quantity;
           if (componentCostForTransaction > 0) {
             autoGeneratedExpenseTransactions.add({
               "name": "${component['name']} (Cho: $selectedProduct)",
@@ -194,11 +189,11 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
               "date": DateTime.now().toIso8601String(),
               "source": cogsSourceType,
               "sourceSalesTransactionId": transactionId
-            }); //
+            });
           }
         }
       }
-    } else if (cogsSourceType == "AUTO_COGS_ESTIMATED" || cogsSourceType == "AUTO_COGS_OVERRIDE") { //
+    } else if (cogsSourceType == "AUTO_COGS_ESTIMATED" || cogsSourceType == "AUTO_COGS_OVERRIDE") {
       if (totalUnitVariableCostForSale > 0) {
         autoGeneratedExpenseTransactions.add({
           "name": "Giá vốn hàng bán (${cogsSourceType == "AUTO_COGS_OVERRIDE" ? "Ghi đè" : "Ước tính"}): $selectedProduct",
@@ -206,57 +201,119 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
           "date": DateTime.now().toIso8601String(),
           "source": cogsSourceType,
           "sourceSalesTransactionId": transactionId
-        }); //
+        });
       }
     }
 
-    // --- PHẦN 3: GỌI HÀM CẬP NHẬT TẬP TRUNG (THAY ĐỔI CỐT LÕI) ---
-    // Thay vì gọi nhiều hàm riêng lẻ, giờ chỉ cần gọi một hàm duy nhất trong AppState
-    appState.addTransactionAndUpdateState( // Giả định bạn đã tạo hàm này ở Bước 1
-        category: 'Doanh thu chính',
-        newSalesTransaction: newSalesTransaction,
-        autoGeneratedCogs: autoGeneratedExpenseTransactions
+    // --- PHẦN 3: GỌI HÀM CẬP NHẬT TẬP TRUNG ---
+    appState.addTransactionAndUpdateState(
+      category: 'Doanh thu chính',
+      newSalesTransaction: newSalesTransaction,
+      autoGeneratedCogs: autoGeneratedExpenseTransactions,
+      isCashReceived: isCashReceived,
+      walletId: walletId,
     ).then((_) {
-      // Hiển thị thông báo sau khi state đã cập nhật và lưu trữ đã bắt đầu
-      _showStyledSnackBar("Đã thêm giao dịch: $selectedProduct"); //
+      _showStyledSnackBar("Đã thêm giao dịch: $selectedProduct");
       if (autoGeneratedExpenseTransactions.isNotEmpty) {
-        _showStyledSnackBar("Đã tự động ghi nhận giá vốn cho $selectedProduct"); //
+        _showStyledSnackBar("Đã tự động ghi nhận giá vốn cho $selectedProduct");
       }
     }).catchError((e) {
-      _showStyledSnackBar("Lỗi khi thêm giao dịch", isError: true);
+      _showStyledSnackBar("Lỗi khi thêm giao dịch: $e", isError: true);
     });
 
-    // --- PHẦN 4: RESET FORM (Giữ nguyên) ---
+    // --- PHẦN 4: RESET FORM ---
     if (mounted) {
       setState(() {
-        quantityController.text = "1"; //
+        quantityController.text = "1";
       });
-      _productInputSectionKey.currentState?.resetForm(); //
+      _productInputSectionKey.currentState?.resetForm();
     }
+  }
+
+  void _showCollectPaymentDialog(BuildContext context, AppState appState, Map<String, dynamic> transaction) {
+    String? selectedWalletId;
+    DateTime paymentDate = DateTime.now(); // Mặc định là hôm nay
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            title: Text('Xác nhận Thu tiền', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Giao dịch: "${transaction['name']}"'),
+                const SizedBox(height: 4),
+                Text('Số tiền: ${currencyFormat.format(transaction['total'] ?? 0.0)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 20),
+                // Widget chọn ví tiền
+                ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: appState.wallets,
+                  builder: (context, walletList, child) {
+                    if (walletList.isEmpty) return const Text("Vui lòng tạo ví tiền trước.");
+                    // Tự động chọn ví mặc định
+                    selectedWalletId ??= appState.defaultWallet?['id'] ?? walletList.first['id'];
+                    return DropdownButtonFormField<String>(
+                      value: selectedWalletId,
+                      items: walletList.map((w) => DropdownMenuItem<String>(value: w['id'] as String, child: Text(w['name']))).toList(),
+                      onChanged: (val) => setDialogState(() => selectedWalletId = val),
+                      decoration: InputDecoration(
+                        labelText: 'Thu vào ví',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    );
+                  },
+                ),
+                // Bạn có thể thêm DatePicker để chọn ngày thực thu ở đây nếu muốn
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Hủy')),
+              ElevatedButton(
+                onPressed: () async {
+                  if (selectedWalletId != null) {
+                    try {
+                      // Gọi hàm core trong AppState với tham số category
+                      await appState.collectPaymentForTransaction(
+                        category: 'Doanh thu chính', // Cung cấp đúng category
+                        transactionToUpdate: transaction,
+                        paymentDate: paymentDate,
+                        walletId: selectedWalletId!,
+                        transactionRecordDate: appState.selectedDate,
+                      );
+                      Navigator.pop(dialogContext);
+                      _showStyledSnackBar("Đã ghi nhận thu tiền thành công!");
+                    } catch (e) {
+                      _showStyledSnackBar("Lỗi khi thu tiền: $e", isError: true);
+                    }
+                  }
+                },
+                child: const Text('Xác nhận'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   // Thay thế hàm removeTransaction ở cả 3 màn hình bằng hàm này
 
-  void removeTransaction(
-      AppState appState,
-      List<Map<String, dynamic>> transactions, // Giữ lại để tìm transaction
-      int index,
-      String category, // Thêm tham số category
-      ) {
-    if (index < 0 || index >= transactions.length) return;
+  void deleteTransaction(int index) {
+    // _appState là biến đã có sẵn trong State, không cần truyền vào nữa
+    final transactionsNotifier = _appState.mainRevenueTransactions;
 
-    final transactionToRemove = transactions[index];
-    final removedItemName = transactionToRemove['name'] ?? 'Giao dịch không rõ';
+    if (index < 0 || index >= transactionsNotifier.value.length) return;
+    final transactionToRemove = transactionsNotifier.value[index];
 
-    // Gọi hàm xử lý tập trung trong AppState
-    appState.removeTransactionAndUpdateState(
-      category: category,
+    _appState.deleteTransactionAndUpdateAll(
       transactionToRemove: transactionToRemove,
     ).then((_) {
       if (mounted) {
         _showStyledSnackBar(
-          "Đã xóa: $removedItemName. Giá vốn liên quan (nếu có) cũng đã được xóa.",
-          isError: false, // Hoặc dùng màu khác để thông báo thành công
+          "Đã xóa: ${transactionToRemove['name']}. Mọi dữ liệu liên quan đã được cập nhật.",
         );
       }
     }).catchError((e) {
@@ -304,8 +361,9 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
 
     final transactionToEdit = transactions[index];
     final String? salesTransactionId = transactionToEdit['id'] as String?;
-    final TextEditingController editQuantityController =
-    TextEditingController(text: transactionToEdit['quantity'].toString());
+    final num quantity = transactionToEdit['quantity'] as num? ?? 1;
+    final String quantityText = quantity.truncateToDouble() == quantity ? quantity.toInt().toString() : quantity.toString();
+    final TextEditingController editQuantityController = TextEditingController(text: quantityText);
     final NumberFormat internalPriceFormatter = NumberFormat("#,##0", "vi_VN");
     final TextEditingController editUnitVariableCostController = TextEditingController(
         text: internalPriceFormatter.format(transactionToEdit['unitVariableCost'] ?? 0.0));
@@ -414,7 +472,8 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
 
                 // PHẦN 2: GỌI HÀM CẬP NHẬT TẬP TRUNG (THAY ĐỔI CỐT LÕI)
                 appState.editTransactionAndUpdateState(
-                  category: 'Doanh thu chính',
+                  category: transactionToEdit['category'] as String,
+                  originalTransaction: transactionToEdit,
                   updatedTransaction: updatedTransaction,
                   newCogsTransactions: newAutoGeneratedCogs,
                 ).then((_) {
@@ -560,31 +619,31 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                           productList: productList,
                           quantityController: quantityController,
                           priceController: priceController,
-                          // `canEditThisRevenue` giờ đây luôn là giá trị mới nhất
                           onAddTransaction: canEditThisRevenue
-                              ? (selectedProduct, selectedPrice, isFlexiblePrice) {
+                          // --- CẬP NHẬT CHỮ KÝ HÀM VÀ TRUYỀN THAM SỐ ---
+                              ? (selectedProduct, selectedPrice, isFlexiblePrice, isCashReceived, walletId) {
                             addTransaction(
-                                appState,
-                                selectedProduct,
-                                selectedPrice,
-                                isFlexiblePrice
+                              appState,
+                              selectedProduct,
+                              selectedPrice,
+                              isFlexiblePrice,
+                              isCashReceived,
+                              walletId,
                             );
                           }
-                              : null, // Nút bấm sẽ bị vô hiệu hóa nếu không có quyền
+                              : null,
                           appState: appState,
                           currencyFormat: currencyFormat,
+                          // Thêm dòng này để truyền màu chính của màn hình
+                          screenPrimaryColor: AppColors.primaryBlue,
                         ),
                         TransactionHistorySection(
                           key: const ValueKey('transactionHistory'),
                           transactionsNotifier: appState.mainRevenueTransactions,
                           // `canEditThisRevenue` cũng được cập nhật cho các hành động sửa/xóa
                           onEditTransaction: canEditThisRevenue ? editTransaction : null,
-                          onRemoveTransaction: canEditThisRevenue
-                              ? (localAppState, localTransactions, index) {
-                            removeTransaction(localAppState,
-                                localTransactions, index, 'Doanh thu chính');
-                          }
-                              : null,
+                          onRemoveTransaction: canEditThisRevenue ? deleteTransaction : null,
+
                           appState: appState,
                           currencyFormat: currencyFormat,
                           primaryColor: AppColors.primaryBlue,
@@ -604,28 +663,34 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
 }
 
 class ProductInputSection extends StatefulWidget {
-  final List<Map<String, dynamic>> productList; // [cite: 217]
-  final TextEditingController quantityController; // [cite: 217]
-  final TextEditingController priceController; // [cite: 218]
-  final Function(String?, double, bool)? onAddTransaction; // [cite: 218]
-  final AppState appState; // [cite: 219]
-  final NumberFormat currencyFormat; // [cite: 219]
+  final List<Map<String, dynamic>> productList;
+  final TextEditingController quantityController;
+  final TextEditingController priceController;
+  // --- THAY ĐỔI CHỮ KÝ HÀM ---
+  final Function(String?, double, bool, bool, String?)? onAddTransaction;
+  final AppState appState;
+  final NumberFormat currencyFormat;
+  // --- THÊM THUỘC TÍNH MỚI ---
+  final Color screenPrimaryColor;
 
   const ProductInputSection({
-    Key? key, // [cite: 220]
-    required this.productList, // [cite: 220]
-    required this.quantityController, // [cite: 220]
-    required this.priceController, // [cite: 220]
-    required this.onAddTransaction, // [cite: 220]
-    required this.appState, // [cite: 220]
-    required this.currencyFormat, // [cite: 220]
-  }) : super(key: key); // [cite: 220]
+    Key? key,
+    required this.productList,
+    required this.quantityController,
+    required this.priceController,
+    required this.onAddTransaction,
+    required this.appState,
+    required this.currencyFormat,
+    required this.screenPrimaryColor, // Thêm vào constructor
+  }) : super(key: key);
 
   @override
-  _ProductInputSectionState createState() => _ProductInputSectionState(); // [cite: 221]
+  _ProductInputSectionState createState() => _ProductInputSectionState();
 }
 
 class _ProductInputSectionState extends State<ProductInputSection> {
+  bool _isCashReceived = true;
+  String? _selectedWalletId;
   String? selectedProductId; // << SỬA LẠI TỪ selectedProduct
 
   double selectedPriceFromDropdown = 0.0;
@@ -1049,6 +1114,73 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                       }),
                   const SizedBox(height: 20), // [cite: 346]
                   // === PHẦN NHẬP LIỆU CHO CHI PHÍ BIẾN ĐỔI ĐƠN VỊ CỦA SẢN PHẨM === // [cite: 347]
+                  SwitchListTile.adaptive(
+                    title: Text("Thực thu vào quỹ?", style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context), fontWeight: FontWeight.w500)),
+                    value: _isCashReceived,
+                    onChanged: (bool value) {
+                      setState(() {
+                        _isCashReceived = value;
+                        if (!value) {
+                          _selectedWalletId = null;
+                        }
+                      });
+                    },
+                    activeColor: widget.screenPrimaryColor,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+
+                  if (_isCashReceived)
+                    ValueListenableBuilder<List<Map<String, dynamic>>>(
+                      valueListenable: widget.appState.wallets,
+                      builder: (context, walletList, child) {
+                        if (walletList.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              "Chưa có ví tiền nào được tạo.",
+                              style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+                            ),
+                          );
+                        }
+
+                        final defaultWallet = widget.appState.defaultWallet;
+                        if (_selectedWalletId == null || !walletList.any((w) => w['id'] == _selectedWalletId)) {
+                          if (defaultWallet != null) {
+                            _selectedWalletId = defaultWallet['id'];
+                          } else {
+                            _selectedWalletId = walletList.first['id'];
+                          }
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 16.0),
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedWalletId,
+                            items: walletList.map((wallet) {
+                              return DropdownMenuItem<String>(
+                                value: wallet['id'],
+                                child: Text(
+                                  wallet['isDefault'] == true
+                                      ? "${wallet['name']} (Mặc định)"
+                                      : wallet['name'],
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (String? newValue) {
+                              setState(() {
+                                _selectedWalletId = newValue;
+                              });
+                            },
+                            decoration: InputDecoration(
+                              labelText: 'Chọn ví nhận tiền',
+                              prefixIcon: Icon(Icons.account_balance_wallet_outlined, color: widget.screenPrimaryColor),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   Text("Chi phí biến đổi của sản phẩm:", // [cite: 347]
                       style: GoogleFonts.poppins( // [cite: 347, 348]
                           fontSize: 16,
@@ -1312,7 +1444,9 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                       widget.onAddTransaction!(
                           productName,
                           selectedPriceFromDropdown,
-                          isFlexiblePriceEnabled);
+                          isFlexiblePriceEnabled,
+                        _isCashReceived,
+                          _selectedWalletId,);
                     } : null,
                     child: Text( // [cite: 482]
                       "Thêm giao dịch", // [cite: 482, 483]
@@ -1387,7 +1521,7 @@ class TransactionHistorySection extends StatelessWidget {
   final ValueNotifier<List<Map<String, dynamic>>> transactionsNotifier; // [cite: 495]
   final Function(AppState, List<Map<String, dynamic>>, int)?
   onEditTransaction; // [cite: 496]
-  final Function(AppState, List<Map<String, dynamic>>, int)?
+  final Function(int)?
   onRemoveTransaction; // [cite: 497]
   final AppState appState; // [cite: 497]
   final NumberFormat currencyFormat; // [cite: 498]
@@ -1469,6 +1603,7 @@ class TransactionHistorySection extends StatelessWidget {
                 itemCount: sortedHistory.length, // [cite: 512]
                 itemBuilder: (context, index) { // [cite: 512]
                   final transaction = sortedHistory[index]; // [cite: 512]
+                  final bool isUnpaid = transaction['paymentStatus'] == 'unpaid';
                   final originalIndex = history.indexOf(transaction); // [cite: 513]
                   final double totalRevenue = // [cite: 514]
                   (transaction['total'] as num? ?? 0.0).toDouble(); // [cite: 514]
@@ -1495,7 +1630,7 @@ class TransactionHistorySection extends StatelessWidget {
                     onDismissed: (direction) { // [cite: 521]
                       if (originalIndex != -1) { // [cite: 521]
                         onRemoveTransaction!( // [cite: 522]
-                            appState, transactionsNotifier.value, originalIndex);
+                            originalIndex);
                       }
                     },
                     child: Card( // [cite: 523]
@@ -1588,23 +1723,47 @@ class TransactionHistorySection extends StatelessWidget {
                                             .withOpacity(0.8)), // [cite: 554]
                                   ),
                                 ),
+                              if (isUnpaid)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Chip(
+                                    label: Text('Chưa thu tiền', style: GoogleFonts.poppins(fontSize: 10, color: Colors.orange.shade900)),
+                                    backgroundColor: Colors.orange.withOpacity(0.2),
+                                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    labelPadding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ),
                             ],
                           ),
                         ),
-                        trailing: IconButton( // [cite: 556]
-                          icon: Icon(Icons.edit_note_outlined, // [cite: 556]
-                              color: AppColors.primaryBlue.withOpacity(0.8),
-                              size: 24), // [cite: 556]
-                          onPressed: () { // [cite: 556]
-                            if (originalIndex != -1) { // [cite: 557]
-                              onEditTransaction!(appState, // [cite: 557]
-                                  transactionsNotifier.value, originalIndex); // [cite: 558]
-                            }
-                          },
-                          splashRadius: 20, // [cite: 558]
-                          padding: EdgeInsets.zero, // [cite: 559, 560]
-                          constraints: // [cite: 560]
-                          BoxConstraints(minWidth: 36, minHeight: 36), // [cite: 560]
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // --- THÊM MỚI: NÚT "THU TIỀN" ---
+                            if (isUnpaid && onEditTransaction != null)
+                              IconButton(
+                                icon: Icon(Icons.price_check_outlined, color: Colors.green.shade600),
+                                onPressed: () {
+                                  (context.findAncestorStateOfType<_EditMainRevenueScreenState>())
+                                      ?._showCollectPaymentDialog(context, appState, transaction);
+                                },
+                                tooltip: 'Thu tiền',
+                                splashRadius: 20,
+                              ),
+                            // Nút sửa hiện tại
+                            if (onEditTransaction != null)
+                              IconButton(
+                                icon: Icon(Icons.edit_note_outlined, color: AppColors.primaryBlue.withOpacity(0.8), size: 24),
+                                onPressed: () {
+                                  if (originalIndex != -1) {
+                                    onEditTransaction!(appState, transactionsNotifier.value, originalIndex);
+                                  }
+                                },
+                                splashRadius: 20,
+                              ),
+                          ],
                         ),
                       ),
                     ),

@@ -113,11 +113,15 @@ class _AnalysisScreenState extends State<AnalysisScreen>
       final productRevenueBreakdown =
       await appState.getProductRevenueBreakdown(range);
       // Dữ liệu kỳ trước
+      final cashFlowData = await appState.getCashFlowDetailsForRange(range);
+      print("--- [DEBUG] DỮ LIỆU DÒNG TIỀN LỊCH SỬ ---");
+      print(cashFlowData);
       final int daysInPeriod = range.end.difference(range.start).inDays + 1;
       final previousRange = DateTimeRange(
         start: range.start.subtract(Duration(days: daysInPeriod)),
         end: range.end.subtract(Duration(days: daysInPeriod)),
       );
+      final prevCashFlowData = await appState.getCashFlowDetailsForRange(previousRange);
       final previousRevenueData =
       await appState.getRevenueForRange(previousRange);
       final previousExpenseData =
@@ -143,7 +147,28 @@ class _AnalysisScreenState extends State<AnalysisScreen>
           (expenseData['fixedExpense'] as num?)?.toDouble() ?? 0.0;
       double variableExpense =
           (expenseData['variableExpense'] as num?)?.toDouble() ?? 0.0;
+      double otherExpense =
+          (expenseData['otherExpense'] as num?)?.toDouble() ?? 0.0;
       double profit = (overview['profit'] as num?)?.toDouble() ?? 0.0;
+      double totalCashIn = (cashFlowData['totalCashIn'] as num?)?.toDouble() ?? 0.0;
+      double totalCashOut = (cashFlowData['totalCashOut'] as num?)?.toDouble() ?? 0.0;
+      double netCashFlow = (cashFlowData['netCashFlow'] as num?)?.toDouble() ?? 0.0;
+      double prevNetCashFlow = (prevCashFlowData['netCashFlow'] as num?)?.toDouble() ?? 0.0;
+      double profitToCashFlowDifference = profit - netCashFlow;
+      final forecastRange = DateTimeRange(start: DateTime.now(), end: DateTime.now().add(const Duration(days: 30)));
+      final futurePayments = await appState.getScheduledFuturePayments(forecastRange);
+      print("--- [DEBUG] CÁC KHOẢN CHI TƯƠNG LAI TÌM THẤY ---");
+      print(futurePayments);
+      // 2. Tính toán các chỉ số dự báo
+      final double currentTotalBalance = appState.wallets.value.fold(
+          0.0, (sum, wallet) => sum + ((wallet['balance'] as num?)?.toDouble() ?? 0.0));
+      final double totalFutureOutflow = futurePayments.fold(
+          0.0, (sum, payment) => sum + ((payment['amount'] as num?)?.toDouble() ?? 0.0));
+      final double projectedEndBalance = currentTotalBalance - totalFutureOutflow;
+      print("--- [DEBUG] TÍNH TOÁN DỰ BÁO ---");
+      print("Số dư ví hiện tại: $currentTotalBalance");
+      print("Tổng chi tương lai đã lên lịch: $totalFutureOutflow");
+      print("Số dư ví dự kiến: $projectedEndBalance");
       double profitMargin =
           (overview['averageProfitMargin'] as num?)?.toDouble() ?? 0.0;
 
@@ -168,6 +193,15 @@ class _AnalysisScreenState extends State<AnalysisScreen>
       double absoluteRevenueChange = totalRevenue - prevTotalRevenue;
       String revenueComparisonReportText;
       String expenseComparisonReportText;
+      String cashFlowComparisonReportText;
+      if (prevNetCashFlow == 0 && netCashFlow > 0) {
+        cashFlowComparisonReportText = "đã dương ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(netCashFlow)} VNĐ, trong khi kỳ trước là 0.";
+      } else if (netCashFlow != prevNetCashFlow) {
+        double change = netCashFlow - prevNetCashFlow;
+        cashFlowComparisonReportText = "${change > 0 ? 'tăng' : 'giảm'} ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(change.abs())} VNĐ so với kỳ trước.";
+      } else {
+        cashFlowComparisonReportText = "không thay đổi so với kỳ trước.";
+      }
       String profitComparisonReportText;
       if (prevTotalRevenue == 0) {
         if (totalRevenue > 0) {
@@ -280,8 +314,15 @@ class _AnalysisScreenState extends State<AnalysisScreen>
         'Doanh thu khác': totalRevenue > 0 ? (otherRevenue / totalRevenue * 100) : 0.0,
       };
       Map<String, double> expenseShares = {
-        'Chi phí cố định': totalExpense > 0 ? (fixedExpense / totalExpense * 100) : 0.0,
-        'Chi phí biến đổi': totalExpense > 0 ? (variableExpense / totalExpense * 100) : 0.0,
+        'Chi phí cố định': totalExpense > 0
+            ? (fixedExpense / totalExpense * 100)
+            : 0.0,
+        'Chi phí biến đổi': totalExpense > 0
+            ? (variableExpense / totalExpense * 100)
+            : 0.0,
+        'Chi phí khác': totalExpense > 0
+            ? (otherExpense / totalExpense * 100)
+            : 0.0,
       };
       Map<String, String> topProductsSummary = {};
       topProducts.forEach((category, products) {
@@ -408,6 +449,20 @@ class _AnalysisScreenState extends State<AnalysisScreen>
           ? 'Chúc mừng! Bạn đã VƯỢT điểm hòa vốn. Vùng an toàn hiện tại là ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(safetyMargin)} VNĐ.'
           : 'Cần cố gắng! Bạn cần thêm ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(breakEvenRevenue - totalRevenue)} VNĐ doanh thu để đạt điểm hòa vốn.'}
 ''';
+      String cashFlowAnalysisReport = '''
+7. PHÂN TÍCH DÒNG TIỀN (THỰC THU - THỰC CHI):
+   - Tổng tiền vào (Thực thu): ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(totalCashIn)} VNĐ.
+   - Tổng tiền ra (Thực chi): ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(totalCashOut)} VNĐ.
+   - Dòng tiền thuần (Vào - Ra): ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(netCashFlow)} VNĐ.
+   - So sánh dòng tiền thuần: ${cashFlowComparisonReportText}
+   - Chênh lệch (Lợi nhuận - Dòng tiền thuần): ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(profitToCashFlowDifference)} VNĐ.
+''';
+      String forecastAnalysisReport = '''
+8. DỰ BÁO DÒNG TIỀN (30 NGÀY TỚI):
+   - Số dư ví hiện tại: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(currentTotalBalance)} VNĐ.
+   - Tổng chi cố định đã lên lịch: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(totalFutureOutflow)} VNĐ.
+   - Số dư ví dự kiến (sau 30 ngày): ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(projectedEndBalance)} VNĐ.
+''';
 
 
 // Sắp xếp sản phẩm theo lợi nhuận giảm dần
@@ -430,7 +485,7 @@ class _AnalysisScreenState extends State<AnalysisScreen>
 
       String expenseBreakdownSummary = expenseBreakdown
           .map((item) => // 'item' bây giờ là một object CategoryChartData
-      '${item.category}: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(item.value)} VNĐ')
+      '${item['name']}: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(item['amount'])} VNĐ')
           .join(', ');
       String productRevenueSummary = productRevenueBreakdown.entries
           .map((e) => '${e.key}: ${e.value.toStringAsFixed(1)}%')
@@ -459,7 +514,7 @@ Phân tích chi tiết kỳ này:
 
 2. CHI PHÍ:
    - Tổng chi phí: ${NumberFormat.currency(locale: 'vi_VN', symbol: '').format(totalExpense)} VNĐ.
-   - Tỷ trọng: Cố định: ${expenseShares['Chi phí cố định']!.toStringAsFixed(1)}%, Biến đổi: ${expenseShares['Chi phí biến đổi']!.toStringAsFixed(1)}%.
+   - Tỷ trọng: Cố định: ${expenseShares['Chi phí cố định']!.toStringAsFixed(1)}%, Biến đổi: ${expenseShares['Chi phí biến đổi']!.toStringAsFixed(1)}%, Khác: ${expenseShares['Chi phí khác']!.toStringAsFixed(1)}%.
    - Phân bổ chi phí: ${expenseBreakdownSummary.isNotEmpty ? expenseBreakdownSummary : 'Không có'}.
    - Xu hướng chi phí (hồi quy): $overallExpenseTrendDescription
    - Điểm bất thường chi phí: ${expenseAnomalies.isNotEmpty ? expenseAnomalies.join('; ') : 'Không có'}.
@@ -475,6 +530,8 @@ Phân tích chi tiết kỳ này:
 Ngành nghề kinh doanh: $industry.
 ${productProfitabilityReport}
 ${breakEvenAnalysisReport}
+${cashFlowAnalysisReport}
+${forecastAnalysisReport} 
 ''';
 
       print('Báo cáo phân tích: $report');
@@ -510,37 +567,48 @@ ${breakEvenAnalysisReport}
       final analysis = await _analyzeFinancialData(appState, range);
       String report = analysis['report'];
       String prompt =
-      '''Bạn là chuyên gia tài chính trong ngành $industry.Dưới đây là phân tích dữ liệu kinh doanh:
-
+      '''Bạn là một cố vấn kinh doanh chuyên nghiệp, có khả năng giải thích các vấn đề tài chính phức tạp bằng ngôn ngữ **đơn giản, gần gũi và tập trung vào hành động**.
+Hãy trình bày bản phân tích dưới dạng một "Bài Kiểm Tra Sức Khỏe Tài Chính" gồm 4 phần, trả lời 4 câu hỏi cốt lõi. Sử dụng tiêu đề rõ ràng, emoji và giọng văn khích lệ.
+Dưới đây là dữ liệu kinh doanh của một doanh nghiệp trong ngành $industry:
 $report
 
-Hãy cung cấp một báo cáo phân tích chuyên sâu, bao gồm các phần sau:
+Hãy bắt đầu bản phân tích với câu chào: "Cùng xem qua Sức khỏe Tài chính của bạn nhé! Dưới đây là kết quả kiểm tra dựa trên dữ liệu bạn đã cung cấp:"
 
-1.  **Tổng quan hiệu suất kinh doanh:** Tóm tắt doanh thu, chi phí, lợi nhuận, và các thay đổi so với kỳ trước. Giải thích ngắn gọn ý nghĩa của các chỉ số này trong ngành $industry.
+---
 
-2.  **Phân tích Xu hướng (Hồi quy tuyến tính):**
-    * **Dựa vào 'Xu hướng doanh thu (hồi quy)':** Hãy nhận xét về tốc độ tăng trưởng hoặc suy giảm. Xu hướng này có tốt và bền vững không? Nếu đang tăng trưởng, gợi ý cách để duy trì đà tăng. Nếu đang suy giảm, chỉ ra các nguyên nhân có thể và đề xuất hướng khắc phục.
-    * **Dựa vào 'Xu hướng chi phí (hồi quy)':** Hãy đánh giá việc kiểm soát chi phí. Tốc độ tăng của chi phí đang nhanh hơn hay chậm hơn doanh thu? Điều này nói lên điều gì về hiệu quả hoạt động của doanh nghiệp?
-    * **Dựa vào 'Xu hướng biên lợi nhuận (hồi quy)':** Bình luận về sự thay đổi trong khả năng sinh lời theo thời gian. Xu hướng này có bền vững không và yếu tố nào có thể đang tác động đến nó (ví dụ: thay đổi cơ cấu sản phẩm bán ra, chính sách giá, việc kiểm soát chi phí biến đổi)?
+### **1. 👨‍⚕️ Lãi hay Lỗ? (Kiểm tra Lợi nhuận)**
+* Đầu tiên, hãy trả lời câu hỏi quan trọng nhất: "Trong kỳ vừa qua, sau khi trừ hết chi phí, bạn thực sự bỏ túi được bao nhiêu tiền?" Dựa vào chỉ số "Lợi nhuận" và "Biên lợi nhuận".
+* Phân tích ngắn gọn:
+    * "Tiền đến từ đâu?": Liệt kê 2-3 sản phẩm hoặc dịch vụ mang lại doanh thu cao nhất.
+    * "Tiền đi về đâu?": Liệt kê 2-3 khoản mục chi phí lớn nhất.
+* **Điểm nhấn đáng chú ý:** Dựa vào "phân tích điểm bất thường" và "chi tiết bất thường", hãy chỉ ra những ngày có doanh thu hoặc chi phí tăng/giảm đột biến. Giải thích ngắn gọn nguyên nhân một cách đơn giản (ví dụ: "Ngày 22/07 doanh thu tăng vọt, chủ yếu nhờ sản phẩm X bán rất chạy" hoặc "Ngày 24/07 chi phí cao bất thường do có khoản chi đột xuất cho Y").
+* Đánh giá về "Điểm hòa vốn": Dựa vào báo cáo, giải thích một cách đơn giản là họ đã vượt qua điểm hòa vốn hay chưa và cần làm gì tiếp theo.
 
-3.  **Phân tích Cấu trúc Chi phí:**
-    * **Dựa vào mục "Phân bổ chi phí" trong báo cáo**, hãy liệt kê và phân tích các khoản mục chi phí lớn nhất.
-    * Đánh giá xem cơ cấu chi phí này (tỷ trọng của từng khoản mục) có hợp lý và phù hợp với đặc thù của ngành kinh doanh "$industry" hay không.
-    * Chỉ ra những khoản mục chi phí có tỷ trọng cao bất thường hoặc có thể tối ưu.
+---
 
-4.  **Phân tích điểm bất thường:**
-    * Doanh thu: Giải thích lý do có những ngày doanh thu tăng/giảm đột biến (nếu có).
-    * Chi phí: Xác định nguyên nhân có những ngày chi phí tăng/giảm đột biến (nếu có).
+### **2. 💰 Tiền của bạn đang ở đâu? (Kiểm tra Dòng tiền)**
+* Bắt đầu bằng câu: "Lợi nhuận trên giấy tờ là một chuyện, nhưng tiền mặt thực tế trong túi mới là điều quyết định sự sống còn."
+* Phân tích sâu về "Chênh lệch (Lợi nhuận - Dòng tiền thuần)" bằng ngôn ngữ đơn giản như đã thống nhất trước đó (sử dụng các khái niệm như 'lãi giả, lỗ thật', tiền bị 'đóng băng', 'thu hồi nợ cũ'...).
+* Đưa ra kết luận cốt lõi: Tình hình dòng tiền có lành mạnh không và người dùng cần chú ý điều gì nhất.
 
-5.  **Phân tích Hiệu suất Sản phẩm:**
-    * **Dựa trên báo cáo "PHÂN TÍCH HIỆU SUẤT SẢN PHẨM"**, hãy xác định các sản phẩm "Ngôi sao" (lợi nhuận cao) và sản phẩm "Cần cải thiện" (lợi nhuận thấp hoặc âm).
-    * Đưa ra gợi ý chiến lược cụ thể cho các nhóm sản phẩm này (ví dụ: nên tập trung marketing cho sản phẩm nào, nên xem xét lại giá bán hoặc chi phí của sản phẩm nào).
+---
 
-6.  **Phân tích Điểm hòa vốn:**
-    * **Dựa trên báo cáo "PHÂN TÍCH ĐIỂM HÒA VỐN"**, hãy giải thích ý nghĩa của con số "Doanh thu hòa vốn" đối với doanh nghiệp.
-    * Đánh giá "Tình hình hiện tại" và đưa ra lời khuyên. Nếu chưa đạt điểm hòa vốn, hãy gợi ý những hành động cụ thể để có thể đạt được.
+### **3. 📈 Tốt lên hay Xấu đi? (Kiểm tra Xu hướng)**
+* Mở đầu: "Hãy xem công việc kinh doanh của bạn đang đi lên, đi xuống hay đi ngang nhé."
+* Dựa vào các chỉ số xu hướng (hồi quy) để nhận xét về 3 khía cạnh:
+    * "Tốc độ kiếm tiền (Doanh thu)": Xu hướng doanh thu đang tăng hay giảm? Tốc độ này có ổn định không?
+    * "Tốc độ tiêu tiền (Chi phí)": Chi phí có đang tăng nhanh hơn doanh thu không? Điều này cho thấy việc kiểm soát chi tiêu có hiệu quả không.
+    * "Hiệu quả kinh doanh (Biên lợi nhuận)": Theo thời gian, mỗi đồng doanh thu đang tạo ra nhiều hay ít lợi nhuận hơn?
 
-Mỗi phần cần chi tiết, sử dụng dữ liệu từ báo cáo, đưa ra ví dụ thực tế, và phù hợp với ngành $industry.''';
+---
+
+### **4. 🛡️ Sắp tới có an toàn không? (Kiểm tra Rủi ro)**
+* Mở đầu: "Bây giờ hãy cùng nhìn về 30 ngày tới để xem liệu bạn có đủ tiền để hoạt động không."
+* Dựa vào báo cáo "DỰ BÁO DÒNG TIỀN", trình bày các con số: Số dư hiện tại, Tổng chi đã lên lịch, và Số dư dự kiến.
+* Đưa ra **đánh giá mức độ rủi ro**:
+    * Nếu số dư dự kiến thấp hoặc âm: Đưa ra **CẢNH BÁO MẠNH MẼ** về nguy cơ thiếu hụt tiền mặt và gợi ý các hành động khẩn cấp.
+    * Nếu số dư dự kiến ở mức an toàn: Đưa ra lời nhận xét **TÍCH CỰC** và khích lệ người dùng tiếp tục duy trì sự ổn định.
+''';
       final user = FirebaseAuth.instance.currentUser;
       final idToken = await user?.getIdToken();
       if (idToken == null) {

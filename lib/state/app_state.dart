@@ -8,10 +8,12 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/transaction.dart' as model;
 import '/screens/expense_manager.dart';
 import '/screens/revenue_manager.dart';
 import '../screens/chart_data_models.dart';
+import 'dart:convert';
 
 class AppState extends ChangeNotifier {
   bool _isSubscribed = false;
@@ -39,12 +41,16 @@ class AppState extends ChangeNotifier {
   final ValueNotifier<double> profitMarginListenable = ValueNotifier(0.0);
   double _fixedExpense = 0.0;
   double variableExpense = 0.0;
+  double otherExpense = 0.0;
   final ValueNotifier<double> fixedExpenseListenable = ValueNotifier(0.0);
   final ValueNotifier<List<Map<String, dynamic>>> fixedExpenseList = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> variableExpenseList = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> mainRevenueTransactions = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> secondaryRevenueTransactions = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> otherRevenueTransactions = ValueNotifier([]);
+  final ValueNotifier<List<Map<String, dynamic>>> wallets = ValueNotifier([]);
+  final ValueNotifier<List<Map<String, dynamic>>> walletAdjustments = ValueNotifier([]);
+  final ValueNotifier<List<Map<String, dynamic>>> otherExpenseTransactions = ValueNotifier([]);
   final Map<String, String> _userDisplayNames = {};
   final ValueNotifier<bool> productsUpdated = ValueNotifier(false);
   bool _notificationsEnabled = true;
@@ -67,6 +73,8 @@ class AppState extends ChangeNotifier {
   StreamSubscription<QuerySnapshot>? _productsSubscription;
   StreamSubscription<DocumentSnapshot>? _permissionSubscription;
   StreamSubscription<DocumentSnapshot>? _variableExpenseListSubscription;
+  StreamSubscription<QuerySnapshot>? _walletsSubscription;
+  StreamSubscription<DocumentSnapshot>? _otherExpenseSubscription;
 
   double get fixedExpense => _fixedExpense;
   bool get notificationsEnabled => _notificationsEnabled;
@@ -115,6 +123,63 @@ class AppState extends ChangeNotifier {
       notifyListeners(); // Báo cho toàn bộ UI đang nghe AppState cập nhật
     }
   }
+
+  Map<String, dynamic>? get defaultWallet {
+    try {
+      return wallets.value.firstWhere((wallet) => wallet['isDefault'] == true);
+    } catch (e) {
+      return null; // Trả về null nếu không tìm thấy
+    }
+  }
+
+  void _subscribeToWallets() {
+    if (activeUserId == null) return;
+    _walletsSubscription?.cancel();
+    _walletsSubscription = FirebaseFirestore.instance
+        .collection('users').doc(activeUserId)
+        .collection('wallets')
+        .orderBy('createdAt')
+        .snapshots()
+        .listen((snapshot) {
+
+      // if (snapshot.metadata.hasPendingWrites) return; // <-- XÓA BỎ DÒNG NÀY
+
+      // Sắp xếp lại danh sách để đảm bảo ví mặc định luôn ở trên cùng
+      final walletList = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id; // Đảm bảo ID luôn có trong dữ liệu ví
+        return data;
+      }).toList();
+
+      walletList.sort((a, b) {
+        bool aIsDefault = a['isDefault'] ?? false;
+        bool bIsDefault = b['isDefault'] ?? false;
+        if (aIsDefault && !bIsDefault) {
+          return -1; // a đứng trước b
+        }
+        if (!aIsDefault && bIsDefault) {
+          return 1; // b đứng trước a
+        }
+        // Nếu cả hai đều là hoặc không là mặc định, sắp xếp theo ngày tạo
+        final aTime = a['createdAt'] as Timestamp? ?? Timestamp.now();
+        final bTime = b['createdAt'] as Timestamp? ?? Timestamp.now();
+        return aTime.compareTo(bTime);
+      });
+
+      wallets.value = walletList;
+
+    }, onError: (error) {
+      print("Lỗi khi lắng nghe ví tiền: $error");
+    });
+  }
+
+// Thêm phương thức hủy
+  void _cancelWalletsSubscription() {
+    _walletsSubscription?.cancel();
+    _walletsSubscription = null;
+  }
+
+
 
   void _updateProfitAndRelatedListenables() {
     mainRevenueListenable.value = mainRevenue;
@@ -202,6 +267,8 @@ class AppState extends ChangeNotifier {
     _subscribeToDailyData();
     _subscribeToProducts();
     _subscribeToAvailableVariableExpenses();
+    _subscribeToWallets();
+    _subscribeToOtherExpenses();
 
     // BƯỚC 4: Thông báo cho toàn bộ UI rằng trạng thái đã thay đổi và sẵn sàng
     notifyListeners();
@@ -249,7 +316,7 @@ class AppState extends ChangeNotifier {
     _cancelProductsSubscription();
     _cancelVariableExpenseListSubscription();
     _cancelPermissionSubscription();
-    print("Switching to user $newActiveUserId and reloading data...");
+    _cancelOtherExpenseSubscription();
 
     _subscribeToPermissions();
     await _loadInitialData();
@@ -259,6 +326,8 @@ class AppState extends ChangeNotifier {
     _subscribeToDailyData();
     _subscribeToProducts();
     _subscribeToAvailableVariableExpenses();
+    _subscribeToWallets();
+    _subscribeToOtherExpenses();
     notifyListeners();
   }
 
@@ -273,6 +342,8 @@ class AppState extends ChangeNotifier {
     _cancelProductsSubscription();
     _cancelVariableExpenseListSubscription();
     _cancelPermissionSubscription();
+    _cancelWalletsSubscription();
+    _cancelOtherExpenseSubscription();
 
     // 2. Reset tất cả các biến trạng thái về giá trị mặc định
     authUserId = null;
@@ -297,12 +368,15 @@ class AppState extends ChangeNotifier {
     profitMarginListenable.value = 0.0;
     _fixedExpense = 0.0;
     variableExpense = 0.0;
+    otherExpense = 0.0;
     fixedExpenseListenable.value = 0.0;
     fixedExpenseList.value = [];
     variableExpenseList.value = [];
     mainRevenueTransactions.value = [];
     secondaryRevenueTransactions.value = [];
     otherRevenueTransactions.value = [];
+    wallets.value = [];
+    otherExpenseTransactions.value = [];
     _userDisplayNames.clear();
     productsUpdated.value = false;
     _isLoading = false;
@@ -457,12 +531,14 @@ class AppState extends ChangeNotifier {
       _cancelDailyDataSubscription();
       _cancelFixedExpenseSubscription();
       _cancelVariableExpenseListSubscription();
+      _cancelOtherExpenseSubscription();
 
       _subscribeToFixedExpenses();
       _subscribeToVariableExpenses();
       _subscribeToDailyFixedExpenses();
       _subscribeToDailyData();
       _subscribeToAvailableVariableExpenses();
+      _subscribeToOtherExpenses();
 
       // Chỉ cần notifyListeners() để các widget không dùng ValueNotifier cập nhật nếu có.
       notifyListeners();
@@ -740,6 +816,7 @@ class AppState extends ChangeNotifier {
         mainRevenueTransactions.value = [];
         secondaryRevenueTransactions.value = [];
         otherRevenueTransactions.value = [];
+        walletAdjustments.value = [];
       }
       _updateProfitAndRelatedListenables();
       notifyListeners();
@@ -1381,74 +1458,29 @@ class AppState extends ChangeNotifier {
   // Dán hàm mới này vào trong class AppState (appstate.docx)
 
   Future<void> addTransactionAndUpdateState({
-    required String category, // 'Doanh thu chính' hoặc 'Doanh thu phụ'
+    required String category,
     required Map<String, dynamic> newSalesTransaction,
     required List<Map<String, dynamic>> autoGeneratedCogs,
+    // --- Tham số MỚI ---
+    required bool isCashReceived,
+    String? walletId,
   }) async {
     // 1. CẬP NHẬT TRẠNG THÁI LOCAL (OPTIMISTIC UPDATE)
-    // Thêm giao dịch vào đúng danh sách
+    if (isCashReceived && walletId != null) {
+      newSalesTransaction['walletId'] = walletId;
+      newSalesTransaction['paymentStatus'] = 'paid'; // Trạng thái: Đã thanh toán
+    } else {
+      newSalesTransaction['paymentStatus'] = 'unpaid'; // Trạng thái: Chưa thanh toán
+    }
     if (category == 'Doanh thu chính') {
       mainRevenueTransactions.value.add(newSalesTransaction);
-      // Phải gán lại list mới để ValueNotifier nhận biết sự thay đổi
       mainRevenueTransactions.value = List.from(mainRevenueTransactions.value);
     } else if (category == 'Doanh thu phụ') {
       secondaryRevenueTransactions.value.add(newSalesTransaction);
       secondaryRevenueTransactions.value = List.from(secondaryRevenueTransactions.value);
     }
-
-    // Thêm giá vốn vào danh sách chi phí biến đổi
     if (autoGeneratedCogs.isNotEmpty) {
       variableExpenseList.value.addAll(autoGeneratedCogs);
-      variableExpenseList.value = List.from(variableExpenseList.value);
-    }
-
-// 2. TÍNH TOÁN LẠI TẤT CẢ CÁC TỔNG
-    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
-    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
-    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
-
-    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
-    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
-
-    // 3. CẬP NHẬT TẤT CẢ VALUE NOTIFIER VÀ GỌI NOTIFYLISTENERS() MỘT LẦN
-    _updateProfitAndRelatedListenables(); // Hàm này sẽ cập nhật các ValueNotifier về doanh thu, lợi nhuận...
-    notifyListeners(); // <-- CHỈ GỌI 1 LẦN DUY NHẤT Ở ĐÂY
-
-    // 4. LƯU DỮ LIỆU LÊN FIRESTORE (KHÔNG CẦN AWAIT VÀ KHÔNG GỌI NOTIFIER NỮA)
-    // Các hàm save này bây giờ chỉ có nhiệm vụ lưu, không cập nhật state nữa
-    await _saveAllDailyDataToFirestore();
-    if (autoGeneratedCogs.isNotEmpty) {
-      ExpenseManager.saveVariableExpenses(this, variableExpenseList.value);
-    }
-  }
-
-  // Dán hàm mới này vào trong class AppState (appstate.docx)
-
-  Future<void> removeTransactionAndUpdateState({
-    required String category,
-    required Map<String, dynamic> transactionToRemove,
-  }) async {
-    final String? transactionId = transactionToRemove['id'] as String?;
-
-    // 1. CẬP NHẬT TRẠNG THÁI LOCAL (OPTIMISTIC UPDATE)
-
-    // Xác định danh sách doanh thu cần cập nhật
-    ValueNotifier<List<Map<String, dynamic>>>? targetRevenueList;
-    if (category == 'Doanh thu chính') {
-      targetRevenueList = mainRevenueTransactions;
-    } else if (category == 'Doanh thu phụ') {
-      targetRevenueList = secondaryRevenueTransactions;
-    } else if (category == 'Doanh thu khác') {
-      targetRevenueList = otherRevenueTransactions;
-    }
-
-    // Xóa giao dịch doanh thu
-    targetRevenueList?.value.removeWhere((t) => t['id'] == transactionId);
-    targetRevenueList?.value = List.from(targetRevenueList.value);
-
-    // Xóa giá vốn (COGS) liên quan nếu có
-    if (transactionId != null) {
-      variableExpenseList.value.removeWhere((expense) => expense['sourceSalesTransactionId'] == transactionId);
       variableExpenseList.value = List.from(variableExpenseList.value);
     }
 
@@ -1456,26 +1488,62 @@ class AppState extends ChangeNotifier {
     mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
     secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
     otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
-
-    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
     variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
 
-    // 3. CẬP NHẬT VALUE NOTIFIER VÀ GỌI NOTIFYLISTENERS() MỘT LẦN
+    if (isCashReceived && walletId != null) {
+      final index = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (index != -1) {
+        final wallet = wallets.value[index];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final transactionAmount = (newSalesTransaction['total'] as num?)?.toDouble() ?? 0.0;
+
+        // Tạo một bản sao của ví với số dư mới
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        updatedWallet['balance'] = currentBalance + transactionAmount;
+
+        // Cập nhật lại danh sách ví
+        wallets.value[index] = updatedWallet;
+        // Gán một List mới để ValueNotifier nhận biết sự thay đổi
+        wallets.value = List.from(wallets.value);
+      }
+    }
+
+    // 3. CẬP NHẬT TẤT CẢ VALUE NOTIFIER VÀ GỌI NOTIFYLISTENERS() MỘT LẦN
     _updateProfitAndRelatedListenables();
     notifyListeners();
 
-    // 4. LƯU TRỮ DỮ LIỆU LÊN FIRESTORE
-    // Các hàm save này chỉ lưu, không cập nhật state nữa
-    await _saveAllDailyDataToFirestore();
-    if (transactionId != null) {
-      ExpenseManager.saveVariableExpenses(this, variableExpenseList.value);
+    // 4. LƯU DỮ LIỆU LÊN FIRESTORE DÙNG WRITEBATCH
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    // Tác vụ 1: Lưu dữ liệu dồn tích (daily_data)
+    await _saveAllDailyDataToFirestore(batch: batch); // Sửa hàm này để nhận batch
+
+    // Tác vụ 2: Lưu chi phí biến đổi
+    if (autoGeneratedCogs.isNotEmpty) {
+      await ExpenseManager.saveVariableExpenses(this, variableExpenseList.value, batch: batch); // Sửa hàm này để nhận batch
     }
+
+    // Tác vụ 3: Cập nhật số dư ví nếu "Thực thu"
+    if (isCashReceived && walletId != null) {
+      final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+      double transactionAmount = newSalesTransaction['total'] as double;
+      batch.update(walletRef, {'balance': FieldValue.increment(transactionAmount)});
+    }
+
+    // Thực thi toàn bộ các tác vụ
+    await batch.commit();
   }
+
+  // Dán hàm mới này vào trong class AppState (appstate.docx)
+
+
 
   // Dán hàm mới này vào trong class AppState (appstate.docx)
 
   Future<void> editTransactionAndUpdateState({
     required String category,
+    required Map<String, dynamic> originalTransaction,
     required Map<String, dynamic> updatedTransaction,
     required List<Map<String, dynamic>> newCogsTransactions,
   }) async {
@@ -1484,9 +1552,40 @@ class AppState extends ChangeNotifier {
       throw Exception("Không thể sửa giao dịch không có ID.");
     }
 
-    // 1. CẬP NHẬT TRẠNG THÁI LOCAL (OPTIMISTIC UPDATE)
+    // 1. Tính toán chênh lệch doanh thu
+    final double oldTotal = (originalTransaction['total'] as num?)?.toDouble() ?? 0.0;
+    final double newTotal = (updatedTransaction['total'] as num?)?.toDouble() ?? 0.0;
+    final double delta = newTotal - oldTotal;
+    final String? walletId = originalTransaction['walletId'] as String?;
+    final bool wasPaid = originalTransaction['paymentStatus'] == 'paid';
 
-    // Xác định và cập nhật danh sách doanh thu
+    // 2. Chuẩn bị cập nhật cho Firestore
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    // 3. Cập nhật số dư ví trên Firestore nếu cần
+    if (wasPaid && walletId != null && delta != 0) {
+      final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+      batch.update(walletRef, {'balance': FieldValue.increment(delta)});
+    }
+
+    // --- BẮT ĐẦU BỔ SUNG: CẬP NHẬT SỐ DƯ VÍ Ở LOCAL STATE ---
+    if (wasPaid && walletId != null && delta != 0) {
+      final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (walletIndex != -1) {
+        final wallet = wallets.value[walletIndex];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        updatedWallet['balance'] = currentBalance + delta;
+
+        final updatedList = List<Map<String, dynamic>>.from(wallets.value);
+        updatedList[walletIndex] = updatedWallet;
+        wallets.value = updatedList;
+      }
+    }
+    // --- KẾT THÚC BỔ SUNG ---
+
+    // Các logic còn lại giữ nguyên...
     ValueNotifier<List<Map<String, dynamic>>>? targetRevenueList;
     if (category == 'Doanh thu chính') {
       targetRevenueList = mainRevenueTransactions;
@@ -1502,32 +1601,41 @@ class AppState extends ChangeNotifier {
       targetRevenueList.value = List.from(targetRevenueList.value);
     }
 
-    // Xóa COGS cũ và thêm COGS mới
     variableExpenseList.value.removeWhere((expense) => expense['sourceSalesTransactionId'] == transactionId);
     variableExpenseList.value.addAll(newCogsTransactions);
     variableExpenseList.value = List.from(variableExpenseList.value);
 
-    // 2. TÍNH TOÁN LẠI TẤT CẢ CÁC TỔNG
     mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
     secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
     otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
-
-    _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
     variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
 
-    // 3. CẬP NHẬT VALUE NOTIFIER VÀ GỌI NOTIFYLISTENERS() MỘT LẦN
     _updateProfitAndRelatedListenables();
     notifyListeners();
 
-    // 4. LƯU TRỮ DỮ LIỆU LÊN FIRESTORE
-    await _saveAllDailyDataToFirestore();
-    ExpenseManager.saveVariableExpenses(this, variableExpenseList.value);
+    await _saveAllDailyDataToFirestore(batch: batch);
+    await ExpenseManager.saveVariableExpenses(this, variableExpenseList.value, batch: batch);
+    await batch.commit();
   }
 
   // Dán 3 hàm mới này vào trong class AppState (appstate.docx)
 
 // Hàm thêm giao dịch "Doanh thu khác"
-  Future<void> addOtherRevenueAndUpdateState(Map<String, dynamic> newTransaction) async {
+  Future<void> addOtherRevenueAndUpdateState(
+      Map<String, dynamic> newTransaction, {
+        // --- THAM SỐ MỚI ---
+        required bool isCashReceived,
+        String? walletId,
+      }) async {
+    if (activeUserId == null) return;
+
+    if (isCashReceived && walletId != null) {
+      newTransaction['walletId'] = walletId;
+      newTransaction['paymentStatus'] = 'paid';
+    } else {
+      newTransaction['paymentStatus'] = 'unpaid';
+    }
+
     // 1. Cập nhật danh sách local
     otherRevenueTransactions.value.add(newTransaction);
     otherRevenueTransactions.value = List.from(otherRevenueTransactions.value);
@@ -1539,12 +1647,386 @@ class AppState extends ChangeNotifier {
     _fixedExpense = fixedExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
     variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
 
+    if (isCashReceived && walletId != null) {
+      final index = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (index != -1) {
+        final wallet = wallets.value[index];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final transactionAmount = (newTransaction['total'] as num?)?.toDouble() ?? 0.0;
+
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        updatedWallet['balance'] = currentBalance + transactionAmount;
+
+        wallets.value[index] = updatedWallet;
+        wallets.value = List.from(wallets.value);
+      }
+    }
+
     // 3. Cập nhật Notifier và giao diện một lần
     _updateProfitAndRelatedListenables();
     notifyListeners();
 
-    // 4. Lưu lên server
-    await _saveAllDailyDataToFirestore();
+    // 4. Lưu lên server dùng BATCH để đảm bảo đồng bộ
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    try {
+      // Tác vụ 1: Lưu dữ liệu dồn tích (daily_data)
+      await _saveAllDailyDataToFirestore(batch: batch);
+
+      // Tác vụ 2: Cập nhật số dư ví nếu "Thực thu"
+      if (isCashReceived && walletId != null) {
+        final walletRef = firestore
+            .collection('users')
+            .doc(activeUserId)
+            .collection('wallets')
+            .doc(walletId);
+        double transactionAmount = newTransaction['total'] as double;
+        batch.update(walletRef, {'balance': FieldValue.increment(transactionAmount)});
+      }
+
+      // Thực thi toàn bộ tác vụ
+      await batch.commit();
+    } catch (e) {
+      print("Lỗi khi thêm giao dịch doanh thu khác và cập nhật ví: $e");
+    }
+  }
+
+  Future<void> collectPaymentForTransaction({
+    required String category,
+    required Map<String, dynamic> transactionToUpdate,
+    required DateTime paymentDate,
+    required String walletId,
+    required DateTime transactionRecordDate, // THAM SỐ MỚI: Ngày ghi nhận giao dịch
+  }) async {
+    if (activeUserId == null) throw Exception("User not logged in");
+
+    final String transactionId = transactionToUpdate['id'];
+    final double transactionAmount = (transactionToUpdate['total'] as num).toDouble();
+    // SỬA ĐỔI Ở ĐÂY: Sử dụng ngày được truyền vào thay vì ngày trong giao dịch
+    final DateTime recordDate = transactionRecordDate;
+    final firestore = FirebaseFirestore.instance;
+
+    final recordDateKey = DateFormat('yyyy-MM-dd').format(recordDate);
+    final docId = getKey(recordDateKey);
+    final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(docId);
+    final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+
+    print("--- BẮT ĐẦU TRANSACTION ĐỂ THU TIỀN ---");
+    print("Sẽ cập nhật tài liệu tại đường dẫn: ${dailyDataRef.path}");
+    print("ID giao dịch cần tìm: $transactionId");
+
+    try {
+      await firestore.runTransaction((transaction) async {
+        final dailySnapshot = await transaction.get(dailyDataRef);
+        if (!dailySnapshot.exists) {
+          throw Exception("Tài liệu không tồn tại tại đường dẫn: ${dailyDataRef.path}");
+        }
+
+        final String field;
+        if (category == 'Doanh thu chính') {
+          field = 'mainRevenueTransactions';
+        } else if (category == 'Doanh thu phụ') {
+          field = 'secondaryRevenueTransactions';
+        } else {
+          field = 'otherRevenueTransactions';
+        }
+
+        final List<Map<String, dynamic>> transactionsList = List<Map<String, dynamic>>.from(dailySnapshot.data()?[field] ?? []);
+        final int txIndex = transactionsList.indexWhere((t) => t['id'] == transactionId);
+
+        if (txIndex == -1) {
+          throw Exception("Không tìm thấy giao dịch với ID '$transactionId' trong tài liệu trên server.");
+        }
+
+        transactionsList[txIndex]['paymentStatus'] = 'paid';
+        transactionsList[txIndex]['walletId'] = walletId;
+        transactionsList[txIndex]['paymentDate'] = paymentDate.toIso8601String();
+
+        transaction.update(dailyDataRef, {field: transactionsList});
+        transaction.update(walletRef, {'balance': FieldValue.increment(transactionAmount)});
+      });
+
+      print("✅ Firestore Transaction THÀNH CÔNG! Dữ liệu đã được cập nhật trên server.");
+
+      // Đoạn code cập nhật local state giữ nguyên...
+      final fullyUpdatedTransaction = Map<String, dynamic>.from(transactionToUpdate);
+      fullyUpdatedTransaction['paymentStatus'] = 'paid';
+      fullyUpdatedTransaction['walletId'] = walletId;
+      fullyUpdatedTransaction['paymentDate'] = paymentDate.toIso8601String();
+
+      final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (walletIndex != -1) {
+        final wallet = wallets.value[walletIndex];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        updatedWallet['balance'] = currentBalance + transactionAmount;
+        wallets.value[walletIndex] = updatedWallet;
+        wallets.value = List.from(wallets.value);
+      }
+
+      ValueNotifier<List<Map<String, dynamic>>>? targetListNotifier;
+      if (category == 'Doanh thu chính') {
+        targetListNotifier = mainRevenueTransactions;
+      } else if (category == 'Doanh thu phụ') {
+        targetListNotifier = secondaryRevenueTransactions;
+      } else {
+        targetListNotifier = otherRevenueTransactions;
+      }
+
+      if (targetListNotifier != null) {
+        final list = targetListNotifier.value;
+        final txIndex = list.indexWhere((t) => t['id'] == transactionId);
+        if (txIndex != -1) {
+          final newList = List<Map<String, dynamic>>.from(list);
+          newList[txIndex] = fullyUpdatedTransaction;
+          targetListNotifier.value = newList;
+        }
+      }
+      notifyListeners();
+
+    } catch (e) {
+      print("❌ LỖI KHI THỰC THI TRANSACTION: $e");
+      throw e;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getTransactionsForWallet(String walletId, DateTime selectedMonth) async {
+    if (activeUserId == null) return [];
+    final firestore = FirebaseFirestore.instance;
+    List<Map<String, dynamic>> walletTransactions = [];
+
+    try {
+      // 1. Xác định ngày bắt đầu và kết thúc của tháng được chọn
+      final DateTime startDate = DateTime(selectedMonth.year, selectedMonth.month, 1);
+      final DateTime endDate = DateTime(selectedMonth.year, selectedMonth.month + 1, 0); // Ngày cuối cùng của tháng
+
+      // 2. Tạo key để truy vấn trong Firestore
+      final String startKey = getKey(DateFormat('yyyy-MM-dd').format(startDate));
+      final String endKey = getKey(DateFormat('yyyy-MM-dd').format(endDate));
+
+      // 3. Truy vấn tất cả các document daily_data trong khoảng thời gian của tháng
+      final querySnapshot = await firestore
+          .collection('users')
+          .doc(activeUserId)
+          .collection('daily_data')
+          .where(FieldPath.documentId, isGreaterThanOrEqualTo: startKey)
+          .where(FieldPath.documentId, isLessThanOrEqualTo: endKey)
+          .get();
+
+      for (var doc in querySnapshot.docs) {
+        final data = doc.data();
+        final allTransactions = [
+          ...(data['mainRevenueTransactions'] as List? ?? []),
+          ...(data['secondaryRevenueTransactions'] as List? ?? []),
+          ...(data['otherRevenueTransactions'] as List? ?? []),
+          ...(data['walletAdjustments'] as List? ?? []),
+          // TODO: Gộp các giao dịch chi phí nếu chúng được liên kết với ví
+        ];
+
+        for (var tx in allTransactions) {
+          if (tx is Map<String, dynamic> && tx['walletId'] == walletId) {
+            // Xác định đây là khoản thu hay chi
+            if (tx['category'] == 'Điều chỉnh Ví') {
+              tx['isIncome'] = (tx['total'] as num? ?? 0.0) >= 0;
+            } else {
+              tx['isIncome'] = true; // Mặc định các giao dịch doanh thu là khoản thu
+            }
+            walletTransactions.add(tx);
+          }
+        }
+      }
+
+      walletTransactions.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+      return walletTransactions;
+    } catch (e) {
+      print("Lỗi khi tải giao dịch của ví theo tháng: $e");
+      return [];
+    }
+  }
+
+  Future<void> createWalletBalanceAdjustment({
+    required String walletId,
+    required String walletName,
+    required double delta, // Khoản chênh lệch
+  }) async {
+    if (activeUserId == null || delta == 0) return;
+
+    // 1. Tạo đối tượng giao dịch điều chỉnh
+    final adjustmentTransaction = {
+      'id': Uuid().v4(),
+      'name': 'Cập nhật số dư',
+      'category': 'Điều chỉnh Ví', // Category mới để nhận biết
+      'walletId': walletId,
+      'total': delta, // Có thể là số âm hoặc dương
+      'date': DateTime.now().toIso8601String(), // Luôn là ngày giờ hiện tại
+      'createdBy': authUserId,
+    };
+
+    // 2. Cập nhật trạng thái local
+    walletAdjustments.value.add(adjustmentTransaction);
+    walletAdjustments.value = List.from(walletAdjustments.value);
+    notifyListeners(); // Thông báo cho các listener khác nếu cần
+
+    // 3. Lưu lên Firestore
+    final firestore = FirebaseFirestore.instance;
+    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now()); // Luôn lưu vào ngày hiện tại
+    final docId = getKey(dateKey);
+    final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(docId);
+
+    try {
+      await dailyDataRef.set({
+        'walletAdjustments': FieldValue.arrayUnion([adjustmentTransaction]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print("Lỗi khi tạo giao dịch điều chỉnh ví: $e");
+    }
+  }
+
+  // THÊM hàm MỚI này vào class AppState
+  Future<void> deleteTransactionAndUpdateAll({
+    required Map<String, dynamic> transactionToRemove,
+  }) async {
+    final String? transactionId = transactionToRemove['id'] as String?;
+    final String? category = transactionToRemove['category'] as String?;
+    if (transactionId == null || category == null) {
+      throw Exception("Giao dịch thiếu ID hoặc Category để xóa.");
+    }
+
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    final String? walletId = transactionToRemove['walletId'] as String?;
+    final double amountToRevert = (transactionToRemove['total'] as num?)?.toDouble() ?? 0.0;
+    final bool wasPaid = transactionToRemove['paymentStatus'] == 'paid';
+
+    // Hoàn tiền vào ví trên Firestore nếu cần
+    if (wasPaid && walletId != null) {
+      final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+      batch.update(walletRef, {'balance': FieldValue.increment(-amountToRevert)});
+    }
+
+    // --- BẮT ĐẦU BỔ SUNG: CẬP NHẬT SỐ DƯ VÍ Ở LOCAL STATE ---
+    if (wasPaid && walletId != null) {
+      final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (walletIndex != -1) {
+        final wallet = wallets.value[walletIndex];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        updatedWallet['balance'] = currentBalance - amountToRevert;
+
+        final updatedList = List<Map<String, dynamic>>.from(wallets.value);
+        updatedList[walletIndex] = updatedWallet;
+        wallets.value = updatedList;
+      }
+    }
+    // --- KẾT THÚC BỔ SUNG ---
+
+    // Các logic còn lại giữ nguyên...
+    ValueNotifier<List<Map<String, dynamic>>>? targetRevenueList;
+    if (category == 'Doanh thu chính') {
+      targetRevenueList = mainRevenueTransactions;
+    } else if (category == 'Doanh thu phụ') {
+      targetRevenueList = secondaryRevenueTransactions;
+    } else if (category == 'Doanh thu khác') {
+      targetRevenueList = otherRevenueTransactions;
+    }
+
+    targetRevenueList?.value.removeWhere((t) => t['id'] == transactionId);
+    targetRevenueList?.value = List.from(targetRevenueList.value);
+
+    variableExpenseList.value.removeWhere((expense) => expense['sourceSalesTransactionId'] == transactionId);
+    variableExpenseList.value = List.from(variableExpenseList.value);
+
+    mainRevenue = mainRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    secondaryRevenue = secondaryRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    otherRevenue = otherRevenueTransactions.value.fold(0.0, (sum, e) => sum + (e['total']?.toDouble() ?? 0.0));
+    variableExpense = variableExpenseList.value.fold(0.0, (sum, e) => sum + (e['amount']?.toDouble() ?? 0.0));
+
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    await _saveAllDailyDataToFirestore(batch: batch);
+    await ExpenseManager.saveVariableExpenses(this, variableExpenseList.value, batch: batch);
+    await batch.commit();
+  }
+
+  Future<void> saveOrUpdateWallet(Map<String, dynamic> walletData) async {
+    if (activeUserId == null) return;
+
+    final isEditing = walletData['createdAt'] is Timestamp;
+
+    // --- BƯỚC 1: CẬP NHẬT GIAO DIỆN LẠC QUAN ---
+    // Tạo một bản sao của danh sách ví hiện tại để thao tác
+    List<Map<String, dynamic>> updatedList = List.from(wallets.value);
+
+    // Xử lý logic isDefault ngay trên danh sách cục bộ
+    if (walletData['isDefault'] == true) {
+      for (int i = 0; i < updatedList.length; i++) {
+        if (updatedList[i]['isDefault'] == true) {
+          // Tạo bản sao và cập nhật
+          final tempWallet = Map<String, dynamic>.from(updatedList[i]);
+          tempWallet['isDefault'] = false;
+          updatedList[i] = tempWallet;
+        }
+      }
+    }
+
+    // Tìm và cập nhật hoặc thêm mới ví
+    final index = updatedList.indexWhere((w) => w['id'] == walletData['id']);
+    if (index != -1) { // Nếu là sửa
+      updatedList[index] = walletData;
+    } else { // Nếu là thêm mới
+      updatedList.add(walletData);
+    }
+
+    // Sắp xếp lại danh sách theo ngày tạo
+    updatedList.sort((a, b) => (a['createdAt'] as Timestamp).compareTo(b['createdAt'] as Timestamp));
+    print("--- DEBUG APPSTATE: Chuẩn bị gán wallets.value với ${updatedList.length} phần tử."); // <-- THÊM DÒNG NÀY
+
+    // Gán danh sách mới để ValueNotifier nhận biết sự thay đổi và cập nhật UI
+    wallets.value = updatedList;
+    notifyListeners();
+
+    print("--- DEBUG APPSTATE: Đã gán xong wallets.value.");
+
+
+    // --- BƯỚC 2: LƯU DỮ LIỆU LÊN FIRESTORE (bất đồng bộ) ---
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    try {
+      // Nếu đặt ví này làm mặc định, hãy bỏ mặc định tất cả các ví khác trên server
+      if (walletData['isDefault'] == true) {
+        final querySnapshot = await firestore
+            .collection('users')
+            .doc(activeUserId)
+            .collection('wallets')
+            .where('isDefault', isEqualTo: true)
+            .get();
+
+        for (var doc in querySnapshot.docs) {
+          if (doc.id != walletData['id']) {
+            batch.update(doc.reference, {'isDefault': false});
+          }
+        }
+      }
+
+      // Thêm hoặc cập nhật ví hiện tại vào batch
+      final walletRef = firestore
+          .collection('users')
+          .doc(activeUserId)
+          .collection('wallets')
+          .doc(walletData['id']);
+      batch.set(walletRef, walletData, SetOptions(merge: true));
+
+      // Thực thi batch
+      await batch.commit();
+    } catch (e) {
+      print("Lỗi khi cập nhật ví trên Firestore: $e");
+      // Cân nhắc việc hoàn tác lại state nếu có lỗi nghiêm trọng
+    }
   }
 
 // Hàm sửa giao dịch "Doanh thu khác"
@@ -1595,13 +2077,37 @@ class AppState extends ChangeNotifier {
 
   // Dán hàm mới này vào trong class AppState (appstate.docx)
 
-  Future<void> _saveAllDailyDataToFirestore() async {
+  Future<void> _saveAllDailyDataToFirestore({WriteBatch? batch}) async { // THAY ĐỔI 1: Thêm tham số tùy chọn
     if (activeUserId == null) return;
 
+    bool isExternalBatch = batch != null; // Kiểm tra xem có dùng batch từ bên ngoài không
+    final firestore = FirebaseFirestore.instance;
+    // Nếu không có batch từ bên ngoài, tự tạo một batch mới
+    final localBatch = isExternalBatch ? batch : firestore.batch();
+
+    // --- BẮT ĐẦU SỬA LỖI ---
+    // Hàm nội bộ để chuẩn hóa một danh sách giao dịch, đảm bảo các kiểu số là double
+    List<Map<String, dynamic>> _standardizeTransactions(List<Map<String, dynamic>> transactions) {
+      return transactions.map((t) {
+        // Tạo một bản sao của giao dịch gốc để giữ lại tất cả các trường
+        final standardizedMap = Map<String, dynamic>.from(t);
+
+        // Ghi đè các trường số để đảm bảo chúng là double
+        standardizedMap['price'] = (t['price'] as num?)?.toDouble() ?? 0.0;
+        standardizedMap['total'] = (t['total'] as num?)?.toDouble() ?? 0.0;
+        standardizedMap['quantity'] = (t['quantity'] as num?)?.toDouble() ?? 1.0;
+        standardizedMap['unitVariableCost'] = (t['unitVariableCost'] as num?)?.toDouble() ?? 0.0;
+        standardizedMap['totalVariableCost'] = (t['totalVariableCost'] as num?)?.toDouble() ?? 0.0;
+
+        return standardizedMap;
+      }).toList();
+    }
+    // --- KẾT THÚC SỬA LỖI ---
+
     try {
-      final firestore = FirebaseFirestore.instance;
       String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
       String docPath = 'users/$activeUserId/daily_data/${getKey(dateKey)}';
+      final dailyDataRef = firestore.doc(docPath);
 
       // Chuẩn bị MỘT LẦN DUY NHẤT tất cả dữ liệu cần lưu
       final Map<String, dynamic> dataToSave = {
@@ -1610,27 +2116,231 @@ class AppState extends ChangeNotifier {
         'secondaryRevenue': secondaryRevenue,
         'otherRevenue': otherRevenue,
         'totalRevenue': getTotalRevenue(),
-
         // Lợi nhuận
         'profit': getProfit(),
         'profitMargin': getProfitMargin(),
-
-        // Danh sách giao dịch chi tiết
-        'mainRevenueTransactions': mainRevenueTransactions.value,
-        'secondaryRevenueTransactions': secondaryRevenueTransactions.value,
-        'otherRevenueTransactions': otherRevenueTransactions.value,
-
+        // Danh sách giao dịch chi tiết (SỬ DỤNG HÀM CHUẨN HÓA)
+        'mainRevenueTransactions': _standardizeTransactions(mainRevenueTransactions.value),
+        'secondaryRevenueTransactions': _standardizeTransactions(secondaryRevenueTransactions.value),
+        'otherRevenueTransactions': _standardizeTransactions(otherRevenueTransactions.value),
+        'walletAdjustments': walletAdjustments.value,
         // Dấu thời gian
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Ghi toàn bộ dữ liệu lên Firestore
-      await firestore.doc(docPath).set(dataToSave);
+      // THAY ĐỔI 2: Dùng batch để ghi dữ liệu thay vì .set() trực tiếp
+      localBatch.set(dailyDataRef, dataToSave, SetOptions(merge: true));
 
+      // THAY ĐỔI 3: Chỉ commit nếu đây là batch được tạo nội bộ
+      if (!isExternalBatch) {
+        await localBatch.commit();
+      }
     } catch (e) {
       print("Lỗi nghiêm trọng khi lưu daily_data lên Firestore: $e");
       // Bạn có thể thêm xử lý lỗi ở đây nếu cần
     }
+  }
+
+  Future<void> deleteWalletAndAssociatedData({
+    required Map<String, dynamic> walletToDelete,
+  }) async {
+    if (activeUserId == null) throw Exception("User not logged in.");
+
+    final String walletIdToDelete = walletToDelete['id'];
+    final bool wasDefault = walletToDelete['isDefault'] ?? false;
+
+    // --- BƯỚC 1: CẬP NHẬT TRẠNG THÁI LOCAL ---
+    // Lấy danh sách ví hiện tại TRƯỚC khi xóa
+    List<Map<String, dynamic>> currentWallets = List.from(wallets.value);
+    // Xóa ví khỏi danh sách local
+    currentWallets.removeWhere((w) => w['id'] == walletIdToDelete);
+
+    // XỬ LÝ LOGIC VÍ MẶC ĐỊNH MỚI
+    if (wasDefault && currentWallets.isNotEmpty) {
+      // Tìm ví lâu đời nhất để đặt làm mặc định mới
+      currentWallets.sort((a, b) {
+        final aTime = a['createdAt'] as Timestamp? ?? Timestamp.now();
+        final bTime = b['createdAt'] as Timestamp? ?? Timestamp.now();
+        return aTime.compareTo(bTime);
+      });
+      // Cập nhật ví đầu tiên trong danh sách đã sắp xếp
+      final newDefaultWallet = Map<String, dynamic>.from(currentWallets[0]);
+      newDefaultWallet['isDefault'] = true;
+      currentWallets[0] = newDefaultWallet;
+    }
+
+    // Cập nhật giao diện với danh sách ví mới
+    wallets.value = currentWallets;
+    notifyListeners();
+
+    // --- BƯỚC 2: XÓA DỮ LIỆU NỀN TRÊN FIRESTORE ---
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    // Xử lý gán ví mặc định mới trên server
+    if (wasDefault && currentWallets.isNotEmpty) {
+      final String newDefaultWalletId = currentWallets[0]['id'];
+      final newDefaultWalletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(newDefaultWalletId);
+      batch.update(newDefaultWalletRef, {'isDefault': true});
+    }
+
+    // Lấy và lọc các giao dịch liên quan (logic này giữ nguyên)
+    final dailyDataSnapshot = await firestore
+        .collection('users')
+        .doc(activeUserId)
+        .collection('daily_data')
+        .get();
+
+    final List<String> transactionFields = [
+      'mainRevenueTransactions',
+      'secondaryRevenueTransactions',
+      'otherRevenueTransactions',
+      'walletAdjustments'
+    ];
+
+    for (final doc in dailyDataSnapshot.docs) {
+      bool needsUpdate = false;
+      final Map<String, dynamic> updateData = {};
+      for (final field in transactionFields) {
+        final List<Map<String, dynamic>> originalList = List<Map<String, dynamic>>.from(doc.data()[field] ?? []);
+        if (originalList.isNotEmpty) {
+          final List<Map<String, dynamic>> filteredList = originalList
+              .where((tx) => tx['walletId'] != walletIdToDelete)
+              .toList();
+          if (originalList.length != filteredList.length) {
+            needsUpdate = true;
+            updateData[field] = filteredList;
+          }
+        }
+      }
+      if (needsUpdate) {
+        batch.update(doc.reference, updateData);
+      }
+    }
+
+    // Xóa tài liệu của chính ví đó
+    final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletIdToDelete);
+    batch.delete(walletRef);
+
+    // Thực thi tất cả các thao tác
+    await batch.commit();
+
+    // Tải lại dữ liệu của ngày hiện tại để đảm bảo UI nhất quán
+    setSelectedDate(DateTime.now());
+  }
+
+  Future<void> deleteWalletAdjustment({
+    required Map<String, dynamic> adjustmentToRemove,
+  }) async {
+    if (activeUserId == null) throw Exception("User not logged in.");
+
+    final String transactionId = adjustmentToRemove['id'] as String? ?? '';
+    final String walletId = adjustmentToRemove['walletId'] as String? ?? '';
+    if (transactionId.isEmpty || walletId.isEmpty) {
+      throw Exception("Giao dịch điều chỉnh thiếu ID hoặc Wallet ID.");
+    }
+
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    // --- BƯỚC 1: CẬP NHẬT TRẠNG THÁI LOCAL TRƯỚC TIÊN ---
+
+    // Xóa giao dịch gốc trong danh sách "Chi phí khác" nếu có liên kết
+    final String? sourceExpenseId = adjustmentToRemove['sourceExpenseId'] as String?;
+    if (sourceExpenseId != null) {
+      otherExpenseTransactions.value.removeWhere((e) => e['id'] == sourceExpenseId);
+      otherExpenseTransactions.value = List.from(otherExpenseTransactions.value);
+      // Tính toán lại tổng chi phí khác
+      this.otherExpense = otherExpenseTransactions.value.fold(0.0, (sum, e) => sum + ((e['amount'] as num?)?.toDouble() ?? 0.0));
+    }
+
+    // Xóa giao dịch điều chỉnh khỏi danh sách local
+    walletAdjustments.value.removeWhere((t) => t['id'] == transactionId);
+    walletAdjustments.value = List.from(walletAdjustments.value);
+
+    // Hoàn tiền vào ví local
+    final double amountToRevert = -((adjustmentToRemove['total'] as num?)?.toDouble() ?? 0.0);
+    final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+    if (walletIndex != -1) {
+      final wallet = wallets.value[walletIndex];
+      final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+      final updatedWallet = Map<String, dynamic>.from(wallet);
+      updatedWallet['balance'] = currentBalance + amountToRevert;
+
+      final updatedList = List<Map<String, dynamic>>.from(wallets.value);
+      updatedList[walletIndex] = updatedWallet;
+      wallets.value = updatedList;
+    }
+
+    // Thông báo cho toàn bộ giao diện cập nhật
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // --- BƯỚC 2: CẬP NHẬT DỮ LIỆU TRÊN FIRESTORE ---
+
+    // Hoàn tiền vào ví trên server
+    final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+    batch.update(walletRef, {'balance': FieldValue.increment(amountToRevert)});
+
+    // Xóa giao dịch điều chỉnh khỏi daily_data
+    final recordDate = DateTime.parse(adjustmentToRemove['date']);
+    final dateKey = DateFormat('yyyy-MM-dd').format(recordDate);
+    final docId = getKey(dateKey);
+    final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(docId);
+
+    // SỬA LỖI Ở ĐÂY: Ghi đè lại toàn bộ danh sách đã được cập nhật ở local
+    // thay vì dùng arrayRemove
+    batch.update(dailyDataRef, {
+      'walletAdjustments': walletAdjustments.value
+    });
+
+    // Nếu có giao dịch gốc, lưu lại danh sách chi phí khác đã được cập nhật
+    if (sourceExpenseId != null) {
+      await ExpenseManager.saveOtherExpenses(this, otherExpenseTransactions.value);
+    }
+
+    try {
+      await batch.commit();
+      print("Đã xóa giao dịch và các dữ liệu liên quan thành công.");
+    } catch (e) {
+      print("Lỗi khi thực thi xóa trên Firestore: $e");
+      // Cân nhắc tải lại dữ liệu từ server nếu có lỗi
+    }
+  }
+
+  void _subscribeToOtherExpenses() {
+    if (!_isFirebaseInitialized || activeUserId == null) return;
+    _cancelOtherExpenseSubscription(); // Hủy listener cũ
+
+    String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
+    String docId = getKey('otherExpenseList_$dateKey');
+
+    _otherExpenseSubscription = FirebaseFirestore.instance
+        .collection('users').doc(activeUserId)
+        .collection('expenses').doc('other')
+        .collection('daily').doc(docId)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.metadata.hasPendingWrites) return;
+
+      if (snapshot.exists && snapshot.data() != null) {
+        var data = snapshot.data()!;
+        otherExpenseTransactions.value = List<Map<String, dynamic>>.from(data['otherExpenses'] ?? []);
+        this.otherExpense = (data['total'] as num?)?.toDouble() ?? 0.0;
+      } else {
+        otherExpenseTransactions.value = [];
+        this.otherExpense = 0.0;
+      }
+      _updateProfitAndRelatedListenables();
+      notifyListeners();
+    }, onError: (error) {
+      print('Error listening to other expenses: $error');
+    });
+  }
+
+  void _cancelOtherExpenseSubscription() {
+    _otherExpenseSubscription?.cancel();
+    _otherExpenseSubscription = null;
   }
 
   // Dán hàm mới này vào trong class AppState của file appstate.docx
@@ -1923,199 +2633,188 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, double>> getExpensesForRange(DateTimeRange range) async {
-    if (!_isFirebaseInitialized) return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'totalExpense': 0.0};
+    if (!_isFirebaseInitialized) return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'otherExpense': 0.0, 'totalExpense': 0.0};
     try {
-      if (activeUserId == null) return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'totalExpense': 0.0};
+      if (activeUserId == null) return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'otherExpense': 0.0, 'totalExpense': 0.0};
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       double fixedExpenseTotal = 0.0;
       double variableExpenseTotal = 0.0;
+      double otherExpenseTotal = 0.0; // <<< THÊM MỚI
       int days = range.end.difference(range.start).inDays + 1;
-
       List<Future<DocumentSnapshot>> fixedFutures = [];
       List<Future<DocumentSnapshot>> variableFutures = [];
+      List<Future<DocumentSnapshot>> otherFutures = []; // <<< THÊM MỚI
 
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
         String fixedKey = getKey('fixedExpenseList_$dateKey');
         String variableKey = getKey('variableTransactionHistory_$dateKey');
+        String otherKey = getKey('otherExpenseList_$dateKey'); // <<< THÊM MỚI
 
-        fixedFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('fixed')
-              .collection('daily')
-              .doc(fixedKey)
-              .get(),
-        );
-        variableFutures.add(
-          firestore
-              .collection('users')
-              .doc(activeUserId)
-              .collection('expenses')
-              .doc('variable')
-              .collection('daily')
-              .doc(variableKey)
-              .get(),
-        );
+        fixedFutures.add(firestore.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get());
+        variableFutures.add(firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get());
+        otherFutures.add(firestore.collection('users').doc(activeUserId).collection('expenses').doc('other').collection('daily').doc(otherKey).get()); // <<< THÊM MỚI
       }
 
       List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
       List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> otherDocs = await Future.wait(otherFutures); // <<< THÊM MỚI
 
       for (int i = 0; i < days; i++) {
         fixedExpenseTotal += fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
         variableExpenseTotal += variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0;
+        otherExpenseTotal += otherDocs[i].exists ? otherDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; // <<< THÊM MỚI
       }
 
       return {
         'fixedExpense': fixedExpenseTotal,
         'variableExpense': variableExpenseTotal,
-        'totalExpense': fixedExpenseTotal + variableExpenseTotal,
+        'otherExpense': otherExpenseTotal, // <<< THÊM MỚI
+        'totalExpense': fixedExpenseTotal + variableExpenseTotal + otherExpenseTotal, // <<< CẬP NHẬT TỔNG
       };
     } catch (e) {
-      return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'totalExpense': 0.0};
+      return {'fixedExpense': 0.0, 'variableExpense': 0.0, 'otherExpense': 0.0, 'totalExpense': 0.0};
     }
   }
 
-  Future<List<CategoryChartData>> getExpenseBreakdown(DateTimeRange range) async {
-    if (!_isFirebaseInitialized || activeUserId == null) return []; //
-
+  Future<List<Map<String, dynamic>>> getExpenseBreakdown(DateTimeRange range) async {
+    if (!_isFirebaseInitialized || activeUserId == null) return [];
     try {
-      final FirebaseFirestore firestore = FirebaseFirestore.instance; //
-      Map<String, double> breakdown = {}; //
-      int days = range.end.difference(range.start).inDays + 1; //
-      List<Future<DocumentSnapshot>> fixedFutures = []; //
-      List<Future<DocumentSnapshot>> variableFutures = []; //
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      List<Map<String, dynamic>> detailedBreakdown = []; // Danh sách kết quả mới
+      int days = range.end.difference(range.start).inDays + 1;
+
+      // Tạo danh sách các future để lấy dữ liệu đồng thời
+      List<Future<DocumentSnapshot>> fixedFutures = [];
+      List<Future<DocumentSnapshot>> variableFutures = [];
+      List<Future<DocumentSnapshot>> otherFutures = [];
 
       for (int i = 0; i < days; i++) {
-        DateTime date = range.start.add(Duration(days: i)); //
-        String dateKey = DateFormat('yyyy-MM-dd').format(date); //
-        String fixedKey = getKey('fixedExpenseList_$dateKey'); //
-        String variableKey = getKey('variableTransactionHistory_$dateKey'); //
-        fixedFutures.add(
-          firestore.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get(), //
-        );
-        variableFutures.add(
-          firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get(), //
-        );
+        DateTime date = range.start.add(Duration(days: i));
+        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        String fixedKey = getKey('fixedExpenseList_$dateKey');
+        String variableKey = getKey('variableTransactionHistory_$dateKey');
+        String otherKey = getKey('otherExpenseList_$dateKey');
+
+        fixedFutures.add(firestore.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get());
+        variableFutures.add(firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get());
+        otherFutures.add(firestore.collection('users').doc(activeUserId).collection('expenses').doc('other').collection('daily').doc(otherKey).get());
       }
 
-      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures); //
-      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures); //
+      // Chờ tất cả các future hoàn thành
+      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
+      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> otherDocs = await Future.wait(otherFutures);
 
-      for (var doc in fixedDocs) {
-        if (doc.exists && doc.data() != null) {
-          final data = doc.data() as Map<String, dynamic>; //
-          if (data.containsKey('fixedExpenses') && data['fixedExpenses'] != null) { //
-            List<dynamic> transactions = data['fixedExpenses'] as List<dynamic>; //
-            for (var item in transactions) {
-              if (item is Map<String, dynamic>) { //
-                String name = item['name']?.toString() ?? 'Không xác định'; //
-                double amount = (item['amount'] as num?)?.toDouble() ?? 0.0; //
-                breakdown[name] = (breakdown[name] ?? 0.0) + amount; //
+      // Hàm helper để xử lý từng loại transaction
+      void processTransactions(List<DocumentSnapshot> docs, String transactionKey, String type) {
+        for (var doc in docs) {
+          if (doc.exists && doc.data() != null) {
+            final data = doc.data() as Map<String, dynamic>;
+            if (data.containsKey(transactionKey) && data[transactionKey] != null) {
+              for (var item in (data[transactionKey] as List<dynamic>)) {
+                if (item is Map<String, dynamic>) {
+                  detailedBreakdown.add({
+                    'name': item['name']?.toString() ?? 'Không xác định',
+                    'amount': (item['amount'] as num?)?.toDouble() ?? 0.0,
+                    'type': type, // Thêm loại chi phí để UI xử lý
+                  });
+                }
               }
             }
           }
         }
       }
 
-      for (var doc in variableDocs) {
-        if (doc.exists && doc.data() != null) {
-          final data = doc.data() as Map<String, dynamic>; //
-          if (data.containsKey('variableExpenses') && data['variableExpenses'] != null) { //
-            List<dynamic> transactions = data['variableExpenses'] as List<dynamic>; //
-            for (var item in transactions) {
-              if (item is Map<String, dynamic>) { //
-                String name = item['name']?.toString() ?? 'Không xác định'; //
-                double amount = (item['amount'] as num?)?.toDouble() ?? 0.0; //
-                breakdown[name] = (breakdown[name] ?? 0.0) + amount; //
-              }
-            }
-          }
-        }
-      }
+      // Xử lý và thêm dữ liệu vào danh sách kết quả
+      processTransactions(fixedDocs, 'fixedExpenses', 'fixed');
+      processTransactions(variableDocs, 'variableExpenses', 'variable');
+      processTransactions(otherDocs, 'otherExpenses', 'other');
 
-      // Phần logic nhóm "Khác" vẫn giữ nguyên
-      Map<String, double> finalBreakdown = {}; //
-      double otherTotal = 0.0; //
-      double total = breakdown.values.fold(0.0, (sum, value) => sum + value); //
-      breakdown.forEach((name, amount) {
-        if (total > 0 && (amount / total) < 0.05) { //
-          otherTotal += amount; //
-        } else {
-          finalBreakdown[name] = amount; //
-        }
-      });
-      if (otherTotal > 0) { //
-        finalBreakdown['Khác'] = otherTotal; //
-      }
-
-      // *** THAY ĐỔI QUAN TRỌNG: Chuyển đổi Map thành List<CategoryChartData> ***
-      final List<CategoryChartData> chartData = finalBreakdown.entries.map((entry) {
-        return CategoryChartData(entry.key, entry.value);
-      }).toList();
-
-      return chartData;
+      return detailedBreakdown;
 
     } catch (e) {
-      print('Error in getExpenseBreakdown: $e'); // In ra lỗi để debug
-      return []; //
+      print('Error in getExpenseBreakdown: $e');
+      return [];
     }
   }
 
   Future<Map<String, List<TimeSeriesChartData>>> getDailyExpensesForRange(DateTimeRange range) async {
-    if (!_isFirebaseInitialized || activeUserId == null) return {}; //
-
+    if (!_isFirebaseInitialized || activeUserId == null) return {};
     try {
-      final FirebaseFirestore firestore = FirebaseFirestore.instance; //
-      int days = range.end.difference(range.start).inDays + 1; //
-      List<Future<DocumentSnapshot>> fixedFutures = []; //
-      List<Future<DocumentSnapshot>> variableFutures = []; //
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      int days = range.end.difference(range.start).inDays + 1;
+      List<Future<DocumentSnapshot>> fixedFutures = [];
+      List<Future<DocumentSnapshot>> variableFutures = [];
+      List<Future<DocumentSnapshot>> otherFutures = [];
 
       for (int i = 0; i < days; i++) {
-        DateTime date = range.start.add(Duration(days: i)); //
-        String dateKey = DateFormat('yyyy-MM-dd').format(date); //
-        String fixedKey = getKey('fixedExpenseList_$dateKey'); //
-        String variableKey = getKey('variableTransactionHistory_$dateKey'); //
+        DateTime date = range.start.add(Duration(days: i));
+        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        String fixedKey = getKey('fixedExpenseList_$dateKey');
+        String variableKey = getKey('variableTransactionHistory_$dateKey');
+        String otherKey = getKey('otherExpenseList_$dateKey');
+
         fixedFutures.add(
-          firestore.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get(), //
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get(),
         );
         variableFutures.add(
-          firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get(), //
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get(),
+        );
+        otherFutures.add(
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('other').collection('daily').doc(otherKey).get(),
         );
       }
 
-      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures); //
-      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures); //
+      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
+      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> otherDocs = await Future.wait(otherFutures);
 
-      // *** THAY ĐỔI QUAN TRỌNG: Chuẩn bị các list cho từng series dữ liệu ***
       List<TimeSeriesChartData> fixedSeries = [];
       List<TimeSeriesChartData> variableSeries = [];
+      List<TimeSeriesChartData> otherSeries = [];
       List<TimeSeriesChartData> totalSeries = [];
+
+      // <<< HÀM HELPER AN TOÀN ĐỂ LẤY DỮ LIỆU >>>
+      double _getSafeTotal(DocumentSnapshot doc) {
+        if (!doc.exists) return 0.0;
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data == null) return 0.0;
+
+        final totalValue = data['total'];
+        // Kiểm tra xem giá trị có phải là một con số không
+        if (totalValue is num) {
+          return totalValue.toDouble();
+        }
+        return 0.0; // Trả về 0 nếu không phải là số
+      }
 
       for (int i = 0; i < days; i++) {
         DateTime currentDate = range.start.add(Duration(days: i));
-        double fixed = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
-        double variable = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
-        double total = fixed + variable;
+
+        // <<< SỬ DỤNG HÀM HELPER ĐỂ LẤY DỮ LIỆU AN TOÀN >>>
+        double fixed = _getSafeTotal(fixedDocs[i]);
+        double variable = _getSafeTotal(variableDocs[i]);
+        double other = _getSafeTotal(otherDocs[i]);
+
+        double total = fixed + variable + other;
 
         fixedSeries.add(TimeSeriesChartData(currentDate, fixed));
         variableSeries.add(TimeSeriesChartData(currentDate, variable));
+        otherSeries.add(TimeSeriesChartData(currentDate, other));
         totalSeries.add(TimeSeriesChartData(currentDate, total));
       }
 
       return {
         'fixed': fixedSeries,
         'variable': variableSeries,
+        'other': otherSeries,
         'total': totalSeries,
       };
-
     } catch (e) {
       print('Error in getDailyExpensesForRange: $e');
-      return {}; //
+      return {};
     }
   }
 
@@ -2123,32 +2822,29 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, double>> getOverviewForRange(DateTimeRange range) async {
     if (!_isFirebaseInitialized) return {'totalRevenue': 0.0, 'totalExpense': 0.0, 'profit': 0.0, 'averageProfitMargin': 0.0, 'avgRevenuePerDay': 0.0, 'avgExpensePerDay': 0.0, 'avgProfitPerDay': 0.0, 'expenseToRevenueRatio': 0.0};
-
     try {
       if (activeUserId == null) {
         print("[BÁO CÁO DEBUG] Lỗi: activeUserId là null.");
         return {'totalRevenue': 0.0, 'totalExpense': 0.0, 'profit': 0.0, 'averageProfitMargin': 0.0, 'avgRevenuePerDay': 0.0, 'avgExpensePerDay': 0.0, 'avgProfitPerDay': 0.0, 'expenseToRevenueRatio': 0.0};
       }
-
       print("[BÁO CÁO DEBUG] Bắt đầu getOverviewForRange cho user: $activeUserId trong khoảng ${range.start} - ${range.end}");
-
       final FirebaseFirestore firestore = FirebaseFirestore.instance;
       double totalRevenue = 0.0;
       double totalExpense = 0.0;
       int days = range.end.difference(range.start).inDays + 1;
-
       List<Future<DocumentSnapshot>> dailyFutures = [];
       List<Future<DocumentSnapshot>> fixedFutures = [];
       List<Future<DocumentSnapshot>> variableFutures = [];
+      List<Future<DocumentSnapshot>> otherFutures = []; // <<< THÊM MỚI
 
       for (int i = 0; i < days; i++) {
         DateTime date = range.start.add(Duration(days: i));
         String dateKey = DateFormat('yyyy-MM-dd').format(date);
-
         // SỬA LẠI CÁCH TẠO DOCUMENT ID ĐỂ TRÁNH DÙNG getKey()
         String dailyDataDocId = '${activeUserId}_$dateKey';
         String fixedExpenseDocId = '${activeUserId}_fixedExpenseList_$dateKey';
         String variableExpenseDocId = '${activeUserId}_variableTransactionHistory_$dateKey';
+        String otherExpenseDocId = '${activeUserId}_otherExpenseList_$dateKey'; // <<< THÊM MỚI
 
         dailyFutures.add(
           firestore.collection('users').doc(activeUserId).collection('daily_data').doc(dailyDataDocId).get(),
@@ -2159,13 +2855,18 @@ class AppState extends ChangeNotifier {
         variableFutures.add(
           firestore.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableExpenseDocId).get(),
         );
+        // <<< THÊM MỚI: Lấy dữ liệu chi phí khác >>>
+        otherFutures.add(
+          firestore.collection('users').doc(activeUserId).collection('expenses').doc('other').collection('daily').doc(otherExpenseDocId).get(),
+        );
       }
 
       List<DocumentSnapshot> dailyDocs = await Future.wait(dailyFutures);
       List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
       List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> otherDocs = await Future.wait(otherFutures); // <<< THÊM MỚI
 
-      print("[BÁO CÁO DEBUG] Đã tải về: ${dailyDocs.where((d) => d.exists).length} daily docs, ${fixedDocs.where((d) => d.exists).length} fixed docs, ${variableDocs.where((d) => d.exists).length} variable docs.");
+      print("[BÁO CÁO DEBUG] Đã tải về: ${dailyDocs.where((d) => d.exists).length} daily docs, ${fixedDocs.where((d) => d.exists).length} fixed docs, ${variableDocs.where((d) => d.exists).length} variable docs, ${otherDocs.where((d) => d.exists).length} other docs.");
 
       for (int i = 0; i < days; i++) {
         if (dailyDocs[i].exists) {
@@ -2174,21 +2875,26 @@ class AppState extends ChangeNotifier {
           totalRevenue += revenue;
           print("[BÁO CÁO DEBUG] Ngày ${i+1}: Doanh thu = $revenue. Tổng doanh thu = $totalRevenue");
         }
-
         double currentDayFixedExpense = 0;
         if (fixedDocs[i].exists) {
           final data = fixedDocs[i].data() as Map<String, dynamic>? ?? {};
           currentDayFixedExpense = (data['total'] as num?)?.toDouble() ?? 0.0;
         }
-
         double currentDayVariableExpense = 0;
         if (variableDocs[i].exists) {
           final data = variableDocs[i].data() as Map<String, dynamic>? ?? {};
           currentDayVariableExpense = (data['total'] as num?)?.toDouble() ?? 0.0;
         }
+        // <<< THÊM MỚI: Lấy tổng chi phí khác trong ngày >>>
+        double currentDayOtherExpense = 0;
+        if (otherDocs[i].exists) {
+          final data = otherDocs[i].data() as Map<String, dynamic>? ?? {};
+          currentDayOtherExpense = (data['total'] as num?)?.toDouble() ?? 0.0;
+        }
 
-        totalExpense += currentDayFixedExpense + currentDayVariableExpense;
-        print("[BÁO CÁO DEBUG] Ngày ${i+1}: Chi phí CĐ = $currentDayFixedExpense, CP BĐ = $currentDayVariableExpense. Tổng chi phí = $totalExpense");
+        // <<< CẬP NHẬT: Cộng cả 3 loại chi phí >>>
+        totalExpense += currentDayFixedExpense + currentDayVariableExpense + currentDayOtherExpense;
+        print("[BÁO CÁO DEBUG] Ngày ${i+1}: Chi phí CĐ = $currentDayFixedExpense, CP BĐ = $currentDayVariableExpense, CP Khác = $currentDayOtherExpense. Tổng chi phí = $totalExpense");
       }
 
       print("[BÁO CÁO DEBUG] Tính toán cuối cùng: TotalRevenue=$totalRevenue, TotalExpense=$totalExpense");
@@ -2201,7 +2907,6 @@ class AppState extends ChangeNotifier {
       double expenseToRevenueRatio = totalRevenue > 0 ? (totalExpense / totalRevenue) * 100 : 0.0;
 
       return {'totalRevenue': totalRevenue, 'totalExpense': totalExpense, 'profit': profit, 'averageProfitMargin': averageProfitMargin, 'avgRevenuePerDay': avgRevenuePerDay, 'avgExpensePerDay': avgExpensePerDay, 'avgProfitPerDay': avgProfitPerDay, 'expenseToRevenueRatio': expenseToRevenueRatio};
-
     } catch (e) {
       print("[BÁO CÁO DEBUG] Lỗi nghiêm trọng trong getOverviewForRange: $e");
       return {'totalRevenue': 0.0, 'totalExpense': 0.0, 'profit': 0.0, 'averageProfitMargin': 0.0, 'avgRevenuePerDay': 0.0, 'avgExpensePerDay': 0.0, 'avgProfitPerDay': 0.0, 'expenseToRevenueRatio': 0.0};
@@ -2271,6 +2976,378 @@ class AppState extends ChangeNotifier {
     return productProfitability;
   }
 
+  // THÊM 3 HÀM MỚI NÀY VÀO TRONG CLASS APPSTATE
+
+  Future<void> addOtherExpenseAndUpdateState({
+    required Map<String, dynamic> newExpense,
+  }) async {
+    if (activeUserId == null) return;
+
+    final isCashSpent = newExpense['walletId'] != null;
+    final walletId = newExpense['walletId'] as String?;
+    final amount = (newExpense['amount'] as num?)?.toDouble() ?? 0.0;
+
+    // 1. Cập nhật trạng thái local
+    otherExpenseTransactions.value.insert(0, newExpense);
+    otherExpenseTransactions.value = List.from(otherExpenseTransactions.value);
+
+    Map<String, dynamic>? adjustmentTransaction; // Khai báo ở đây
+
+    if (isCashSpent && walletId != null) {
+      // TẠO GIAO DỊCH ĐIỀU CHỈNH VÍ VỚI LIÊN KẾT
+      adjustmentTransaction = {
+        'id': Uuid().v4(),
+        'name': 'Thanh toán: ${newExpense['name']}',
+        'category': 'Điều chỉnh Ví',
+        'walletId': walletId,
+        'total': -amount,
+        'date': DateTime.now().toIso8601String(),
+        'createdBy': authUserId,
+        'sourceExpenseId': newExpense['id'], // <-- LIÊN KẾT QUAN TRỌNG
+      };
+      walletAdjustments.value.add(adjustmentTransaction);
+      walletAdjustments.value = List.from(walletAdjustments.value);
+
+      // Cập nhật số dư ví local
+      final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (walletIndex != -1) {
+        final wallet = wallets.value[walletIndex];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        updatedWallet['balance'] = currentBalance - amount;
+
+        final updatedList = List<Map<String, dynamic>>.from(wallets.value);
+        updatedList[walletIndex] = updatedWallet;
+        wallets.value = updatedList;
+      }
+    }
+
+    // 2. Tính toán lại tổng và thông báo cho UI
+    this.otherExpense = otherExpenseTransactions.value.fold(0.0, (sum, e) => sum + ((e['amount'] as num?)?.toDouble() ?? 0.0));
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // 3. Lưu lên Firestore
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    // Lưu danh sách chi phí khác
+    await ExpenseManager.saveOtherExpenses(this, otherExpenseTransactions.value);
+
+    // Nếu có thực chi, cập nhật ví và thêm giao dịch điều chỉnh
+    if (isCashSpent && walletId != null && adjustmentTransaction != null) {
+      final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+      batch.update(walletRef, {'balance': FieldValue.increment(-amount)});
+
+      final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final docId = getKey(dateKey);
+      final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(docId);
+      batch.set(dailyDataRef,
+          {'walletAdjustments': FieldValue.arrayUnion([adjustmentTransaction])},
+          SetOptions(merge: true)
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> editOtherExpenseAndUpdateState({
+    required Map<String, dynamic> updatedExpense,
+    required Map<String, dynamic> originalExpense,
+  }) async {
+    if (activeUserId == null) return;
+
+    final expenseId = originalExpense['id'] as String?;
+    if (expenseId == null) return;
+
+    final originalAmount = (originalExpense['amount'] as num?)?.toDouble() ?? 0.0;
+    final newAmount = (updatedExpense['amount'] as num?)?.toDouble() ?? 0.0;
+    final delta = newAmount - originalAmount; // Chênh lệch số tiền
+    final walletId = originalExpense['walletId'] as String?;
+
+    // --- BƯỚC 1: CẬP NHẬT TRẠNG THÁI LOCAL ---
+
+    // 1a. Cập nhật danh sách chi phí gốc
+    final expenseIndex = otherExpenseTransactions.value.indexWhere((e) => e['id'] == expenseId);
+    if (expenseIndex != -1) {
+      otherExpenseTransactions.value[expenseIndex] = updatedExpense;
+      otherExpenseTransactions.value = List.from(otherExpenseTransactions.value);
+    }
+
+    // 1b. Cập nhật giao dịch trong lịch sử ví và số dư ví (nếu có)
+    if (walletId != null) {
+      final adjIndex = walletAdjustments.value.indexWhere((adj) => adj['sourceExpenseId'] == expenseId);
+      if (adjIndex != -1) {
+        // Cập nhật tên và số tiền của giao dịch trong lịch sử ví
+        final updatedAdjustment = Map<String, dynamic>.from(walletAdjustments.value[adjIndex]);
+        updatedAdjustment['name'] = 'Thanh toán: ${updatedExpense['name']}';
+        updatedAdjustment['total'] = -newAmount; // Cập nhật số tiền mới (luôn là số âm)
+
+        final updatedAdjList = List<Map<String, dynamic>>.from(walletAdjustments.value);
+        updatedAdjList[adjIndex] = updatedAdjustment;
+        walletAdjustments.value = updatedAdjList;
+      }
+
+      // Điều chỉnh lại số dư ví local
+      final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (walletIndex != -1) {
+        final wallet = wallets.value[walletIndex];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        // Hoàn lại tiền cũ và trừ đi tiền mới => tương đương trừ đi khoản chênh lệch
+        updatedWallet['balance'] = currentBalance - delta;
+
+        final updatedList = List<Map<String, dynamic>>.from(wallets.value);
+        updatedList[walletIndex] = updatedWallet;
+        wallets.value = updatedList;
+      }
+    }
+
+    // 1c. Tính toán lại tổng và thông báo UI
+    this.otherExpense = otherExpenseTransactions.value.fold(0.0, (sum, e) => sum + ((e['amount'] as num?)?.toDouble() ?? 0.0));
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // --- BƯỚC 2: CẬP NHẬT DỮ LIỆU TRÊN FIRESTORE ---
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    // 2a. Lưu lại toàn bộ danh sách chi phí khác đã được cập nhật
+    await ExpenseManager.saveOtherExpenses(this, otherExpenseTransactions.value);
+
+    // 2b. Cập nhật ví và lịch sử ví trên server
+    if (walletId != null) {
+      // Điều chỉnh số dư ví trên server
+      if (delta != 0) {
+        final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+        batch.update(walletRef, {'balance': FieldValue.increment(-delta)});
+      }
+
+      // Cập nhật lại danh sách điều chỉnh trên server
+      final recordDate = DateTime.parse(updatedExpense['date']);
+      final dateKey = DateFormat('yyyy-MM-dd').format(recordDate);
+      final docId = getKey(dateKey);
+      final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(docId);
+      batch.update(dailyDataRef, {'walletAdjustments': walletAdjustments.value});
+    }
+
+    await batch.commit();
+  }
+
+  Future<Map<String, dynamic>> getCashFlowDetailsForRange(DateTimeRange range) async {
+    if (activeUserId == null) return {'totalCashIn': 0.0, 'totalCashOut': 0.0, 'netCashFlow': 0.0};
+
+    final firestore = FirebaseFirestore.instance;
+    double totalCashIn = 0.0;
+    double totalCashOut = 0.0;
+
+    try {
+      final String startKey = getKey(DateFormat('yyyy-MM-dd').format(range.start));
+      final String endKey = getKey(DateFormat('yyyy-MM-dd').format(range.end));
+
+      final querySnapshot = await firestore
+          .collection('users')
+          .doc(activeUserId)
+          .collection('daily_data')
+          .where(FieldPath.documentId, isGreaterThanOrEqualTo: startKey)
+          .where(FieldPath.documentId, isLessThanOrEqualTo: endKey)
+          .get();
+
+      for (var doc in querySnapshot.docs) {
+        final data = doc.data();
+        if (data == null) continue;
+
+        final allTransactions = [
+          ...(data['mainRevenueTransactions'] as List? ?? []),
+          ...(data['secondaryRevenueTransactions'] as List? ?? []),
+          ...(data['otherRevenueTransactions'] as List? ?? []),
+          ...(data['walletAdjustments'] as List? ?? []),
+        ];
+
+        for (var tx in allTransactions) {
+          if (tx is Map<String, dynamic>) {
+            final bool isRevenue = tx['category'] != 'Điều chỉnh Ví';
+            // Lấy giá trị 'total' một cách an toàn
+            final double totalAmount = (tx['total'] as num?)?.toDouble() ?? 0.0;
+
+            // A. XỬ LÝ DÒNG TIỀN VÀO (CASH IN)
+            if (isRevenue && tx['paymentStatus'] == 'paid') {
+              totalCashIn += totalAmount;
+            }
+            // SỬA LỖI Ở ĐÂY: Sử dụng biến trung gian `totalAmount`
+            else if (!isRevenue && totalAmount > 0) {
+              totalCashIn += totalAmount;
+            }
+
+            // B. XỬ LÝ DÒNG TIỀN RA (CASH OUT)
+            // SỬA LỖI Ở ĐÂY: Sử dụng biến trung gian `totalAmount`
+            else if (!isRevenue && totalAmount < 0) {
+              totalCashOut += totalAmount.abs();
+            }
+          }
+        }
+      }
+      return {
+        'totalCashIn': totalCashIn,
+        'totalCashOut': totalCashOut,
+        'netCashFlow': totalCashIn - totalCashOut,
+      };
+    } catch (e) {
+      print("Lỗi khi tính toán dòng tiền: $e");
+      return {'totalCashIn': 0.0, 'totalCashOut': 0.0, 'netCashFlow': 0.0};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getScheduledFuturePayments(DateTimeRange forecastRange) async {
+    if (activeUserId == null) return [];
+    final firestore = FirebaseFirestore.instance;
+    List<Map<String, dynamic>> futurePayments = [];
+
+    try {
+      final querySnapshot = await firestore
+          .collection('scheduledFixedPayments') // Giả định bạn có collection này dựa trên logic của manage_fixed_expense_rules_screen
+          .where('userId', isEqualTo: activeUserId)
+          .where('status', isEqualTo: 'scheduled')
+          .where('paymentDate', isGreaterThanOrEqualTo: Timestamp.fromDate(forecastRange.start))
+          .where('paymentDate', isLessThanOrEqualTo: Timestamp.fromDate(forecastRange.end))
+          .get();
+
+      for (var doc in querySnapshot.docs) {
+        futurePayments.add(doc.data());
+      }
+      return futurePayments;
+    } catch (e) {
+      print("Lỗi khi tải các khoản thanh toán tương lai: $e");
+      return [];
+    }
+  }
+
+
+  Future<void> removeOtherExpenseAndUpdateState({
+    required Map<String, dynamic> expenseToRemove,
+  }) async {
+    if (activeUserId == null) return;
+
+    final expenseId = expenseToRemove['id'] as String?;
+    final walletId = expenseToRemove['walletId'] as String?;
+    final amountToRevert = (expenseToRemove['amount'] as num?)?.toDouble() ?? 0.0;
+
+    // 1. Cập nhật trạng thái local
+    // Xóa chi phí gốc
+    otherExpenseTransactions.value.removeWhere((e) => e['id'] == expenseId);
+    otherExpenseTransactions.value = List.from(otherExpenseTransactions.value);
+
+    // Nếu có, xóa cả giao dịch thanh toán trong lịch sử ví
+    if (walletId != null) {
+      walletAdjustments.value.removeWhere((adj) => adj['sourceExpenseId'] == expenseId);
+      walletAdjustments.value = List.from(walletAdjustments.value);
+
+      // Hoàn tiền vào ví local
+      final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (walletIndex != -1) {
+        final wallet = wallets.value[walletIndex];
+        final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+        final updatedWallet = Map<String, dynamic>.from(wallet);
+        updatedWallet['balance'] = currentBalance + amountToRevert;
+
+        final updatedList = List<Map<String, dynamic>>.from(wallets.value);
+        updatedList[walletIndex] = updatedWallet;
+        wallets.value = updatedList;
+      }
+    }
+
+    // 2. Tính toán lại tổng và thông báo UI
+    this.otherExpense = otherExpenseTransactions.value.fold(0.0, (sum, e) => sum + ((e['amount'] as num?)?.toDouble() ?? 0.0));
+    _updateProfitAndRelatedListenables();
+    notifyListeners();
+
+    // 3. Lưu lên Firestore
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    // Lưu lại danh sách chi phí khác đã được cập nhật
+    await ExpenseManager.saveOtherExpenses(this, otherExpenseTransactions.value);
+
+    if (walletId != null) {
+      // Hoàn tiền vào ví trên server
+      final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+      batch.update(walletRef, {'balance': FieldValue.increment(amountToRevert)});
+
+      // Cập nhật lại danh sách điều chỉnh ví trên server
+      final recordDate = DateTime.parse(expenseToRemove['date']); // Giả định ngày của chi phí và thanh toán là gần nhau
+      final dateKey = DateFormat('yyyy-MM-dd').format(recordDate);
+      final docId = getKey(dateKey);
+      final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(docId);
+      batch.update(dailyDataRef, {'walletAdjustments': walletAdjustments.value});
+    }
+    await batch.commit();
+  }
+
+  Future<void> payForOtherExpense({
+    required Map<String, dynamic> expenseToPay,
+    required String walletId,
+  }) async {
+    if (activeUserId == null) return;
+
+    final expenseId = expenseToPay['id'] as String?;
+    final amount = (expenseToPay['amount'] as num?)?.toDouble() ?? 0.0;
+
+    // 1. Cập nhật trạng thái local
+    // Cập nhật chi phí gốc
+    final expenseIndex = otherExpenseTransactions.value.indexWhere((e) => e['id'] == expenseId);
+    if (expenseIndex != -1) {
+      otherExpenseTransactions.value[expenseIndex]['walletId'] = walletId;
+      otherExpenseTransactions.value = List.from(otherExpenseTransactions.value);
+    }
+
+    // Tạo giao dịch thanh toán mới
+    final adjustmentTransaction = {
+      'id': Uuid().v4(),
+      'name': 'Thanh toán: ${expenseToPay['name']}',
+      'category': 'Điều chỉnh Ví',
+      'walletId': walletId,
+      'total': -amount,
+      'date': DateTime.now().toIso8601String(),
+      'createdBy': authUserId,
+      'sourceExpenseId': expenseId,
+    };
+    walletAdjustments.value.add(adjustmentTransaction);
+    walletAdjustments.value = List.from(walletAdjustments.value);
+
+    // Trừ tiền trong ví local
+    final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+    if (walletIndex != -1) {
+      final wallet = wallets.value[walletIndex];
+      final currentBalance = (wallet['balance'] as num?)?.toDouble() ?? 0.0;
+      final updatedWallet = Map<String, dynamic>.from(wallet);
+      updatedWallet['balance'] = currentBalance - amount;
+
+      final updatedList = List<Map<String, dynamic>>.from(wallets.value);
+      updatedList[walletIndex] = updatedWallet;
+      wallets.value = updatedList;
+    }
+    notifyListeners();
+
+    // 2. Lưu lên Firestore
+    final firestore = FirebaseFirestore.instance;
+    final batch = firestore.batch();
+
+    await ExpenseManager.saveOtherExpenses(this, otherExpenseTransactions.value);
+
+    final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+    batch.update(walletRef, {'balance': FieldValue.increment(-amount)});
+
+    final dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final docId = getKey(dateKey);
+    final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(docId);
+    batch.set(dailyDataRef,
+        {'walletAdjustments': FieldValue.arrayUnion([adjustmentTransaction])},
+        SetOptions(merge: true)
+    );
+
+    await batch.commit();
+  }
+
   Future<Map<String, Map<String, double>>> getTopProductsByCategory(DateTimeRange range) async {
     if (!_isFirebaseInitialized) {
       return {
@@ -2330,41 +3407,64 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, List<TimeSeriesChartData>>> getDailyOverviewForRange(DateTimeRange range) async {
-    if (!_isFirebaseInitialized || activeUserId == null) return {}; //
+    if (!_isFirebaseInitialized || activeUserId == null) return {};
 
     List<TimeSeriesChartData> revenueSeries = [];
     List<TimeSeriesChartData> expenseSeries = [];
     List<TimeSeriesChartData> profitSeries = [];
 
     try {
-      int days = range.end.difference(range.start).inDays + 1; //
-      List<Future<DocumentSnapshot>> dailyFutures = []; //
-      List<Future<DocumentSnapshot>> fixedFutures = []; //
-      List<Future<DocumentSnapshot>> variableFutures = []; //
+      int days = range.end.difference(range.start).inDays + 1;
+      List<Future<DocumentSnapshot>> dailyFutures = [];
+      List<Future<DocumentSnapshot>> fixedFutures = [];
+      List<Future<DocumentSnapshot>> variableFutures = [];
+      List<Future<DocumentSnapshot>> otherFutures = [];
 
       for (int i = 0; i < days; i++) {
-        DateTime date = range.start.add(Duration(days: i)); //
-        String dateKey = DateFormat('yyyy-MM-dd').format(date); //
-        String key = getKey(dateKey); //
-        String fixedKey = getKey('fixedExpenseList_$dateKey'); //
-        String variableKey = getKey('variableTransactionHistory_$dateKey'); //
+        DateTime date = range.start.add(Duration(days: i));
+        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        String key = getKey(dateKey);
+        String fixedKey = getKey('fixedExpenseList_$dateKey');
+        String variableKey = getKey('variableTransactionHistory_$dateKey');
+        String otherKey = getKey('otherExpenseList_$dateKey');
 
-        dailyFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('daily_data').doc(key).get()); //
-        fixedFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get()); //
-        variableFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get()); //
+        dailyFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('daily_data').doc(key).get());
+        fixedFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('expenses').doc('fixed').collection('daily').doc(fixedKey).get());
+        variableFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('expenses').doc('variable').collection('daily').doc(variableKey).get());
+        otherFutures.add(FirebaseFirestore.instance.collection('users').doc(activeUserId).collection('expenses').doc('other').collection('daily').doc(otherKey).get());
       }
 
-      List<DocumentSnapshot> dailyDocs = await Future.wait(dailyFutures); //
-      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures); //
-      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures); //
+      List<DocumentSnapshot> dailyDocs = await Future.wait(dailyFutures);
+      List<DocumentSnapshot> fixedDocs = await Future.wait(fixedFutures);
+      List<DocumentSnapshot> variableDocs = await Future.wait(variableFutures);
+      List<DocumentSnapshot> otherDocs = await Future.wait(otherFutures);
+
+      // Hàm helper an toàn để lấy giá trị từ một document
+      double _getSafeValue(DocumentSnapshot doc, String fieldName) {
+        if (!doc.exists) return 0.0;
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data == null) return 0.0;
+
+        final value = data[fieldName];
+        // Kiểm tra xem giá trị có phải là một con số không
+        if (value is num) {
+          return value.toDouble();
+        }
+        // Trả về 0 nếu không phải là số (ví dụ: là List, String hoặc null)
+        return 0.0;
+      }
 
       for (int i = 0; i < days; i++) {
         DateTime currentDate = range.start.add(Duration(days: i));
-        double totalRevenue = dailyDocs[i].exists ? dailyDocs[i]['totalRevenue']?.toDouble() ?? 0.0 : 0.0; //
-        double fixedExpense = fixedDocs[i].exists ? fixedDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
-        double variableExpense = variableDocs[i].exists ? variableDocs[i]['total']?.toDouble() ?? 0.0 : 0.0; //
-        double totalExpense = fixedExpense + variableExpense; //
-        double profit = totalRevenue - totalExpense; //
+
+        // <<< SỬ DỤNG HÀM HELPER ĐỂ LẤY DỮ LIỆU AN TOÀN >>>
+        double totalRevenue = _getSafeValue(dailyDocs[i], 'totalRevenue');
+        double fixedExpense = _getSafeValue(fixedDocs[i], 'total');
+        double variableExpense = _getSafeValue(variableDocs[i], 'total');
+        double otherExpense = _getSafeValue(otherDocs[i], 'total');
+
+        double totalExpense = fixedExpense + variableExpense + otherExpense;
+        double profit = totalRevenue - totalExpense;
 
         revenueSeries.add(TimeSeriesChartData(currentDate, totalRevenue));
         expenseSeries.add(TimeSeriesChartData(currentDate, totalExpense));
@@ -2378,7 +3478,7 @@ class AppState extends ChangeNotifier {
       };
     } catch (e) {
       print('Error in getDailyOverviewForRange: $e');
-      return {}; //
+      return {};
     }
   }
 
@@ -2507,12 +3607,12 @@ class AppState extends ChangeNotifier {
     return mainRevenue + secondaryRevenue + otherRevenue;
   }
 
-  double getTotalFixedAndVariableExpense() {
-    return _fixedExpense + variableExpense;
+  double getTotalExpense() {
+    return _fixedExpense + variableExpense + otherExpense;
   }
 
   double getProfit() {
-    return getTotalRevenue() - getTotalFixedAndVariableExpense();
+    return getTotalRevenue() - getTotalExpense();
   }
 
   double getProfitMargin() {
@@ -2539,6 +3639,7 @@ class AppState extends ChangeNotifier {
     secondaryRevenueTransactions.dispose();
     otherRevenueTransactions.dispose();
     productsUpdated.dispose();
+    wallets.dispose();
     _cancelRevenueSubscription();
     _cancelFixedExpenseSubscription();
     _cancelVariableExpenseSubscription();
@@ -2546,6 +3647,7 @@ class AppState extends ChangeNotifier {
     _cancelProductsSubscription();
     _cancelVariableExpenseListSubscription();
     _cancelPermissionSubscription();
+    _cancelWalletsSubscription();
     permissionVersion.dispose();
     super.dispose();
   }
