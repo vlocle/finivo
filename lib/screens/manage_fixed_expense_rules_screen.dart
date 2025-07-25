@@ -385,7 +385,15 @@ class _ManageFixedExpenseRulesScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Quản lý Chi phí Cố định", style: GoogleFonts.poppins()),
+        // Cập nhật lại style của Text widget
+        title: Text(
+          "Quản lý Chi phí Cố định",
+          style: GoogleFonts.poppins(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
         backgroundColor: AppColors.chartRed,
       ),
       body: _isLoading

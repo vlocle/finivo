@@ -23,9 +23,6 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
   late AppState _appState;
   bool _isLoading = true;
 
-  bool _isCashSpent = true;
-  String? _selectedWalletId;
-
   @override
   void initState() {
     super.initState();
@@ -49,7 +46,8 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
     super.dispose();
   }
 
-  void _addExpense() {
+  // CẬP NHẬT: Hàm này giờ nhận tham số từ widget con
+  void _addExpense(bool isCashSpent, String? selectedWalletId) {
     final name = _nameController.text.trim();
     final amount = double.tryParse(_amountController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
 
@@ -57,7 +55,8 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
       _showStyledSnackBar("Vui lòng nhập đầy đủ tên và số tiền hợp lệ.", isError: true);
       return;
     }
-    if (_isCashSpent && _selectedWalletId == null) {
+
+    if (isCashSpent && selectedWalletId == null) {
       _showStyledSnackBar("Vui lòng chọn ví để thực chi.", isError: true);
       return;
     }
@@ -68,7 +67,7 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
       'amount': amount,
       'date': DateTime.now().toIso8601String(),
       'createdBy': _appState.authUserId,
-      'walletId': _isCashSpent ? _selectedWalletId : null,
+      'walletId': isCashSpent ? selectedWalletId : null,
       'category': 'Chi phí khác',
     };
 
@@ -124,14 +123,12 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
             onPressed: () {
               final newAmount = double.tryParse(editAmountController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
               final newName = editNameController.text.trim();
-
               if (newAmount > 0 && newName.isNotEmpty) {
                 final updatedExpense = {
                   ...originalExpense,
                   'name': newName,
                   'amount': newAmount,
                 };
-
                 _appState.editOtherExpenseAndUpdateState(
                   originalExpense: originalExpense,
                   updatedExpense: updatedExpense,
@@ -213,6 +210,17 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
     );
   }
 
+  void _showStyledSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.poppins()),
+        backgroundColor: isError ? Colors.redAccent : Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -234,7 +242,14 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildInputCard(),
+              // CẬP NHẬT: Sử dụng widget input mới
+              ExpenseInputSection(
+                nameController: _nameController,
+                amountController: _amountController,
+                onAddExpense: _addExpense,
+                appState: _appState,
+                inputPriceFormatter: _inputPriceFormatter,
+              ),
               const SizedBox(height: 24),
               Text(
                 "Các khoản đã thêm trong ngày",
@@ -244,103 +259,6 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
               _buildExpenseList(),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: InputDecoration(labelText: "Tên khoản chi", border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _amountController,
-              decoration: InputDecoration(labelText: "Số tiền (VNĐ)", border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                TextInputFormatter.withFunction((oldValue, newValue) {
-                  if (newValue.text.isEmpty) return newValue.copyWith(text: '0');
-                  final number = int.tryParse(newValue.text.replaceAll('.', ''));
-                  if (number == null) return oldValue;
-                  final formattedText = _inputPriceFormatter.format(number);
-                  return newValue.copyWith(
-                    text: formattedText,
-                    selection: TextSelection.collapsed(offset: formattedText.length),
-                  );
-                }),
-              ],
-            ),
-            const SizedBox(height: 10),
-            SwitchListTile(
-              title: Text("Thực chi từ ví?", style: GoogleFonts.poppins()),
-              value: _isCashSpent,
-              onChanged: (value) {
-                setState(() {
-                  _isCashSpent = value;
-                });
-              },
-              activeColor: AppColors.chartRed,
-            ),
-            if (_isCashSpent)
-              ValueListenableBuilder<List<Map<String, dynamic>>>(
-                valueListenable: _appState.wallets,
-                builder: (context, walletList, child) {
-                  if (walletList.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text("Chưa có ví tiền nào được tạo."),
-                    );
-                  }
-                  if (_selectedWalletId == null || !walletList.any((w) => w['id'] == _selectedWalletId)) {
-                    _selectedWalletId = _appState.defaultWallet?['id'] ?? walletList.first['id'];
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedWalletId,
-                      items: walletList.map((wallet) {
-                        return DropdownMenuItem<String>(
-                          value: wallet['id'],
-                          child: Text(wallet['isDefault'] == true ? "${wallet['name']} (Mặc định)" : wallet['name']),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedWalletId = newValue;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Chọn ví chi tiền',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: _addExpense,
-              icon: Icon(Icons.add),
-              label: Text("Thêm chi phí"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.chartRed,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            )
-          ],
         ),
       ),
     );
@@ -396,14 +314,190 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
       },
     );
   }
+}
 
-  void _showStyledSnackBar(String message, {bool isError = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.poppins()),
-        backgroundColor: isError ? Colors.redAccent : Colors.green,
-        behavior: SnackBarBehavior.floating,
+// =======================================================================
+// WIDGET MỚI: Giao diện nhập liệu được thiết kế lại
+// =======================================================================
+class ExpenseInputSection extends StatefulWidget {
+  final TextEditingController amountController;
+  final TextEditingController nameController;
+  final Function(bool isCashSpent, String? walletId) onAddExpense;
+  final AppState appState;
+  final NumberFormat inputPriceFormatter;
+
+  const ExpenseInputSection({
+    required this.amountController,
+    required this.nameController,
+    required this.onAddExpense,
+    required this.appState,
+    required this.inputPriceFormatter,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<ExpenseInputSection> createState() => _ExpenseInputSectionState();
+}
+
+class _ExpenseInputSectionState extends State<ExpenseInputSection> {
+  bool _isCashSpent = true;
+  String? _selectedWalletId;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: AppColors.getCardColor(context),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Thêm chi phí mới",
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppColors.chartRed,
+              ),
+            ),
+            const SizedBox(height: 24),
+            _buildInputTextField(
+              context: context,
+              controller: widget.nameController,
+              labelText: 'Tên khoản chi',
+              prefixIconData: Icons.description_outlined,
+              maxLength: 100,
+            ),
+            const SizedBox(height: 16),
+            _buildInputTextField(
+              context: context,
+              controller: widget.amountController,
+              labelText: 'Số tiền',
+              prefixIconData: Icons.monetization_on_outlined,
+              keyboardType: TextInputType.numberWithOptions(decimal: false),
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                TextInputFormatter.withFunction(
+                      (oldValue, newValue) {
+                    if (newValue.text.isEmpty) return newValue;
+                    final number = int.tryParse(newValue.text.replaceAll('.', '').replaceAll(',', ''));
+                    if (number == null) return oldValue;
+                    final formattedText = widget.inputPriceFormatter.format(number);
+                    return newValue.copyWith(
+                      text: formattedText,
+                      selection: TextSelection.collapsed(offset: formattedText.length),
+                    );
+                  },
+                ),
+              ],
+              maxLength: 15,
+            ),
+            const SizedBox(height: 20),
+            SwitchListTile.adaptive(
+              title: Text("Thực chi từ ví?", style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context), fontWeight: FontWeight.w500)),
+              value: _isCashSpent,
+              onChanged: (bool value) {
+                setState(() {
+                  _isCashSpent = value;
+                  if (!value) {
+                    _selectedWalletId = null;
+                  }
+                });
+              },
+              activeColor: AppColors.chartRed,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_isCashSpent)
+              ValueListenableBuilder<List<Map<String, dynamic>>>(
+                valueListenable: widget.appState.wallets,
+                builder: (context, walletList, child) {
+                  if (walletList.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text("Chưa có ví tiền nào được tạo.", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context))),
+                    );
+                  }
+                  final defaultWallet = widget.appState.defaultWallet;
+                  if (_selectedWalletId == null || !walletList.any((w) => w['id'] == _selectedWalletId)) {
+                    _selectedWalletId = defaultWallet != null ? defaultWallet['id'] : walletList.first['id'];
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 16.0),
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedWalletId,
+                      items: walletList.map((wallet) {
+                        return DropdownMenuItem<String>(
+                          value: wallet['id'],
+                          child: Text(wallet['isDefault'] == true ? "${wallet['name']} (Mặc định)" : wallet['name'], overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedWalletId = newValue;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Chọn ví chi tiền',
+                        prefixIcon: Icon(Icons.account_balance_wallet_outlined, color: AppColors.chartRed),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            const SizedBox(height: 28),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.chartRed,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                minimumSize: Size(screenWidth, 52),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                elevation: 2,
+              ),
+              onPressed: () => widget.onAddExpense(_isCashSpent, _selectedWalletId),
+              child: Text(
+                "Thêm chi phí",
+                style: GoogleFonts.poppins(fontSize: 16.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputTextField({
+    required BuildContext context,
+    required TextEditingController controller,
+    required String labelText,
+    TextInputType keyboardType = TextInputType.text,
+    List<TextInputFormatter>? inputFormatters,
+    int? maxLength,
+    int maxLines = 1,
+    IconData? prefixIconData,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      maxLength: maxLength,
+      maxLines: maxLines,
+      style: GoogleFonts.poppins(color: AppColors.getTextColor(context), fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        labelText: labelText,
+        labelStyle: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+        prefixIcon: prefixIconData != null ? Icon(prefixIconData, color: AppColors.chartRed, size: 22) : null,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.chartRed, width: 1.5)),
+        filled: true,
+        fillColor: AppColors.getBackgroundColor(context).withOpacity(0.5),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        counterText: "",
       ),
     );
   }

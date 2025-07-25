@@ -102,6 +102,7 @@ class _WalletManagementScreenState extends State<WalletManagementScreen> {
                 TextField(
                   controller: nameController,
                   decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.account_balance_wallet_outlined), // <--- MỚI: Thêm icon
                       labelText: 'Tên ví (VD: Tiền mặt, VCB)',
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12))),
@@ -109,8 +110,8 @@ class _WalletManagementScreenState extends State<WalletManagementScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: balanceController,
-                  enabled: true, // <-- THAY ĐỔI: Luôn cho phép chỉnh sửa
                   decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.monetization_on_outlined), // <--- MỚI: Thêm icon
                     labelText: isEditing ? 'Số dư hiện tại' : 'Số dư ban đầu',
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12)),
@@ -143,53 +144,67 @@ class _WalletManagementScreenState extends State<WalletManagementScreen> {
                     });
                   },
                   decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.category_outlined), // <--- MỚI: Thêm icon
                     labelText: 'Loại ví',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                SwitchListTile(
-                  title: const Text('Đặt làm mặc định'),
-                  value: isDefault,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      isDefault = value;
-                    });
-                  },
-                  activeColor: AppColors.primaryBlue,
+                const SizedBox(height: 10),
+
+                // <--- THAY ĐỔI LỚN: Sử dụng Row thay cho SwitchListTile
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Đặt làm mặc định',
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                    Switch(
+                      value: isDefault,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          isDefault = value;
+                        });
+                      },
+                      activeColor: AppColors.primaryBlue, // Đặt màu chủ đạo cho Switch
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Hủy')),
+              onPressed: () => Navigator.pop(dialogContext),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey.shade700,
+              ),
+              child: const Text('Hủy'),
+            ),
             ElevatedButton(
+              // <--- MỚI: Style cho nút Lưu để có màu xanh chủ đạo
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryBlue, // Sử dụng màu chủ đạo
+                foregroundColor: Colors.white, // Màu chữ là màu trắng
+              ),
               onPressed: () {
                 final name = nameController.text.trim();
                 if (name.isEmpty) {
                   _showStyledSnackBar('Tên ví không được để trống!', isError: true);
                   return;
                 }
-
                 final double newBalance = double.tryParse(balanceController.text.replaceAll('.', '')) ?? 0.0;
                 final double delta = newBalance - originalBalance;
-
-                // Dữ liệu chính của ví để lưu
                 final walletData = {
                   'id': isEditing ? existingWallet['id'] : Uuid().v4(),
                   'name': name,
-                  'balance': newBalance, // Luôn cập nhật số dư mới
+                  'balance': newBalance,
                   'type': walletType,
                   'isDefault': isDefault,
                   'createdAt': isEditing ? existingWallet['createdAt'] : Timestamp.now(),
                   'ownerId': appState.activeUserId,
                 };
-
-                // Gọi hàm cập nhật/thêm ví
                 appState.saveOrUpdateWallet(walletData);
-
-                // Nếu là chỉnh sửa và có chênh lệch số dư, tạo giao dịch điều chỉnh
                 if (isEditing && delta != 0) {
                   appState.createWalletBalanceAdjustment(
                     walletId: existingWallet['id'],
@@ -197,7 +212,6 @@ class _WalletManagementScreenState extends State<WalletManagementScreen> {
                     delta: delta,
                   );
                 }
-
                 Navigator.pop(dialogContext);
               },
               child: const Text('Lưu'),

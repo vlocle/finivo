@@ -1294,9 +1294,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                 ),
                 SizedBox(height: 4),
                 ValueListenableBuilder<List<Map<String, dynamic>>>(
-                  valueListenable: selectedExpenseCategory == 'Chi phí cố định'
-                      ? appState.fixedExpenseList // Ensure this is the list of fixed expense *items*
-                      : appState.variableExpenseList, // Ensure this is the list of variable expense *items*
+                  valueListenable: _getExpenseListenable(appState), // <-- SỬA Ở ĐÂY
                   builder: (context, expenses, _) => Text(
                     'Tổng mục: ${currencyFormat.format(_calculateTotal(expenses))}',
                     style: TextStyle(
