@@ -421,6 +421,73 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
     });
   }
 
+  void _showPayExpenseDialog(BuildContext context, AppState appState, Map<String, dynamic> expense) {
+    String? selectedWalletId;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            title: Text('Xác nhận Thực chi', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Chi phí: "${expense['name']}"'),
+                const SizedBox(height: 4),
+                Text('Số tiền: ${currencyFormat.format(expense['amount'] ?? 0.0)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: AppColors.chartRed)),
+                const SizedBox(height: 20),
+                ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: appState.wallets,
+                  builder: (context, walletList, child) {
+                    if (walletList.isEmpty) return const Text("Vui lòng tạo ví tiền trước.");
+                    selectedWalletId ??= appState.defaultWallet?['id'] ?? walletList.first['id'];
+                    return DropdownButtonFormField<String>(
+                      value: selectedWalletId,
+                      items: walletList.map((w) => DropdownMenuItem<String>(
+                          value: w['id'] as String,
+                          child: Text(w['name']))
+                      ).toList(),
+                      onChanged: (val) => setDialogState(() => selectedWalletId = val),
+                      decoration: InputDecoration(
+                        labelText: 'Thanh toán từ ví',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Hủy')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.chartRed, foregroundColor: Colors.white),
+                onPressed: () async {
+                  if (selectedWalletId != null) {
+                    try {
+                      // Gọi hàm mới cho chi phí biến đổi
+                      await appState.payForVariableExpenseAndUpdateState(
+                        expenseToPay: expense,
+                        walletId: selectedWalletId!,
+                      );
+                      Navigator.pop(dialogContext);
+                      _showStyledSnackBar("Đã ghi nhận thanh toán thành công!");
+                    } catch (e) {
+                      Navigator.pop(dialogContext);
+                      _showStyledSnackBar("Lỗi khi thanh toán: $e", isError: true);
+                    }
+                  }
+                },
+                child: const Text('Xác nhận'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void editExpense(int index, AppState appState) {
     if (index < 0 || index >= appState.variableExpenseList.value.length) return; // [cite: 3349]
     final expenseToEdit = appState.variableExpenseList.value[index]; // [cite: 3350]
@@ -557,50 +624,136 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
     return displayList; // [cite: 3520]
   }
 
+  void _showPayExpenseGroupDialog(BuildContext context, AppState appState, Map<String, dynamic> group) {
+    String? selectedWalletId;
+    final List<Map<String, dynamic>> items = group['items'];
+    final double totalAmount = group['totalAmount'];
+    final String groupName = group['groupTitle'];
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            title: Text('Xác nhận Thực chi', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Chi phí cho nhóm: "$groupName"'),
+                const SizedBox(height: 4),
+                Text('Tổng số tiền: ${currencyFormat.format(totalAmount)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: AppColors.chartRed)),
+                const SizedBox(height: 20),
+                ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: appState.wallets,
+                  builder: (context, walletList, child) {
+                    if (walletList.isEmpty) return const Text("Vui lòng tạo ví tiền trước.");
+                    selectedWalletId ??= appState.defaultWallet?['id'] ?? walletList.first['id'];
+                    return DropdownButtonFormField<String>(
+                      value: selectedWalletId,
+                      items: walletList.map((w) => DropdownMenuItem<String>(
+                          value: w['id'] as String,
+                          child: Text(w['name']))
+                      ).toList(),
+                      onChanged: (val) => setDialogState(() => selectedWalletId = val),
+                      decoration: InputDecoration(
+                        labelText: 'Thanh toán từ ví',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Hủy')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.chartRed, foregroundColor: Colors.white),
+                onPressed: () async {
+                  if (selectedWalletId != null) {
+                    try {
+                      // Gọi hàm mới cho thanh toán nhóm
+                      await appState.payForVariableExpenseGroupAndUpdateState(
+                        expensesToPay: items,
+                        walletId: selectedWalletId!,
+                        totalAmount: totalAmount,
+                        groupName: groupName,
+                      );
+                      Navigator.pop(dialogContext);
+                      _showStyledSnackBar("Đã ghi nhận thanh toán thành công cho nhóm chi phí!");
+                    } catch (e) {
+                      Navigator.pop(dialogContext);
+                      _showStyledSnackBar("Lỗi khi thanh toán: $e", isError: true);
+                    }
+                  }
+                },
+                child: const Text('Xác nhận'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildGroupCard(Map<String, dynamic> group) {
-    final String title = group['groupTitle']; // [cite: 3524]
-    final double totalAmount = group['totalAmount']; // [cite: 3525]
-    final List<Map<String, dynamic>> items = group['items']; // [cite: 3526]
-    return Card( // [cite: 3527]
-      elevation: 2.0, // [cite: 3528]
-      margin: const EdgeInsets.symmetric(vertical: 8.0), // [cite: 3529]
-      shape: RoundedRectangleBorder( // [cite: 3530]
-          borderRadius: BorderRadius.circular(12.0), // [cite: 3531]
-          side: BorderSide(color: AppColors.chartRed.withOpacity(0.4), width: 1)), // [cite: 3532]
-      child: ExpansionTile( // [cite: 3533]
-        leading: CircleAvatar( // [cite: 3534]
-          backgroundColor: AppColors.chartRed.withOpacity(0.15), // [cite: 3535]
-          radius: 20, // [cite: 3536]
-          child: Icon(Icons.link, color: AppColors.chartRed.withOpacity(0.8), size: 20), // [cite: 3537]
+    final String title = group['groupTitle'];
+    final double totalAmount = group['totalAmount'];
+    final List<Map<String, dynamic>> items = group['items'];
+    // Kiểm tra trạng thái thanh toán của nhóm (chỉ cần kiểm tra item đầu tiên)
+    final bool isUnpaid = items.isNotEmpty && items.first['paymentStatus'] == 'unpaid';
+
+    return Card(
+      elevation: 2.0,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+          side: BorderSide(color: AppColors.chartRed.withOpacity(0.4), width: 1)),
+      child: ExpansionTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.chartRed.withOpacity(0.15),
+          radius: 20,
+          child: Icon(Icons.link, color: AppColors.chartRed.withOpacity(0.8), size: 20),
         ),
-        title: Text( // [cite: 3539]
-          title, // [cite: 3540]
-          style: GoogleFonts.poppins( // [cite: 3541]
-            fontWeight: FontWeight.w600, // [cite: 3542]
-            color: AppColors.getTextColor(context), // [cite: 3543]
-            fontSize: 16, // [cite: 3544]
+        title: Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            color: AppColors.getTextColor(context),
+            fontSize: 16,
           ),
         ),
-        subtitle: Text( // [cite: 3547]
-          "Tổng: ${currencyFormat.format(totalAmount)}", // [cite: 3548]
-          style: GoogleFonts.poppins( // [cite: 3549]
-              fontSize: 14, // [cite: 3550]
-              fontWeight: FontWeight.w500, // [cite: 3551]
-              color: AppColors.getTextSecondaryColor(context)), // [cite: 3552]
+        subtitle: Text(
+          "Tổng: ${currencyFormat.format(totalAmount)}",
+          style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppColors.getTextSecondaryColor(context)),
         ),
-        childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 8), // [cite: 3554]
-        expandedAlignment: Alignment.centerLeft, // [cite: 3555]
-        children: items.map((expense) { // [cite: 3556]
-          return ListTile( // [cite: 3557]
-            dense: true, // [cite: 3558]
-            contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0), // [cite: 3559]
-            title: Text( // [cite: 3560]
-              expense['name'] ?? 'Không có tên', // [cite: 3561]
-              style: GoogleFonts.poppins(fontSize: 14), // [cite: 3562]
+        // === PHẦN SỬA LỖI: THÊM NÚT THANH TOÁN VÀO ĐÂY ===
+        trailing: isUnpaid
+            ? IconButton(
+          icon: Icon(Icons.payment_outlined, color: Colors.green.shade600),
+          onPressed: () => _showPayExpenseGroupDialog(context, appState, group),
+          tooltip: 'Thanh toán cho nhóm này',
+          splashRadius: 20,
+        )
+            : null, // Không hiển thị gì nếu đã thanh toán
+        // ===============================================
+        childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+        expandedAlignment: Alignment.centerLeft,
+        children: items.map((expense) {
+          return ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+            title: Text(
+              expense['name'] ?? 'Không có tên',
+              style: GoogleFonts.poppins(fontSize: 14),
             ),
-            trailing: Text( // [cite: 3564]
-              currencyFormat.format((expense['amount'] as num?)?.toDouble() ?? 0.0), // [cite: 3565]
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14), // [cite: 3566]
+            trailing: Text(
+              currencyFormat.format((expense['amount'] as num?)?.toDouble() ?? 0.0),
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14),
             ),
           );
         }).toList(),
@@ -609,67 +762,100 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   }
 
   Widget _buildExpenseTile(Map<String, dynamic> expense, int originalIndex, {required bool isAutoCogs}) {
-    final double amount = (expense['amount'] as num?)?.toDouble() ?? 0.0; // [cite: 3575]
-    final appState = context.read<AppState>(); // [cite: 3576]
-    return Card( // [cite: 3577]
-      elevation: 1.5, // [cite: 3578]
-      margin: const EdgeInsets.symmetric(vertical: 6.0), // [cite: 3579]
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)), // [cite: 3580]
-      color: AppColors.getCardColor(context), // [cite: 3581]
-      child: ListTile( // [cite: 3582]
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0), // [cite: 3583]
-        leading: CircleAvatar( // [cite: 3584]
-          backgroundColor: AppColors.chartRed.withOpacity(0.15), // [cite: 3585]
-          radius: 20, // [cite: 3586]
+    final double amount = (expense['amount'] as num?)?.toDouble() ?? 0.0;
+    final appState = context.read<AppState>();
+    final bool isUnpaid = expense['paymentStatus'] == 'unpaid';
+
+    return Card(
+      elevation: 1.5,
+      margin: const EdgeInsets.symmetric(vertical: 6.0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      color: AppColors.getCardColor(context),
+      child: ListTile(
+        contentPadding: const EdgeInsets.fromLTRB(16.0, 10.0, 8.0, 10.0),
+        leading: CircleAvatar(
+          backgroundColor: AppColors.chartRed.withOpacity(0.15),
+          radius: 20,
           child: isAutoCogs
-              ? Icon(Icons.link, color: AppColors.chartRed.withOpacity(0.7), size: 20) // [cite: 3588]
-              : Icon(Icons.flare_outlined, color: AppColors.chartRed, size: 22), // [cite: 3589]
+              ? Icon(Icons.link, color: AppColors.chartRed.withOpacity(0.7), size: 20)
+              : Icon(Icons.flare_outlined, color: AppColors.chartRed, size: 22),
         ),
-        title: Text( // [cite: 3591]
-          expense['name'] ?? 'Không có tên', // [cite: 3592]
-          style: GoogleFonts.poppins( // [cite: 3593]
-              fontSize: 16, // [cite: 3594]
-              fontWeight: FontWeight.w600, // [cite: 3595]
-              color: AppColors.getTextColor(context)), // [cite: 3596]
-          overflow: TextOverflow.ellipsis, // [cite: 3597]
+        title: Text(
+          expense['name'] ?? 'Không có tên',
+          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
+          overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Text( // [cite: 3599]
-          currencyFormat.format(amount), // [cite: 3600]
-          style: GoogleFonts.poppins( // [cite: 3601]
-              fontSize: 14.5, // [cite: 3602]
-              fontWeight: FontWeight.w500, // [cite: 3603]
-              color: AppColors.getTextSecondaryColor(context).withOpacity(0.9)), // [cite: 3604]
-        ),
-        trailing: isAutoCogs
-            ? Tooltip( // [cite: 3607]
-          message: "Giá vốn tự động, quản lý qua giao dịch doanh thu", // [cite: 3608]
-          child: Icon(Icons.info_outline, color: AppColors.getTextSecondaryColor(context), size: 22), // [cite: 3609]
-        )
-            : Row( // [cite: 3611]
-          mainAxisSize: MainAxisSize.min, // [cite: 3612]
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IconButton( // [cite: 3614]
-              icon: Icon(Icons.edit_note_outlined, color: AppColors.primaryBlue, size: 22), // [cite: 3615]
-              onPressed: () { // [cite: 3616]
-                if (originalIndex != -1) { // [cite: 3617]
-                  editExpense(originalIndex, appState); // [cite: 3618]
-                }
-              },
-              splashRadius: 20, // [cite: 3621]
-              tooltip: "Chỉnh sửa", // [cite: 3622]
+            Text(
+              currencyFormat.format(amount),
+              style: GoogleFonts.poppins(fontSize: 14.5, fontWeight: FontWeight.w500, color: AppColors.getTextSecondaryColor(context).withOpacity(0.9)),
             ),
-            IconButton( // [cite: 3624]
-              icon: Icon(Icons.delete_outline_rounded, color: AppColors.chartRed, size: 22), // [cite: 3625]
-              onPressed: () { // [cite: 3626]
-                if (originalIndex != -1) { // [cite: 3627]
-                  removeExpense(originalIndex, appState); // [cite: 3628]
-                }
-              },
-              splashRadius: 20, // [cite: 3631]
-              tooltip: "Xóa", // [cite: 3632]
-            ),
+            if (isUnpaid)
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Chip(
+                  label: Text('Chưa thanh toán', style: GoogleFonts.poppins(fontSize: 10, color: Colors.orange.shade900)),
+                  backgroundColor: Colors.orange.withOpacity(0.2),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  labelPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
           ],
         ),
+        // === PHẦN SỬA LỖI LOGIC HIỂN THỊ NÚT ===
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Nút "Thanh toán" chỉ phụ thuộc vào isUnpaid
+            if (isUnpaid)
+              IconButton(
+                icon: Icon(Icons.payment_outlined, color: Colors.green.shade600, size: 22),
+                onPressed: () {
+                  if (originalIndex != -1) {
+                    _showPayExpenseDialog(context, appState, expense);
+                  }
+                },
+                splashRadius: 20,
+                tooltip: "Thanh toán",
+              ),
+
+            // Nút "Sửa" và "Xóa" chỉ hiện khi không phải giá vốn tự động
+            if (!isAutoCogs) ...[
+              IconButton(
+                icon: Icon(Icons.edit_note_outlined, color: AppColors.primaryBlue, size: 22),
+                onPressed: () {
+                  if (originalIndex != -1) {
+                    editExpense(originalIndex, appState);
+                  }
+                },
+                splashRadius: 20,
+                tooltip: "Chỉnh sửa",
+              ),
+              IconButton(
+                icon: Icon(Icons.delete_outline_rounded, color: AppColors.chartRed, size: 22),
+                onPressed: () {
+                  if (originalIndex != -1) {
+                    removeExpense(originalIndex, appState);
+                  }
+                },
+                splashRadius: 20,
+                tooltip: "Xóa",
+              ),
+            ],
+
+            // Tooltip chỉ hiện khi ĐÃ THANH TOÁN và là chi phí tự động
+            if (isAutoCogs && !isUnpaid)
+              Tooltip(
+                message: "Giá vốn tự động, quản lý qua giao dịch doanh thu",
+                child: Icon(Icons.info_outline, color: AppColors.getTextSecondaryColor(context), size: 22),
+              )
+          ],
+        ),
+        // =======================================
       ),
     );
   }
@@ -764,87 +950,97 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
   }
 
   Widget _buildDailyExpensesTab() {
-    return SingleChildScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: isLoadingDaily
-            ? Center(child: Padding(padding: const EdgeInsets.only(top: 40.0), child: CircularProgressIndicator(color: AppColors.chartRed)))
-            : hasErrorDaily
-            ? Center(child: Padding(padding: const EdgeInsets.only(top: 40.0), child: Text("Có lỗi xảy ra khi tải dữ liệu", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)))))
-            : Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-              color: AppColors.getCardColor(context),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Tổng chi phí biến đổi', style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
-                    Flexible(
-                      child: Text(
-                        currencyFormat.format(appState.variableExpense),
-                        style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.chartRed),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+    // Bọc toàn bộ logic hiển thị bằng ValueListenableBuilder
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: appState.variableExpenseList, // Lắng nghe danh sách chi phí từ AppState
+      builder: (context, currentVariableExpenses, child) {
+        // Bây giờ, thay vì dùng biến "variableExpenses" của State,
+        // chúng ta sẽ dùng "currentVariableExpenses" được cung cấp bởi Builder.
+        // Biến này LUÔN LUÔN là phiên bản mới nhất.
+
+        return SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: isLoadingDaily
+                ? Center(child: Padding(padding: const EdgeInsets.only(top: 40.0), child: CircularProgressIndicator(color: AppColors.chartRed)))
+                : hasErrorDaily
+                ? Center(child: Padding(padding: const EdgeInsets.only(top: 40.0), child: Text("Có lỗi xảy ra khi tải dữ liệu", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)))))
+                : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  color: AppColors.getCardColor(context),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Tổng chi phí biến đổi', style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.getTextColor(context))),
+                        Flexible(
+                          child: Text(
+                            currencyFormat.format(appState.variableExpense),
+                            style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.chartRed),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            if (variableExpenses.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0, top: 10.0, left: 4.0),
-                child: Text(
-                  "Chi phí đã thêm trong ngày",
-                  style: GoogleFonts.poppins(fontSize: 19, fontWeight: FontWeight.w700, color: AppColors.getTextColor(context)),
-                ),
-              ),
-
-            SlideTransition(
-              position: _slideAnimation,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: variableExpenses.isEmpty
-                    ? Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 40.0),
-                  child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.receipt_long_outlined, size: 50, color: AppColors.getTextSecondaryColor(context)),
-                    const SizedBox(height: 16),
-                    Text("Chưa có chi phí nào", textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextSecondaryColor(context))),
-                  ])),
-                )
-                    : Builder(
-                  builder: (context) {
-                    final List<dynamic> displayItems = _groupExpenses(variableExpenses);
-                    return ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: displayItems.length,
-                      itemBuilder: (context, index) {
-                        final item = displayItems[index];
-                        if (item is Map && item['isGroup'] == true) {
-                          return _buildGroupCard(item as Map<String, dynamic>);
-                        } else {
-                          final expense = item as Map<String, dynamic>;
-                          final originalIndex = appState.variableExpenseList.value.indexOf(expense);
-                          return _buildExpenseTile(expense, originalIndex, isAutoCogs: expense['sourceSalesTransactionId'] != null);
-                        }
+                const SizedBox(height: 20),
+                if (currentVariableExpenses.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0, top: 10.0, left: 4.0),
+                    child: Text(
+                      "Chi phí đã thêm trong ngày",
+                      style: GoogleFonts.poppins(fontSize: 19, fontWeight: FontWeight.w700, color: AppColors.getTextColor(context)),
+                    ),
+                  ),
+                SlideTransition(
+                  position: _slideAnimation,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: currentVariableExpenses.isEmpty
+                        ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40.0),
+                      child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.receipt_long_outlined, size: 50, color: AppColors.getTextSecondaryColor(context)),
+                        const SizedBox(height: 16),
+                        Text("Chưa có chi phí nào", textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextSecondaryColor(context))),
+                      ])),
+                    )
+                        : Builder(
+                      builder: (context) {
+                        // Sử dụng danh sách mới nhất
+                        final List<dynamic> displayItems = _groupExpenses(currentVariableExpenses);
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: displayItems.length,
+                          itemBuilder: (context, index) {
+                            final item = displayItems[index];
+                            if (item is Map && item['isGroup'] == true) {
+                              return _buildGroupCard(item as Map<String, dynamic>);
+                            } else {
+                              final expense = item as Map<String, dynamic>;
+                              // Tìm originalIndex từ danh sách mới nhất
+                              final originalIndex = currentVariableExpenses.indexOf(expense);
+                              return _buildExpenseTile(expense, originalIndex, isAutoCogs: expense['sourceSalesTransactionId'] != null);
+                            }
+                          },
+                        );
                       },
-                    );
-                  },
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

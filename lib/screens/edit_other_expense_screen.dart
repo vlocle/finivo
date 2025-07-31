@@ -50,22 +50,31 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen> {
   void _addExpense(bool isCashSpent, String? selectedWalletId) {
     final name = _nameController.text.trim();
     final amount = double.tryParse(_amountController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
-
     if (name.isEmpty || amount <= 0) {
       _showStyledSnackBar("Vui lòng nhập đầy đủ tên và số tiền hợp lệ.", isError: true);
       return;
     }
-
     if (isCashSpent && selectedWalletId == null) {
       _showStyledSnackBar("Vui lòng chọn ví để thực chi.", isError: true);
       return;
     }
 
+    // Lấy ngày đã chọn từ AppState và kết hợp với giờ hiện tại
+    final now = DateTime.now();
+    final correctTransactionDate = DateTime(
+        _appState.selectedDate.year,
+        _appState.selectedDate.month,
+        _appState.selectedDate.day,
+        now.hour,
+        now.minute,
+        now.second
+    );
+
     final newExpense = {
       'id': Uuid().v4(),
       'name': name,
       'amount': amount,
-      'date': DateTime.now().toIso8601String(),
+      'date': correctTransactionDate.toIso8601String(), // <-- Sửa ở đây: Ngày ghi nhận nghiệp vụ
       'createdBy': _appState.authUserId,
       'walletId': isCashSpent ? selectedWalletId : null,
       'category': 'Chi phí khác',

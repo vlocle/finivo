@@ -132,12 +132,10 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
 
   void _addTransaction(AppState appState, bool isCashReceived, String? walletId) {
     double total = double.tryParse(_totalController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
-
     if (!appState.isSubscribed && (appState.totalRevenueListenable.value + total > 2000000)) {
       _showUpgradeDialog(context);
       return;
     }
-
     String name = _nameController.text.trim();
     if (name.isEmpty) {
       _showStyledSnackBar('Vui lòng nhập tên giao dịch!', isError: true);
@@ -148,13 +146,27 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       return;
     }
 
+    // 1. Xác định "Ngày ghi nhận doanh thu" (dựa trên ngày bạn chọn trong app)
+    final now = DateTime.now();
+    final correctTransactionDate = DateTime(
+        appState.selectedDate.year,
+        appState.selectedDate.month,
+        appState.selectedDate.day,
+        now.hour,
+        now.minute,
+        now.second
+    );
+
+    // 2. Tạo bản ghi giao dịch với cả 2 loại ngày
     final newTransaction = {
-      'id': Uuid().v4(), // Thêm ID để xử lý dễ dàng hơn
+      'id': Uuid().v4(),
       'name': name,
       'category': 'Doanh thu khác',
       'total': total,
       'quantity': 1.0,
-      'date': DateTime.now().toIso8601String(),
+      'date': correctTransactionDate.toIso8601String(), // <-- NGÀY GHI NHẬN DOANH THU
+      // Thêm trường "paymentDate" nếu có thực thu
+      if (isCashReceived) 'paymentDate': now.toIso8601String(), // <-- NGÀY DÒNG TIỀN
       'createdBy': appState.authUserId,
     };
 

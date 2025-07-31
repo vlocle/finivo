@@ -97,7 +97,7 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
         _showStyledSnackBar("Đã xóa giao dịch và cập nhật lại số dư ví.");
         _loadTransactionsForMonth();
       } catch (e) {
-        _showStyledSnackBar("Lỗi khi xóa giao dịch: $e", isError: true);
+        _showStyledSnackBar("Lỗi khi xóa giao dịch", isError: true);
       }
     }
   }
@@ -155,7 +155,11 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
 
                 return GroupedListView<Map<String, dynamic>, String>(
                   elements: transactions,
-                  groupBy: (transaction) => DateFormat('yyyy-MM-dd').format(DateTime.parse(transaction['date'])),
+                  groupBy: (transaction) {
+                    // Ưu tiên nhóm theo ngày thanh toán nếu có, nếu không thì dùng ngày giao dịch
+                    final String dateStringToGroupBy = transaction['paymentDate'] ?? transaction['date'];
+                    return DateFormat('yyyy-MM-dd').format(DateTime.parse(dateStringToGroupBy));
+                  },
                   groupSeparatorBuilder: (String groupByValue) => Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Text(
@@ -164,9 +168,13 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
                     ),
                   ),
                   itemBuilder: (context, transaction) {
-                    // Logic xác định Thu/Chi đã được chuyển vào getTransactionsForWallet
                     final bool isIncome = transaction['isIncome'] ?? false;
                     final amount = (transaction['total'] as num?)?.toDouble() ?? 0.0;
+
+                    // === THÊM ĐIỀU KIỆN KIỂM TRA MỚI ===
+                    // Chỉ cho phép xóa khi giao dịch đó không phải là một khoản thanh toán chi phí được liên kết
+                    final bool canBeDeleted = transaction['adjustmentType'] != 'cogs_payment';
+                    // ===================================
 
                     return Card(
                       elevation: 2,
@@ -186,18 +194,22 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              '${isIncome ? "+" : ""} ${currencyFormat.format(amount)}', // Bỏ dấu trừ cho khoản chi
+                              '${isIncome ? "+" : ""} ${currencyFormat.format(amount)}',
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
                                 color: isIncome ? Colors.green.shade700 : Colors.red.shade700,
                               ),
                             ),
-                            IconButton(
-                              icon: Icon(Icons.delete_outline, color: Colors.grey[600]),
-                              onPressed: () => _deleteTransaction(transaction),
-                              tooltip: "Xóa giao dịch",
-                            ),
+
+                            // === ÁP DỤNG ĐIỀU KIỆN VÀO ĐÂY ===
+                            if (canBeDeleted)
+                              IconButton(
+                                icon: Icon(Icons.delete_outline, color: Colors.grey[600]),
+                                onPressed: () => _deleteTransaction(transaction),
+                                tooltip: "Xóa giao dịch",
+                              ),
+                            // ==================================
                           ],
                         ),
                       ),

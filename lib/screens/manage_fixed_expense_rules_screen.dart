@@ -395,6 +395,10 @@ class _ManageFixedExpenseRulesScreenState
           ),
         ),
         backgroundColor: AppColors.chartRed,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: AppColors.chartRed))
@@ -413,6 +417,74 @@ class _ManageFixedExpenseRulesScreenState
         itemCount: _expenseRules.length,
         itemBuilder: (context, index) {
           final rule = _expenseRules[index];
+          final appState = Provider.of<AppState>(context, listen: false);
+          final List<Widget> subtitleWidgets = [];
+          subtitleWidgets.add(
+            Text(
+              "Thanh toán: ${_currencyFormat.format(rule['totalAmount'] ?? 0.0)}",
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w500,
+                color: AppColors.primaryBlue, // Có thể đổi màu cho nổi bật
+              ),
+            ),
+          );
+          try {
+            final startDate = DateFormat('dd/MM/yy').format(DateTime.parse(rule['startDate']));
+            final endDate = DateFormat('dd/MM/yy').format(DateTime.parse(rule['endDate']));
+            subtitleWidgets.add(
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Text(
+                  "Phân bổ: $startDate - $endDate",
+                  style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ),
+            );
+          } catch (e) {
+            // Bỏ qua nếu ngày tháng không hợp lệ
+          }
+          final paymentType = rule['paymentType'] ?? 'manual';
+          String paymentInfo = "Lịch thanh toán: Thủ công"; // Mặc định
+          IconData paymentIcon = Icons.pan_tool_outlined; // Icon cho Thủ công
+
+          if (paymentType != 'manual' && rule['walletId'] != null) {
+            // Tìm tên ví từ walletId
+            final walletName = appState.wallets.value
+                .firstWhere((w) => w['id'] == rule['walletId'], orElse: () => {'name': 'Không rõ'})
+            ['name'];
+
+            if (paymentType == 'recurring') {
+              paymentInfo = "Hàng tháng, ngày ${rule['paymentDay']} từ ví '$walletName'";
+              paymentIcon = Icons.event_repeat_outlined;
+            } else if (paymentType == 'onetime') {
+              try {
+                final paymentDate = DateFormat('dd/MM/yy').format(DateTime.parse(rule['oneTimePaymentDate']));
+                paymentInfo = "Một lần, ngày $paymentDate từ ví '$walletName'";
+                paymentIcon = Icons.event_available_outlined;
+              } catch (e) {
+                paymentInfo = "Lỗi ngày thanh toán";
+              }
+            }
+          }
+          subtitleWidgets.add(
+            Padding(
+              padding: const EdgeInsets.only(top: 4.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(paymentIcon, size: 14, color: Colors.grey.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      paymentInfo,
+                      style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade700),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
           return Slidable(
             key: ValueKey(rule['name']),
             endActionPane: ActionPane(
@@ -437,8 +509,13 @@ class _ManageFixedExpenseRulesScreenState
             child: Card(
               margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
               child: ListTile(
-                title: Text(rule['name'] ?? 'Không có tên', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                subtitle: Text("Thanh toán ${_currencyFormat.format(rule['totalAmount'] ?? 0.0)}"),
+                title: Text(rule['name'] ?? 'Không có tên',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: subtitleWidgets,
+                ),
+                isThreeLine: true,
                 onTap: () => _showAddEditRuleDialog(existingRule: rule),
               ),
             ),
@@ -449,6 +526,7 @@ class _ManageFixedExpenseRulesScreenState
         onPressed: () => _showAddEditRuleDialog(),
         child: const Icon(Icons.add),
         backgroundColor: AppColors.chartRed,
+        foregroundColor: Colors.white,
       ),
     );
   }
