@@ -1543,9 +1543,6 @@ class AppState extends ChangeNotifier {
     required bool isCashSpent,
     String? spendingWalletId,
   }) async {
-    print("\n--- [LOG THÊM MỚI] Bắt đầu thêm giao dịch doanh thu ---");
-    print("[LOG THÊM MỚI] Trạng thái Wallet Adjustments HIỆN TẠI: ${walletAdjustments.value.length} mục");
-
     if (isCashReceived && walletId != null) {
       newSalesTransaction['walletId'] = walletId;
       newSalesTransaction['paymentStatus'] = 'paid';
@@ -2552,8 +2549,6 @@ class AppState extends ChangeNotifier {
       });
 
       // === PHẦN 2: DỌN DẸP TRẠNG THÁI CỤC BỘ (Giữ nguyên) ===
-      print("--- [LOG XÓA] Bắt đầu dọn dẹp state cục bộ ---");
-      print("[LOG XÓA] Wallet Adjustments TRƯỚC khi xóa: ${walletAdjustments.value.length} mục");
       final double amountToRevert = -((adjustmentToRemove['total'] as num?)?.toDouble() ?? 0.0);
       final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
       if (walletIndex != -1) {
@@ -2564,8 +2559,6 @@ class AppState extends ChangeNotifier {
         otherExpenseTransactions.value.removeWhere((e) => e['id'] == sourceExpenseId);
         otherExpense = otherExpenseTransactions.value.fold(0.0, (sum, e) => sum + ((e['amount'] as num?)?.toDouble() ?? 0.0));
       }
-      print("[LOG XÓA] Wallet Adjustments SAU khi xóa: ${walletAdjustments.value.length} mục");
-      print("--- [LOG XÓA] Kết thúc dọn dẹp state cục bộ ---");
       _updateProfitAndRelatedListenables();
       wallets.value = List.from(wallets.value);
       walletAdjustments.value = List.from(walletAdjustments.value);
@@ -2573,7 +2566,6 @@ class AppState extends ChangeNotifier {
       notifyListeners();
 
     } catch (e) {
-      print("Lỗi trong hàm deleteWalletAdjustment: $e");
       setSelectedDate(selectedDate);
       throw e;
     }
@@ -2587,8 +2579,6 @@ class AppState extends ChangeNotifier {
   }) async {
     // ===================================================================
     // ==== BẮT ĐẦU ĐOẠN CODE GỠ LỖI - VUI LÒNG THÊM VÀO ĐÂY ====
-    print("--- DEBUG BẮT ĐẦU: payForVariableExpenseGroupAndUpdateState ---");
-    print("Ngày đang được chọn trên AppState (_selectedDate): ${_selectedDate.toIso8601String()}");
 
     if (expensesToPay.isNotEmpty) {
       final firstExpense = expensesToPay.first;
@@ -2599,10 +2589,7 @@ class AppState extends ChangeNotifier {
         try {
           final DateTime recordDate = DateTime.parse(expenseDateString);
           final String dateKey = DateFormat('yyyy-MM-dd').format(recordDate);
-          print("Ngày đã xử lý (recordDate): ${recordDate.toIso8601String()}");
-          print("==> Wallet Adjustment sẽ được lưu vào tài liệu của ngày: $dateKey");
         } catch (e) {
-          print("!!! LỖI: Không thể xử lý chuỗi ngày tháng: $e");
         }
       } else {
         print("!!! LỖI: Ngày của chi phí là null!");
@@ -2610,7 +2597,6 @@ class AppState extends ChangeNotifier {
     } else {
       print("!!! CẢNH BÁO: Danh sách expensesToPay bị rỗng!");
     }
-    print("--- DEBUG KẾT THÚC ---");
     // ==== KẾT THÚC ĐOẠN CODE GỠ LỖI ====
     // ===================================================================
     if (activeUserId == null) throw Exception("User not logged in");
