@@ -1149,7 +1149,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                       }),
                   const SizedBox(height: 20), // [cite: 346]
                   SwitchListTile.adaptive(
-                    title: Text("Thực thu vào quỹ?", style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context), fontWeight: FontWeight.w500)),
+                    title: Text("Thực thu vào ví?", style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context), fontWeight: FontWeight.w500)),
                     value: _isCashReceived,
                     onChanged: (bool value) {
                       setState(() {
