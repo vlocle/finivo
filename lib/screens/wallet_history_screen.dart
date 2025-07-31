@@ -72,7 +72,8 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Xác nhận xóa'),
-        content: Text('Bạn có chắc muốn xóa giao dịch "${transaction['name']}" không? Hành động này sẽ hoàn lại tiền vào ví và không thể hoàn tác.'),
+        content: Text(
+            'Bạn có chắc muốn xóa giao dịch "${transaction['name']}" không? Hành động này sẽ hoàn lại tiền vào ví và không thể hoàn tác.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Hủy')),
           ElevatedButton(
@@ -84,19 +85,45 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
       ),
     );
 
-    if (confirm == true && mounted) {
-      final appState = Provider.of<AppState>(context, listen: false);
-      try {
-        // Logic thông minh để gọi đúng hàm xóa
-        if (transaction['category'] == 'Điều chỉnh Ví') {
-          await appState.deleteWalletAdjustment(adjustmentToRemove: transaction);
-        } else {
-          await appState.deleteTransactionAndUpdateAll(transactionToRemove: transaction);
-        }
+    if (confirm != true || !mounted) return;
 
+    // Hiển thị dialog loading ngay lập tức
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Ngăn người dùng tắt dialog bằng cách chạm bên ngoài
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: AppColors.primaryBlue),
+            const SizedBox(width: 20),
+            Text("Đang xóa...", style: GoogleFonts.poppins()),
+          ],
+        ),
+      ),
+    );
+
+    final appState = Provider.of<AppState>(context, listen: false);
+
+    try {
+      // Logic thông minh để gọi đúng hàm xóa
+      if (transaction['category'] == 'Điều chỉnh Ví') {
+        await appState.deleteWalletAdjustment(adjustmentToRemove: transaction);
+      } else {
+        await appState.deleteTransactionAndUpdateAll(transactionToRemove: transaction);
+      }
+
+      // Đóng dialog loading sau khi xóa thành công
+      if (mounted) {
+        Navigator.pop(context); // Đóng dialog loading
         _showStyledSnackBar("Đã xóa giao dịch và cập nhật lại số dư ví.");
-        _loadTransactionsForMonth();
-      } catch (e) {
+        _loadTransactionsForMonth(); // Tải lại danh sách
+      }
+
+    } catch (e) {
+      // Đóng dialog loading nếu có lỗi
+      if (mounted) {
+        Navigator.pop(context); // Đóng dialog loading
         _showStyledSnackBar("Lỗi khi xóa giao dịch", isError: true);
       }
     }
@@ -188,7 +215,12 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
                             color: isIncome ? Colors.green : Colors.red,
                           ),
                         ),
-                        title: Text(transaction['name'], style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                        title: Text(
+                          transaction['name'],
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                         subtitle: Text(DateFormat('HH:mm').format(DateTime.parse(transaction['date']))),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,

@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import '../state/app_state.dart';
 import 'package:fingrowth/screens/report_screen.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:marquee/marquee.dart';
 
 
 class WalletManagementScreen extends StatefulWidget {
@@ -224,9 +225,52 @@ class _WalletManagementScreenState extends State<WalletManagementScreen> {
 
   Widget _buildTotalBalanceCard(AppState appState) {
     final wallets = appState.wallets.value;
-    // Tính tổng số dư từ tất cả các ví
     final double totalBalance = wallets.fold(0.0,
             (sum, wallet) => sum + ((wallet['balance'] as num?)?.toDouble() ?? 0.0));
+
+    // Tạo một định dạng số không có ký hiệu tiền tệ
+    final NumberFormat numberOnlyFormat = NumberFormat("#,##0", "vi_VN");
+
+    // Tạo style chung cho cả số và chữ VNĐ để nhất quán
+    final balanceStyle = GoogleFonts.poppins(
+      fontSize: 32,
+      fontWeight: FontWeight.bold,
+      color: Colors.white,
+      letterSpacing: 1.5,
+    );
+
+    Widget balanceContent;
+    if (_isBalanceVisible) {
+      balanceContent = SizedBox( // Giới hạn chiều cao của cả hàng
+        height: 40,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Expanded(
+              child: Marquee(
+                text: numberOnlyFormat.format(totalBalance), // Chỉ chạy số
+                style: balanceStyle,
+                velocity: 50.0,
+                blankSpace: 40.0,
+                pauseAfterRound: const Duration(seconds: 2),
+                fadingEdgeEndFraction: 0.1,
+                fadingEdgeStartFraction: 0.1,
+                // <<< DÒNG GÂY LỖI ĐÃ ĐƯỢC XÓA Ở ĐÂY >>>
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text('VNĐ', style: balanceStyle), // Chữ VNĐ đứng yên
+          ],
+        ),
+      );
+    } else {
+      balanceContent = Text(
+        '●●●●●●●● VNĐ',
+        style: balanceStyle,
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -263,7 +307,6 @@ class _WalletManagementScreenState extends State<WalletManagementScreen> {
                   color: Colors.white.withOpacity(0.9),
                 ),
               ),
-              // Nút ẩn/hiện số dư
               IconButton(
                 icon: Icon(
                   _isBalanceVisible
@@ -280,16 +323,8 @@ class _WalletManagementScreenState extends State<WalletManagementScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            // Hiển thị số dư hoặc ký tự che
-            _isBalanceVisible ? currencyFormat.format(totalBalance) : '●●●●●●●● VNĐ',
-            style: GoogleFonts.poppins(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              letterSpacing: 1.5,
-            ),
-          ),
+          // Sử dụng widget đã tạo ở trên
+          balanceContent,
         ],
       ),
     );
