@@ -787,7 +787,6 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  // Dành cho file appstate.docx
   void _subscribeToDailyData() {
     if (!_isFirebaseInitialized || activeUserId == null) return;
     _dailyDataSubscription?.cancel();
@@ -795,12 +794,9 @@ class AppState extends ChangeNotifier {
     String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
     String dailyDocPath = 'users/$activeUserId/daily_data/${getKey(dateKey)}';
     _dailyDataSubscription = firestore.doc(dailyDocPath).snapshots().listen((snapshot) {
-
-      // <<< THÊM DÒNG KIỂM TRA NÀY VÀO ĐÂY
       if (snapshot.metadata.hasPendingWrites) {
         return;
       }
-
       if (snapshot.exists && snapshot.data() != null) {
         final data = snapshot.data()!;
         mainRevenue = (data['mainRevenue'] as num?)?.toDouble() ?? 0.0;
@@ -809,6 +805,11 @@ class AppState extends ChangeNotifier {
         mainRevenueTransactions.value = List<Map<String, dynamic>>.from(data['mainRevenueTransactions'] ?? []);
         secondaryRevenueTransactions.value = List<Map<String, dynamic>>.from(data['secondaryRevenueTransactions'] ?? []);
         otherRevenueTransactions.value = List<Map<String, dynamic>>.from(data['otherRevenueTransactions'] ?? []);
+
+        // <<< THÊM DÒNG SỬA LỖI QUAN TRỌNG TẠI ĐÂY >>>
+        // Đồng bộ lại danh sách điều chỉnh ví từ Firestore
+        walletAdjustments.value = List<Map<String, dynamic>>.from(data['walletAdjustments'] ?? []);
+
       } else {
         mainRevenue = 0.0;
         secondaryRevenue = 0.0;
@@ -816,7 +817,7 @@ class AppState extends ChangeNotifier {
         mainRevenueTransactions.value = [];
         secondaryRevenueTransactions.value = [];
         otherRevenueTransactions.value = [];
-        walletAdjustments.value = [];
+        walletAdjustments.value = []; // Xóa danh sách local nếu document không tồn tại
       }
       _updateProfitAndRelatedListenables();
       notifyListeners();
@@ -1542,8 +1543,9 @@ class AppState extends ChangeNotifier {
     required bool isCashSpent,
     String? spendingWalletId,
   }) async {
-    // 1. CẬP NHẬT TRẠNG THÁI LOCAL
-    // ... (phần code xử lý newSalesTransaction và category giữ nguyên)
+    print("\n--- [LOG THÊM MỚI] Bắt đầu thêm giao dịch doanh thu ---");
+    print("[LOG THÊM MỚI] Trạng thái Wallet Adjustments HIỆN TẠI: ${walletAdjustments.value.length} mục");
+
     if (isCashReceived && walletId != null) {
       newSalesTransaction['walletId'] = walletId;
       newSalesTransaction['paymentStatus'] = 'paid';
@@ -2496,68 +2498,83 @@ class AppState extends ChangeNotifier {
     final String walletId = adjustmentToRemove['walletId'] as String? ?? '';
     final String? sourceExpenseId = adjustmentToRemove['sourceExpenseId'] as String?;
     final String? adjustmentType = adjustmentToRemove['adjustmentType'] as String?;
-
-    // Lấy cả 2 ngày
     final String paymentDateString = adjustmentToRemove['date'] as String? ?? '';
-    final String sourceDateString = adjustmentToRemove['sourceExpenseDate'] as String? ?? paymentDateString; // Lấy ngày gốc, nếu không có thì dùng ngày thanh toán
+    final String sourceDateString = adjustmentToRemove['sourceExpenseDate'] as String? ?? paymentDateString;
 
-    if (transactionId.isEmpty || walletId.isEmpty) {
-      throw Exception("Giao dịch điều chỉnh thiếu thông tin.");
+    if (transactionId.isEmpty || walletId.isEmpty || paymentDateString.isEmpty) {
+      throw Exception("Giao dịch điều chỉnh thiếu thông tin để xóa.");
     }
 
-    // Chuyển đổi thành key
     final String paymentDateKey = DateFormat('yyyy-MM-dd').format(DateTime.parse(paymentDateString));
     final String sourceDateKey = DateFormat('yyyy-MM-dd').format(DateTime.parse(sourceDateString));
-
     final firestore = FirebaseFirestore.instance;
+
     try {
+      // === PHẦN 1: CẬP NHẬT DATABASE ===
       await firestore.runTransaction((transaction) async {
-        // Định nghĩa các đường dẫn
-        final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(getKey(paymentDateKey)); // Dùng ngày thanh toán
+        // --- ĐỊNH NGHĨA TẤT CẢ CÁC ĐƯỜNG DẪN ---
+        final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(getKey(paymentDateKey));
         final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
         DocumentReference? otherExpenseRef;
-        if (adjustmentType == 'other_expense_payment') {
-          final otherExpenseDocId = getKey('otherExpenseList_$sourceDateKey'); // Dùng ngày gốc
+        if (adjustmentType == 'other_expense_payment' && sourceExpenseId != null) {
+          final otherExpenseDocId = getKey('otherExpenseList_$sourceDateKey');
           otherExpenseRef = firestore.collection('users').doc(activeUserId).collection('expenses').doc('other').collection('daily').doc(otherExpenseDocId);
         }
 
-        // Đọc tất cả dữ liệu
+        // <<< SỬA LỖI: THỰC HIỆN TẤT CẢ CÁC LỆNH ĐỌC (READ) TRƯỚC TIÊN >>>
         final dailySnapshot = await transaction.get(dailyDataRef);
         DocumentSnapshot? otherExpenseSnapshot;
         if (otherExpenseRef != null) {
           otherExpenseSnapshot = await transaction.get(otherExpenseRef);
         }
 
+        // Sau khi đã đọc xong, bây giờ mới bắt đầu xử lý và ghi (WRITE)
         if (!dailySnapshot.exists) { return; }
-
-        // Xử lý và Ghi dữ liệu
         final dailyData = dailySnapshot.data() as Map<String, dynamic>? ?? {};
 
-        // Hoàn tiền
+        // Hoàn tiền vào ví
         final double amountToRevert = -((adjustmentToRemove['total'] as num?)?.toDouble() ?? 0.0);
         transaction.update(walletRef, {'balance': FieldValue.increment(amountToRevert)});
 
-        // Xóa bản ghi thanh toán
+        // Xóa bản ghi thanh toán (wallet adjustment)
         List<Map<String, dynamic>> adjustments = List.from(dailyData['walletAdjustments'] ?? []);
         adjustments.removeWhere((adj) => adj['id'] == transactionId);
         transaction.update(dailyDataRef, {'walletAdjustments': adjustments});
 
-        // Xóa chi phí gốc (giờ đã tìm đúng tài liệu)
-        if (sourceExpenseId != null && otherExpenseRef != null && otherExpenseSnapshot != null && otherExpenseSnapshot.exists) {
-          final otherExpenseData = otherExpenseSnapshot.data() as Map<String, dynamic>?;
-          if (otherExpenseData != null) {
-            List<Map<String, dynamic>> expenses = List.from(otherExpenseData['otherExpenses'] ?? []);
-            expenses.removeWhere((e) => e['id'] == sourceExpenseId);
-            double newTotal = expenses.fold(0.0, (sum, item) => sum + (item['amount']?.toDouble() ?? 0.0));
-            transaction.update(otherExpenseRef, {'otherExpenses': expenses, 'total': newTotal});
-          }
+        // Xóa chi phí gốc (nếu có)
+        if (otherExpenseRef != null && otherExpenseSnapshot != null && otherExpenseSnapshot.exists) {
+          final otherExpenseData = otherExpenseSnapshot.data() as Map<String, dynamic>? ?? {};
+          List<Map<String, dynamic>> expenses = List.from(otherExpenseData['otherExpenses'] ?? []);
+          expenses.removeWhere((e) => e['id'] == sourceExpenseId);
+          double newTotal = expenses.fold(0.0, (sum, item) => sum + (item['amount']?.toDouble() ?? 0.0));
+          transaction.update(otherExpenseRef, {'otherExpenses': expenses, 'total': newTotal});
         }
       });
 
-      setSelectedDate(selectedDate);
+      // === PHẦN 2: DỌN DẸP TRẠNG THÁI CỤC BỘ (Giữ nguyên) ===
+      print("--- [LOG XÓA] Bắt đầu dọn dẹp state cục bộ ---");
+      print("[LOG XÓA] Wallet Adjustments TRƯỚC khi xóa: ${walletAdjustments.value.length} mục");
+      final double amountToRevert = -((adjustmentToRemove['total'] as num?)?.toDouble() ?? 0.0);
+      final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
+      if (walletIndex != -1) {
+        wallets.value[walletIndex]['balance'] += amountToRevert;
+      }
+      walletAdjustments.value.removeWhere((adj) => adj['id'] == transactionId);
+      if (adjustmentType == 'other_expense_payment' && sourceExpenseId != null) {
+        otherExpenseTransactions.value.removeWhere((e) => e['id'] == sourceExpenseId);
+        otherExpense = otherExpenseTransactions.value.fold(0.0, (sum, e) => sum + ((e['amount'] as num?)?.toDouble() ?? 0.0));
+      }
+      print("[LOG XÓA] Wallet Adjustments SAU khi xóa: ${walletAdjustments.value.length} mục");
+      print("--- [LOG XÓA] Kết thúc dọn dẹp state cục bộ ---");
+      _updateProfitAndRelatedListenables();
+      wallets.value = List.from(wallets.value);
+      walletAdjustments.value = List.from(walletAdjustments.value);
+      otherExpenseTransactions.value = List.from(otherExpenseTransactions.value);
       notifyListeners();
+
     } catch (e) {
       print("Lỗi trong hàm deleteWalletAdjustment: $e");
+      setSelectedDate(selectedDate);
       throw e;
     }
   }
