@@ -45,7 +45,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // <<< CÁC LỆNH KHỞI TẠO ĐẦY ĐỦ VÀ ĐÚNG THỨ TỰ >>>
   await Hive.initFlutter();
   await initializeDateFormatting('vi', null); // Khởi tạo định dạng ngày tháng TV
   await Firebase.initializeApp();
