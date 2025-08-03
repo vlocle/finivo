@@ -110,6 +110,13 @@ class MyApp extends StatelessWidget {
     // Provider đã được chuyển lên trên MultiProvider
     final appState = Provider.of<AppState>(context);
     return MaterialApp(
+      builder: (context, child) {
+        // Ghi đè cài đặt của hệ thống và đặt hệ số co giãn chữ là 1.0 (mặc định)
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
+          child: child!,
+        );
+      },
       debugShowCheckedModeBanner: false,
       title: 'FinGrowth',
       theme: ThemeData(
