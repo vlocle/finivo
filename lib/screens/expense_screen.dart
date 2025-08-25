@@ -148,38 +148,34 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     );
   }
 
-  void removeExpense(AppState appState, int index, String category) {
+  Future<void> removeExpense(AppState appState, int index, String category) async {
     ValueNotifier<List<Map<String, dynamic>>> targetNotifier = _getExpenseListenable(appState);
 
     if (index < 0 || index >= targetNotifier.value.length) return;
 
-    final expenseToRemove = targetNotifier.value[index];
+    // Lấy thông tin cần thiết TRƯỚC khi thực hiện tác vụ bất đồng bộ
+    final expenseToRemove = Map<String, dynamic>.from(targetNotifier.value[index]);
     final removedItemName = expenseToRemove['name'] ?? 'Chi phí không tên';
 
-    // Kiểm tra category để gọi đúng logic xóa
-    if (category == 'Chi phí khác') {
-      appState.removeOtherExpenseAndUpdateState(expenseToRemove: expenseToRemove).then((_) {
-        _showStyledSnackBar("Đã xóa: $removedItemName");
-      }).catchError((e) {
-        _showStyledSnackBar("Lỗi khi xóa: $e", isError: true);
-      });
-    } else {
-      // Giữ lại logic cũ cho Chi phí Cố định và Biến đổi
-      final currentList = List<Map<String, dynamic>>.from(targetNotifier.value);
-      currentList.removeAt(index);
+    try {
+      if (category == 'Chi phí khác') {
+        await appState.removeOtherExpenseAndUpdateState(expenseToRemove: expenseToRemove);
+      } else {
+        // Giữ lại logic cũ cho Chi phí Cố định và Biến đổi nhưng dùng await
+        final currentList = List<Map<String, dynamic>>.from(targetNotifier.value);
+        currentList.removeAt(index);
 
-      Future<void> saveFuture;
-      if (category == 'Chi phí cố định') {
-        saveFuture = ExpenseManager.saveFixedExpenses(appState, currentList);
-      } else { // Chi phí biến đổi
-        saveFuture = ExpenseManager.saveVariableExpenses(appState, currentList);
+        if (category == 'Chi phí cố định') {
+          await ExpenseManager.saveFixedExpenses(appState, currentList);
+        } else { // Chi phí biến đổi
+          await ExpenseManager.saveVariableExpenses(appState, currentList);
+        }
       }
+      // Chỉ hiển thị SnackBar sau khi mọi thứ đã hoàn tất thành công
+      _showStyledSnackBar("Đã xóa: $removedItemName");
 
-      saveFuture.then((_) {
-        _showStyledSnackBar("Đã xóa: $removedItemName");
-      }).catchError((e) {
-        _showStyledSnackBar("Lỗi khi xóa: $e", isError: true);
-      });
+    } catch (e) {
+      _showStyledSnackBar("Lỗi khi xóa", isError: true);
     }
   }
 
@@ -1455,9 +1451,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                               borderRadius: BorderRadius.circular(12),
                             ),
                             SlidableAction(
-                              onPressed: (context) async {
+                              onPressed: (actionContext) async { // Đổi tên context để tránh nhầm lẫn
                                 final confirm = await showDialog<bool>(
-                                  context: context,
+                                  context: context, // <-- SỬA LỖI: Dùng context của _ExpenseScreenState (từ builder)
                                   builder: (dialogCtx) => AlertDialog(
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                                     title: Text('Xác nhận xóa', style: TextStyle(color: AppColors.getTextColor(context), fontWeight: FontWeight.bold)),

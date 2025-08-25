@@ -246,34 +246,82 @@ class _RevenueScreenState extends State<RevenueScreen>
 
   // Dán để thay thế hàm _removeTransaction cũ trong class _RevenueScreenState
 
-  void _removeTransaction(AppState appState, List<Map<String, dynamic>> transactions, int index) {
-    // Kiểm tra chỉ số hợp lệ
+  void _removeTransaction(AppState appState, List<Map<String, dynamic>> transactions, int index) async {
+    // Bước 1: Kiểm tra chỉ số hợp lệ và lấy giao dịch cần xóa
     if (index < 0 || index >= transactions.length) return;
-
-    // Lấy thông tin giao dịch cần xóa
     final transactionToRemove = transactions[index];
     final removedItemName = transactionToRemove['name'] as String? ?? "Giao dịch không rõ";
 
-    // Gọi hàm xóa toàn năng mới trong AppState
-    appState.deleteTransactionAndUpdateAll(
-      transactionToRemove: transactionToRemove,
-    ).then((_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Đã xóa giao dịch: $removedItemName'),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            margin: EdgeInsets.all(10),
+    // Bước 2: Hiển thị dialog xác nhận từ người dùng
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text(
+          'Xác nhận xóa',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
+        ),
+        content: Text(
+          'Bạn có chắc chắn muốn xóa giao dịch "$removedItemName" không? Hành động này không thể hoàn tác.',
+          style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Hủy'),
           ),
-        );
-      }
-    }).catchError((e) {
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Xóa', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+
+    // Nếu người dùng không xác nhận hoặc widget đã bị hủy, dừng lại
+    if (confirm != true || !mounted) return;
+
+    // Bước 3: Hiển thị dialog loading không thể tắt
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Ngăn người dùng tắt dialog
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: AppColors.primaryBlue),
+            const SizedBox(width: 20),
+            Text("Đang xóa...", style: GoogleFonts.poppins()),
+          ],
+        ),
+      ),
+    );
+
+    // Bước 4: Thực hiện quá trình xóa và xử lý kết quả
+    try {
+      // Gọi hàm xóa toàn năng trong AppState
+      await appState.deleteTransactionAndUpdateAll(
+        transactionToRemove: transactionToRemove,
+      );
+
+      // Sau khi xóa thành công, đóng dialog loading
       if (mounted) {
-        _showStyledSnackBar("Lỗi khi xóa giao dịch: $e", isError: true);
+        Navigator.pop(context); // Đóng dialog loading
+        _showStyledSnackBar('Đã xóa giao dịch: $removedItemName', isError: false);
       }
-    });
+    } catch (e) {
+      // Nếu có lỗi, đóng dialog loading và thông báo lỗi
+      if (mounted) {
+        Navigator.pop(context); // Đóng dialog loading
+        _showStyledSnackBar("Lỗi khi xóa giao dịch", isError: true);
+      }
+    }
   }
 
   // Bên trong class _RevenueScreenState
@@ -1002,43 +1050,8 @@ class _RevenueScreenState extends State<RevenueScreen>
                               borderRadius: BorderRadius.circular(12),
                             ),
                             SlidableAction(
-                              onPressed: (context) async {
-                                final confirm = await showDialog<bool>(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                                    title: Text(
-                                      'Xác nhận xóa',
-                                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: AppColors.getTextColor(context)),
-                                    ),
-                                    content: Text(
-                                      'Bạn có chắc chắn muốn xóa giao dịch "${transaction['name']}" không? Hành động này không thể hoàn tác.',
-                                      style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context)),
-                                    ),
-                                    actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context, false),
-                                        child: Text(
-                                            'Hủy',
-                                            style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context), fontWeight: FontWeight.w500)
-                                        ),
-                                      ),
-                                      ElevatedButton(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.redAccent,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        onPressed: () => Navigator.pop(context, true),
-                                        child: Text('Xóa', style: GoogleFonts.poppins()),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (confirm == true) {
-                                  _removeTransaction(appState, transactions, index);
-                                }
+                              onPressed: (context) {
+                                _removeTransaction(appState, transactions, index);
                               },
                               backgroundColor: Colors.redAccent.shade400,
                               foregroundColor: Colors.white,

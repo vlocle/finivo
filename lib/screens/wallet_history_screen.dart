@@ -218,32 +218,36 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
                         title: Text(
                           transaction['name'],
                           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
+                          // KHÔNG còn maxLines và overflow, cho phép text tự xuống dòng
                         ),
-                        subtitle: Text(DateFormat('HH:mm').format(DateTime.parse(transaction['date']))),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${isIncome ? "+" : ""} ${currencyFormat.format(amount)}',
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: isIncome ? Colors.green.shade700 : Colors.red.shade700,
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4.0), // Thêm một chút khoảng cách
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Chuyển số tiền vào đây
+                              Text(
+                                '${isIncome ? "+" : ""} ${currencyFormat.format(amount)}',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: isIncome ? Colors.green.shade700 : Colors.red.shade700,
+                                ),
                               ),
-                            ),
-
-                            // === ÁP DỤNG ĐIỀU KIỆN VÀO ĐÂY ===
-                            if (canBeDeleted)
-                              IconButton(
-                                icon: Icon(Icons.delete_outline, color: Colors.grey[600]),
-                                onPressed: () => _deleteTransaction(transaction),
-                                tooltip: "Xóa giao dịch",
-                              ),
-                            // ==================================
-                          ],
+                              const SizedBox(height: 2),
+                              // Giữ lại thời gian
+                              Text(DateFormat('HH:mm').format(DateTime.parse(transaction['date']))),
+                            ],
+                          ),
                         ),
+                        // Giờ đây trailing chỉ chứa nút xóa (nếu có)
+                        trailing: canBeDeleted
+                            ? IconButton(
+                          icon: Icon(Icons.delete_outline, color: Colors.grey[600]),
+                          onPressed: () => _deleteTransaction(transaction),
+                          tooltip: "Xóa giao dịch",
+                        )
+                            : null, // Ẩn đi nếu không thể xóa
                       ),
                     );
                   },
