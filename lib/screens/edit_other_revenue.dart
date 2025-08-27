@@ -63,6 +63,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
   void _showCollectPaymentDialog(BuildContext context, AppState appState, Map<String, dynamic> transaction) {
     String? selectedWalletId;
     DateTime paymentDate = DateTime.now(); // Mặc định là hôm nay
+
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -78,12 +79,40 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                 const SizedBox(height: 4),
                 Text('Số tiền: ${currencyFormat.format(transaction['total'] ?? 0.0)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 20),
-                // Widget chọn ví tiền
+
+                // THÊM MỚI: Giao diện chọn ngày thanh toán
+                InkWell(
+                  onTap: () async {
+                    final DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: paymentDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null && picked != paymentDate) {
+                      setDialogState(() {
+                        paymentDate = picked;
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Ngày thực thu',
+                      prefixIcon: Icon(Icons.calendar_today, color: AppColors.primaryBlue),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      DateFormat('dd/MM/yyyy').format(paymentDate),
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 ValueListenableBuilder<List<Map<String, dynamic>>>(
                   valueListenable: appState.wallets,
                   builder: (context, walletList, child) {
                     if (walletList.isEmpty) return const Text("Vui lòng tạo ví tiền trước.");
-                    // Tự động chọn ví mặc định
                     selectedWalletId ??= appState.defaultWallet?['id'] ?? walletList.first['id'];
                     return DropdownButtonFormField<String>(
                       value: selectedWalletId,
@@ -104,13 +133,13 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                 onPressed: () async {
                   if (selectedWalletId != null) {
                     try {
-                      // Gọi hàm core trong AppState với tham số category đã được cập nhật
                       await appState.collectPaymentForTransaction(
-                        category: 'Doanh thu khác', // Cung cấp đúng category
+                        category: 'Doanh thu khác',
                         transactionToUpdate: transaction,
-                        paymentDate: paymentDate,
+                        paymentDate: paymentDate, // <-- SỬ DỤNG NGÀY ĐÃ CHỌN
                         walletId: selectedWalletId!,
-                        transactionRecordDate: appState.selectedDate,
+                        // Lấy ngày ghi nhận gốc của giao dịch
+                        transactionRecordDate: DateTime.parse(transaction['date']),
                       );
                       Navigator.pop(dialogContext);
                       _showStyledSnackBar("Đã ghi nhận thu tiền thành công!");
@@ -130,7 +159,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
 
   // Thay thế hàm _addTransaction [14] trong file edit_other_revenue.docx
 
-  void _addTransaction(AppState appState, bool isCashReceived, String? walletId) {
+  void _addTransaction(AppState appState, bool isCashReceived, String? walletId, DateTime paymentDate) {
     double total = double.tryParse(_totalController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
     if (!appState.isSubscribed && (appState.totalRevenueListenable.value + total > 2000000)) {
       _showUpgradeDialog(context);
@@ -146,7 +175,6 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       return;
     }
 
-    // 1. Xác định "Ngày ghi nhận doanh thu" (dựa trên ngày bạn chọn trong app)
     final now = DateTime.now();
     final correctTransactionDate = DateTime(
         appState.selectedDate.year,
@@ -157,16 +185,14 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
         now.second
     );
 
-    // 2. Tạo bản ghi giao dịch với cả 2 loại ngày
     final newTransaction = {
       'id': Uuid().v4(),
       'name': name,
       'category': 'Doanh thu khác',
       'total': total,
       'quantity': 1.0,
-      'date': correctTransactionDate.toIso8601String(), // <-- NGÀY GHI NHẬN DOANH THU
-      // Thêm trường "paymentDate" nếu có thực thu
-      if (isCashReceived) 'paymentDate': now.toIso8601String(), // <-- NGÀY DÒNG TIỀN
+      'date': correctTransactionDate.toIso8601String(),
+      if (isCashReceived) 'paymentDate': paymentDate.toIso8601String(), // <-- SỬ DỤNG NGÀY ĐƯỢC CHỌN
       'createdBy': appState.authUserId,
     };
 
@@ -181,7 +207,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
       FocusScope.of(context).unfocus();
       widget.onUpdate();
     }).catchError((e) {
-      _showStyledSnackBar('Lỗi khi thêm giao dịch: $e', isError: true);
+      _showStyledSnackBar('Lỗi khi thêm giao dịch', isError: true);
     });
   }
 
@@ -450,7 +476,7 @@ class _EditOtherRevenueScreenState extends State<EditOtherRevenueScreen>
                     nameController: _nameController,
                     // --- CẬP NHẬT LỜI GỌI HÀM ---
                     onAddTransaction: canEditThisRevenue
-                        ? (isCashReceived, walletId) => _addTransaction(appState, isCashReceived, walletId)
+                        ? (isCashReceived, walletId, paymentDate) => _addTransaction(appState, isCashReceived, walletId, paymentDate)
                         : null,
                     appState: appState,
                     inputPriceFormatter: _inputPriceFormatter,
@@ -545,7 +571,7 @@ void _showUpgradeDialog(BuildContext context) {
 class TransactionInputSection extends StatefulWidget {
   final TextEditingController totalController;
   final TextEditingController nameController;
-  final Function(bool isCashReceived, String? walletId)? onAddTransaction; // THAY ĐỔI
+  final Function(bool isCashReceived, String? walletId, DateTime paymentDate)? onAddTransaction;
   final AppState appState;
   final NumberFormat inputPriceFormatter;
 
@@ -566,6 +592,7 @@ class _TransactionInputSectionState extends State<TransactionInputSection> {
   // THÊM MỚI: State để quản lý UI
   bool _isCashReceived = true;
   String? _selectedWalletId;
+  DateTime _paymentDate = DateTime.now();
 
   @override
   Widget build(BuildContext context) {
@@ -627,13 +654,16 @@ class _TransactionInputSectionState extends State<TransactionInputSection> {
                   // --- BẮT ĐẦU CODE MỚI ---
                   const SizedBox(height: 20),
                   SwitchListTile.adaptive(
-                    title: Text("Thực thu vào quỹ?", style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context), fontWeight: FontWeight.w500)),
+                    title: Text("Thực thu vào ví?", style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context), fontWeight: FontWeight.w500)),
                     value: _isCashReceived,
                     onChanged: (bool value) {
                       setState(() {
                         _isCashReceived = value;
                         if (!value) {
                           _selectedWalletId = null;
+                        } else {
+                          // Reset về ngày hôm nay khi bật
+                          _paymentDate = DateTime.now();
                         }
                       });
                     },
@@ -641,7 +671,36 @@ class _TransactionInputSectionState extends State<TransactionInputSection> {
                     contentPadding: EdgeInsets.zero,
                   ),
 
-                  if (_isCashReceived)
+                  if (_isCashReceived) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: InkWell(
+                        onTap: () async {
+                          final DateTime? picked = await showDatePicker(
+                            context: context,
+                            initialDate: _paymentDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null && picked != _paymentDate) {
+                            setState(() {
+                              _paymentDate = picked;
+                            });
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: 'Ngày thực thu',
+                            prefixIcon: Icon(Icons.calendar_today, color: AppColors.primaryBlue),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text(
+                            DateFormat('dd/MM/yyyy').format(_paymentDate),
+                            style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context)),
+                          ),
+                        ),
+                      ),
+                    ),
                     ValueListenableBuilder<List<Map<String, dynamic>>>(
                       valueListenable: widget.appState.wallets,
                       builder: (context, walletList, child) {
@@ -651,12 +710,10 @@ class _TransactionInputSectionState extends State<TransactionInputSection> {
                             child: Text("Chưa có ví tiền nào được tạo.", style: GoogleFonts.poppins(color: AppColors.getTextSecondaryColor(context))),
                           );
                         }
-
                         final defaultWallet = widget.appState.defaultWallet;
                         if (_selectedWalletId == null || !walletList.any((w) => w['id'] == _selectedWalletId)) {
                           _selectedWalletId = defaultWallet != null ? defaultWallet['id'] : walletList.first['id'];
                         }
-
                         return Padding(
                           padding: const EdgeInsets.only(top: 16.0),
                           child: DropdownButtonFormField<String>(
@@ -681,6 +738,7 @@ class _TransactionInputSectionState extends State<TransactionInputSection> {
                         );
                       },
                     ),
+                  ],
                   // --- KẾT THÚC CODE MỚI ---
 
                   const SizedBox(height: 28),
@@ -694,7 +752,7 @@ class _TransactionInputSectionState extends State<TransactionInputSection> {
                       elevation: 2,
                     ),
                     onPressed: widget.onAddTransaction != null
-                        ? () => widget.onAddTransaction!(_isCashReceived, _selectedWalletId)
+                        ? () => widget.onAddTransaction!(_isCashReceived, _selectedWalletId, _paymentDate)
                         : null,
                     child: Text(
                       "Thêm giao dịch",

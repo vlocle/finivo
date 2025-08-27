@@ -1459,6 +1459,7 @@ class AppState extends ChangeNotifier {
   Future<void> payForVariableExpenseAndUpdateState({
     required Map<String, dynamic> expenseToPay,
     required String walletId,
+    required DateTime paymentDate,
   }) async {
     if (activeUserId == null) throw Exception("User not logged in");
 
@@ -1469,7 +1470,7 @@ class AppState extends ChangeNotifier {
     final fullyUpdatedExpense = Map<String, dynamic>.from(expenseToPay);
     fullyUpdatedExpense['paymentStatus'] = 'paid';
     fullyUpdatedExpense['walletId'] = walletId;
-    fullyUpdatedExpense['paymentDate'] = DateTime.now().toIso8601String();
+    fullyUpdatedExpense['paymentDate'] = paymentDate.toIso8601String();
 
     // Cập nhật trong danh sách chi phí biến đổi local
     final list = variableExpenseList.value;
@@ -1487,7 +1488,7 @@ class AppState extends ChangeNotifier {
       'category': 'Điều chỉnh Ví',
       'walletId': walletId,
       'total': -amountToPay,
-      'date': DateTime.now().toIso8601String(),
+      'date': paymentDate.toIso8601String(),
       'createdBy': authUserId,
       'sourceExpenseId': expenseId, // <-- Đảm bảo liên kết được tạo ra
       'sourceSalesTransactionId': expenseToPay['sourceSalesTransactionId'],
@@ -1581,7 +1582,7 @@ class AppState extends ChangeNotifier {
             'category': 'Điều chỉnh Ví',
             'walletId': spendingWalletId,
             'total': -amount, // Ghi nhận là một khoản chi ra (số âm)
-            'date': DateTime.now().toIso8601String(),
+            'date': newCog['paymentDate'],
             'createdBy': authUserId,
             'sourceExpenseId': newCog['id'], // Liên kết với chi phí gốc
             'adjustmentType': 'cogs_payment',
@@ -2489,13 +2490,33 @@ class AppState extends ChangeNotifier {
   Future<void> deleteWalletAdjustment({
     required Map<String, dynamic> adjustmentToRemove,
   }) async {
-    if (activeUserId == null) throw Exception("User not logged in.");
+    if (activeUserId == null) {
+      // ==> LOG SỐ 4A: GHI LẠI LỖI TIỀM TÀNG
+      print("[LOG] deleteWalletAdjustment: Bị chặn vì activeUserId là null.");
+      throw Exception("User not logged in.");
+    }
 
+    print("[LOG] deleteWalletAdjustment: Bắt đầu hàm với dữ liệu:");
+    print(adjustmentToRemove);
+
+    // Lấy các thông tin cần thiết từ giao dịch cần xóa
     final String transactionId = adjustmentToRemove['id'] as String? ?? '';
     final String walletId = adjustmentToRemove['walletId'] as String? ?? '';
+    final String paymentDateString = adjustmentToRemove['date'] as String? ?? '';
+
+    // <<< THAY ĐỔI LỚN: Lấy ID của bản ghi thanh toán gốc >>>
+    final String? sourceScheduledPaymentId = adjustmentToRemove['sourceScheduledPaymentId'] as String?;
+    // <<< KẾT THÚC THAY ĐỔI >>>
+
+    if (sourceScheduledPaymentId != null) {
+      print("[LOG] deleteWalletAdjustment: Tìm thấy sourceScheduledPaymentId: ${sourceScheduledPaymentId}");
+    } else {
+      print("[LOG] deleteWalletAdjustment: KHÔNG tìm thấy sourceScheduledPaymentId. Đây có thể là giao dịch thủ công.");
+    }
+
+    // Giữ lại logic cũ để tương thích với các loại xóa khác (nếu có)
     final String? sourceExpenseId = adjustmentToRemove['sourceExpenseId'] as String?;
     final String? adjustmentType = adjustmentToRemove['adjustmentType'] as String?;
-    final String paymentDateString = adjustmentToRemove['date'] as String? ?? '';
     final String sourceDateString = adjustmentToRemove['sourceExpenseDate'] as String? ?? paymentDateString;
 
     if (transactionId.isEmpty || walletId.isEmpty || paymentDateString.isEmpty) {
@@ -2507,38 +2528,51 @@ class AppState extends ChangeNotifier {
     final firestore = FirebaseFirestore.instance;
 
     try {
-      // === PHẦN 1: CẬP NHẬT DATABASE ===
+      print("[LOG] deleteWalletAdjustment: Chuẩn bị chạy Firestore Transaction.");
+      // === SỬ DỤNG FIRESTORE TRANSACTION ĐỂ ĐẢM BẢO TÍNH TOÀN VẸN DỮ LIỆU ===
       await firestore.runTransaction((transaction) async {
-        // --- ĐỊNH NGHĨA TẤT CẢ CÁC ĐƯỜNG DẪN ---
+        // --- ĐỊNH NGHĨA TẤT CẢ CÁC ĐƯỜNG DẪN CÓ THỂ CẦN ---
         final dailyDataRef = firestore.collection('users').doc(activeUserId).collection('daily_data').doc(getKey(paymentDateKey));
         final walletRef = firestore.collection('users').doc(activeUserId).collection('wallets').doc(walletId);
+
+        DocumentReference? scheduledPaymentRef;
+        if (sourceScheduledPaymentId != null) {
+          scheduledPaymentRef = firestore.collection('scheduledFixedPayments').doc(sourceScheduledPaymentId);
+        }
+
         DocumentReference? otherExpenseRef;
         if (adjustmentType == 'other_expense_payment' && sourceExpenseId != null) {
           final otherExpenseDocId = getKey('otherExpenseList_$sourceDateKey');
           otherExpenseRef = firestore.collection('users').doc(activeUserId).collection('expenses').doc('other').collection('daily').doc(otherExpenseDocId);
         }
 
-        // <<< SỬA LỖI: THỰC HIỆN TẤT CẢ CÁC LỆNH ĐỌC (READ) TRƯỚC TIÊN >>>
+        // --- THỰC HIỆN TẤT CẢ CÁC LỆNH ĐỌC (READ) TRƯỚC TIÊN ---
         final dailySnapshot = await transaction.get(dailyDataRef);
         DocumentSnapshot? otherExpenseSnapshot;
         if (otherExpenseRef != null) {
           otherExpenseSnapshot = await transaction.get(otherExpenseRef);
         }
 
-        // Sau khi đã đọc xong, bây giờ mới bắt đầu xử lý và ghi (WRITE)
         if (!dailySnapshot.exists) { return; }
-        final dailyData = dailySnapshot.data() as Map<String, dynamic>? ?? {};
 
-        // Hoàn tiền vào ví
+        // --- BẮT ĐẦU CÁC LỆNH GHI (WRITE) ---
+
+        // 1. Hoàn tiền vào ví
         final double amountToRevert = -((adjustmentToRemove['total'] as num?)?.toDouble() ?? 0.0);
         transaction.update(walletRef, {'balance': FieldValue.increment(amountToRevert)});
 
-        // Xóa bản ghi thanh toán (wallet adjustment)
+        // 2. Xóa bản ghi giao dịch (wallet adjustment) khỏi mảng
+        final dailyData = dailySnapshot.data() as Map<String, dynamic>? ?? {};
         List<Map<String, dynamic>> adjustments = List.from(dailyData['walletAdjustments'] ?? []);
         adjustments.removeWhere((adj) => adj['id'] == transactionId);
         transaction.update(dailyDataRef, {'walletAdjustments': adjustments});
 
-        // Xóa chi phí gốc (nếu có)
+        // 3. Cập nhật lại trạng thái của bản ghi thanh toán gốc (nếu là chi phí cố định tự động)
+        if (scheduledPaymentRef != null) {
+          transaction.update(scheduledPaymentRef, {'status': 'scheduled'});
+        }
+
+        // 4. Xử lý xóa chi phí gốc (nếu là chi phí khác)
         if (otherExpenseRef != null && otherExpenseSnapshot != null && otherExpenseSnapshot.exists) {
           final otherExpenseData = otherExpenseSnapshot.data() as Map<String, dynamic>? ?? {};
           List<Map<String, dynamic>> expenses = List.from(otherExpenseData['otherExpenses'] ?? []);
@@ -2548,17 +2582,22 @@ class AppState extends ChangeNotifier {
         }
       });
 
-      // === PHẦN 2: DỌN DẸP TRẠNG THÁI CỤC BỘ (Giữ nguyên) ===
+      print("[LOG] deleteWalletAdjustment: Firestore Transaction hoàn tất thành công.");
+
+      // === CẬP NHẬT TRẠNG THÁI CỤC BỘ (LOCAL STATE) ĐỂ UI PHẢN HỒI NGAY LẬP TỨC ===
       final double amountToRevert = -((adjustmentToRemove['total'] as num?)?.toDouble() ?? 0.0);
       final walletIndex = wallets.value.indexWhere((w) => w['id'] == walletId);
       if (walletIndex != -1) {
         wallets.value[walletIndex]['balance'] += amountToRevert;
       }
+
       walletAdjustments.value.removeWhere((adj) => adj['id'] == transactionId);
+
       if (adjustmentType == 'other_expense_payment' && sourceExpenseId != null) {
         otherExpenseTransactions.value.removeWhere((e) => e['id'] == sourceExpenseId);
         otherExpense = otherExpenseTransactions.value.fold(0.0, (sum, e) => sum + ((e['amount'] as num?)?.toDouble() ?? 0.0));
       }
+
       _updateProfitAndRelatedListenables();
       wallets.value = List.from(wallets.value);
       walletAdjustments.value = List.from(walletAdjustments.value);
@@ -2566,7 +2605,9 @@ class AppState extends ChangeNotifier {
       notifyListeners();
 
     } catch (e) {
+      print("Lỗi trong hàm deleteWalletAdjustment: $e");
       setSelectedDate(selectedDate);
+      print("[LOG] deleteWalletAdjustment: GẶP LỖI NGHIÊM TRỌNG TRONG HÀM - ${e}");
       throw e;
     }
   }
@@ -2576,6 +2617,7 @@ class AppState extends ChangeNotifier {
     required String walletId,
     required double totalAmount,
     required String groupName,
+    required DateTime paymentDate,
   }) async {
     // ===================================================================
     // ==== BẮT ĐẦU ĐOẠN CODE GỠ LỖI - VUI LÒNG THÊM VÀO ĐÂY ====
@@ -2583,7 +2625,6 @@ class AppState extends ChangeNotifier {
     if (expensesToPay.isNotEmpty) {
       final firstExpense = expensesToPay.first;
       final String? expenseDateString = firstExpense['date'] as String?;
-      print("Ngày của chi phí (dạng chuỗi từ firstExpense['date']): $expenseDateString");
 
       if (expenseDateString != null) {
         try {
@@ -2603,13 +2644,14 @@ class AppState extends ChangeNotifier {
     if (expensesToPay.isEmpty) return;
 
     final idsToUpdate = expensesToPay.map((e) => e['id'] as String).toSet();
+    final paymentDateString = paymentDate.toIso8601String();
 
     // 1. CẬP NHẬT TRẠNG THÁI LOCAL
     for (var expense in variableExpenseList.value) {
       if (idsToUpdate.contains(expense['id'])) {
         expense['paymentStatus'] = 'paid';
         expense['walletId'] = walletId;
-        expense['paymentDate'] = DateTime.now().toIso8601String();
+        expense['paymentDate'] = paymentDateString;
       }
     }
 
@@ -2620,7 +2662,7 @@ class AppState extends ChangeNotifier {
       'category': 'Điều chỉnh Ví',
       'walletId': walletId,
       'total': -totalAmount,
-      'date': DateTime.now().toIso8601String(),
+      'date': paymentDateString,
       'createdBy': authUserId,
       // === SỬA LỖI CỐT LÕI TẠI ĐÂY ===
       // Gán đúng ID của doanh thu vào đúng trường sourceSalesTransactionId
@@ -3361,7 +3403,7 @@ class AppState extends ChangeNotifier {
         'category': 'Điều chỉnh Ví',
         'walletId': walletId,
         'total': -amount,
-        'date': DateTime.now().toIso8601String(),
+        'date': newExpense['paymentDate'] ?? DateTime.now().toIso8601String(),
         'createdBy': authUserId,
         'sourceExpenseId': newExpense['id'],
         'sourceExpenseDate': newExpense['date'],
@@ -3648,6 +3690,7 @@ class AppState extends ChangeNotifier {
   Future<void> payForOtherExpense({
     required Map<String, dynamic> expenseToPay,
     required String walletId,
+    required DateTime paymentDate,
   }) async {
     if (activeUserId == null) return;
 
@@ -3669,7 +3712,7 @@ class AppState extends ChangeNotifier {
       'category': 'Điều chỉnh Ví',
       'walletId': walletId,
       'total': -amount,
-      'date': DateTime.now().toIso8601String(),
+      'date': paymentDate.toIso8601String(),
       'createdBy': authUserId,
       'sourceExpenseId': expenseId,
       'adjustmentType': 'other_expense_payment',

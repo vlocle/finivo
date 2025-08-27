@@ -87,6 +87,9 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
 
     if (confirm != true || !mounted) return;
 
+    print("[LOG] _deleteTransaction: Chuẩn bị xóa giao dịch sau:");
+    print(transaction);
+
     // Hiển thị dialog loading ngay lập tức
     showDialog(
       context: context,
@@ -184,8 +187,8 @@ class _WalletHistoryScreenState extends State<WalletHistoryScreen> {
                   elements: transactions,
                   groupBy: (transaction) {
                     // Ưu tiên nhóm theo ngày thanh toán nếu có, nếu không thì dùng ngày giao dịch
-                    final String dateStringToGroupBy = transaction['paymentDate'] ?? transaction['date'];
-                    return DateFormat('yyyy-MM-dd').format(DateTime.parse(dateStringToGroupBy));
+                    final dateString = transaction['paymentDate'] ?? transaction['date'];
+                    return DateFormat('yyyy-MM-dd').format(DateTime.parse(dateString));
                   },
                   groupSeparatorBuilder: (String groupByValue) => Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

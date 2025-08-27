@@ -84,8 +84,10 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
       bool isFlexiblePriceEnabled,
       bool isCashReceived,
       String? walletId,
+      DateTime cashReceivedDate,
       bool isCashSpent,
       String? spendingWalletId,
+      DateTime cashSpentDate,
       ) {
 
     final now = DateTime.now();
@@ -98,7 +100,8 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
         now.second
     );
     final correctDateString = correctTransactionDate.toIso8601String();
-    final actualPaymentDateString = DateTime.now().toIso8601String();
+    final actualPaymentDateString = cashReceivedDate.toIso8601String();
+    final actualSpendingDateString = cashSpentDate.toIso8601String();
     // --- PHẦN 1 & 2: VALIDATE VÀ CHUẨN BỊ DỮ LIỆU ---
     if (selectedProduct == null) {
       _showStyledSnackBar("Vui lòng chọn sản phẩm/dịch vụ!", isError: true);
@@ -203,7 +206,8 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
               "amount": componentCostForTransaction,
               "date": correctDateString,
               "source": cogsSourceType,
-              "sourceSalesTransactionId": transactionId
+              "sourceSalesTransactionId": transactionId,
+              if (isCashSpent) "paymentDate": actualSpendingDateString,
             });
           }
         }
@@ -235,7 +239,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
         _showStyledSnackBar("Đã tự động ghi nhận giá vốn cho $selectedProduct");
       }
     }).catchError((e) {
-      _showStyledSnackBar("Lỗi khi thêm giao dịch: $e", isError: true);
+      _showStyledSnackBar("Lỗi khi thêm giao dịch", isError: true);
     });
 
     // --- PHẦN 4: RESET FORM ---
@@ -249,7 +253,9 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
 
   void _showCollectPaymentDialog(BuildContext context, AppState appState, Map<String, dynamic> transaction) {
     String? selectedWalletId;
-    DateTime paymentDate = DateTime.now(); // Mặc định là hôm nay
+    // BIẾN STATE MỚI: Lưu ngày thanh toán được chọn, mặc định là hôm nay
+    DateTime paymentDate = DateTime.now();
+
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -265,12 +271,41 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                 const SizedBox(height: 4),
                 Text('Số tiền: ${currencyFormat.format(transaction['total'] ?? 0.0)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 20),
-                // Widget chọn ví tiền
+
+                // THÊM MỚI: Giao diện chọn ngày thanh toán
+                InkWell(
+                  onTap: () async {
+                    final DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: paymentDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null && picked != paymentDate) {
+                      setDialogState(() {
+                        paymentDate = picked;
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Ngày thực thu',
+                      prefixIcon: Icon(Icons.calendar_today, color: AppColors.primaryBlue), // Thay AppColors.chartGreen cho màn hình DTP nếu cần
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      DateFormat('dd/MM/yyyy').format(paymentDate),
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Widget chọn ví tiền (giữ nguyên)
                 ValueListenableBuilder<List<Map<String, dynamic>>>(
                   valueListenable: appState.wallets,
                   builder: (context, walletList, child) {
                     if (walletList.isEmpty) return const Text("Vui lòng tạo ví tiền trước.");
-                    // Tự động chọn ví mặc định
                     selectedWalletId ??= appState.defaultWallet?['id'] ?? walletList.first['id'];
                     return DropdownButtonFormField<String>(
                       value: selectedWalletId,
@@ -283,7 +318,6 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                     );
                   },
                 ),
-                // Bạn có thể thêm DatePicker để chọn ngày thực thu ở đây nếu muốn
               ],
             ),
             actions: [
@@ -292,13 +326,13 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                 onPressed: () async {
                   if (selectedWalletId != null) {
                     try {
-                      // Gọi hàm core trong AppState với tham số category
+                      // CẬP NHẬT: Truyền `paymentDate` do người dùng chọn vào hàm
                       await appState.collectPaymentForTransaction(
-                        category: 'Doanh thu chính', // Cung cấp đúng category
+                        category: transaction['category'], // Lấy category từ chính giao dịch
                         transactionToUpdate: transaction,
-                        paymentDate: paymentDate,
+                        paymentDate: paymentDate, // << SỬ DỤNG NGÀY ĐÃ CHỌN
                         walletId: selectedWalletId!,
-                        transactionRecordDate: appState.selectedDate,
+                        transactionRecordDate: DateTime.parse(transaction['date']),
                       );
                       Navigator.pop(dialogContext);
                       _showStyledSnackBar("Đã ghi nhận thu tiền thành công!");
@@ -658,7 +692,7 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                           quantityController: quantityController,
                           priceController: priceController,
                           onAddTransaction: canEditThisRevenue
-                              ? (selectedProduct, selectedPrice, isFlexiblePrice, isCashReceived, walletId, isCashSpent, spendingWalletId) { // <-- Sửa ở đây
+                              ? (selectedProduct, selectedPrice, isFlexiblePrice, isCashReceived, walletId, cashReceivedDate, isCashSpent, spendingWalletId, cashSpentDate) {
                             addTransaction(
                               appState,
                               selectedProduct,
@@ -666,8 +700,10 @@ class _EditMainRevenueScreenState extends State<EditMainRevenueScreen>
                               isFlexiblePrice,
                               isCashReceived,
                               walletId,
-                              isCashSpent, // <-- Sửa ở đây
-                              spendingWalletId, // <-- Sửa ở đây
+                              cashReceivedDate,   // << Truyền vào
+                              isCashSpent,
+                              spendingWalletId,
+                              cashSpentDate,    // << Truyền vào
                             );
                           }
                               : null,
@@ -706,7 +742,7 @@ class ProductInputSection extends StatefulWidget {
   final TextEditingController quantityController;
   final TextEditingController priceController;
   // --- THAY ĐỔI CHỮ KÝ HÀM ---
-  final Function(String?, double, bool, bool, String?, bool, String?)? onAddTransaction;
+  final Function(String?, double, bool, bool, String?, DateTime, bool, String?, DateTime)? onAddTransaction;
   final AppState appState;
   final NumberFormat currencyFormat;
   // --- THÊM THUỘC TÍNH MỚI ---
@@ -732,6 +768,8 @@ class _ProductInputSectionState extends State<ProductInputSection> {
   String? _selectedSpendingWalletId;
   bool _isCashReceived = true;
   String? _selectedWalletId;
+  DateTime _cashReceivedDate = DateTime.now();
+  DateTime _cashSpentDate = DateTime.now();
   String? selectedProductId; // << SỬA LẠI TỪ selectedProduct
 
   double selectedPriceFromDropdown = 0.0;
@@ -1170,7 +1208,36 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                     contentPadding: EdgeInsets.zero,
                   ),
 
-                  if (_isCashReceived)
+                if (_isCashReceived) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: InkWell(
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: _cashReceivedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 365)), // Giới hạn 1 năm trong tương lai
+                        );
+                        if (picked != null && picked != _cashReceivedDate) {
+                          setState(() {
+                            _cashReceivedDate = picked;
+                          });
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: 'Ngày thực thu',
+                          prefixIcon: Icon(Icons.calendar_today, color: widget.screenPrimaryColor),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text(
+                          DateFormat('dd/MM/yyyy').format(_cashReceivedDate),
+                          style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context)),
+                        ),
+                      ),
+                    ),
+                  ),
                     ValueListenableBuilder<List<Map<String, dynamic>>>(
                       valueListenable: widget.appState.wallets,
                       builder: (context, walletList, child) {
@@ -1222,6 +1289,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                         );
                       },
                     ),
+                ],
                   const SizedBox(height: 20), // Thêm khoảng cách
                   if (_currentUnitVariableCostComponents.isNotEmpty) ...[
                     Divider(height: 24, thickness: 1),
@@ -1239,7 +1307,36 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                       activeColor: AppColors.chartRed, // Màu đỏ cho chi phí
                       contentPadding: EdgeInsets.zero,
                     ),
-                    if (_isCashSpent)
+                    if (_isCashSpent) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: InkWell(
+                          onTap: () async {
+                            final DateTime? picked = await showDatePicker(
+                              context: context,
+                              initialDate: _cashSpentDate,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (picked != null && picked != _cashSpentDate) {
+                              setState(() {
+                                _cashSpentDate = picked;
+                              });
+                            }
+                          },
+                          child: InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: 'Ngày thực chi',
+                              prefixIcon: Icon(Icons.calendar_today, color: AppColors.chartRed),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: Text(
+                              DateFormat('dd/MM/yyyy').format(_cashSpentDate),
+                              style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context)),
+                            ),
+                          ),
+                        ),
+                      ),
                       ValueListenableBuilder<List<Map<String, dynamic>>>(
                         valueListenable: widget.appState.wallets,
                         builder: (context, walletList, child) {
@@ -1268,6 +1365,7 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                           );
                         },
                       ),
+                    ],
                   ],
                   const SizedBox(height: 20),
                   Text("Chi phí biến đổi của sản phẩm:", // [cite: 347]
@@ -1536,8 +1634,10 @@ class _ProductInputSectionState extends State<ProductInputSection> {
                         isFlexiblePriceEnabled,
                         _isCashReceived,
                         _selectedWalletId,
+                        _cashReceivedDate,
                         _isCashSpent,
-                        _selectedSpendingWalletId,);
+                        _selectedSpendingWalletId,
+                        _cashSpentDate,);
                     } : null,
                     child: Text( // [cite: 482]
                       "Thêm giao dịch", // [cite: 482, 483]

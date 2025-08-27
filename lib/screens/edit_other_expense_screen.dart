@@ -70,7 +70,7 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
     );
   }
 
-  void _addExpense(AppState appState, bool isCashSpent, String? selectedWalletId) {
+  void _addExpense(AppState appState, bool isCashSpent, String? selectedWalletId, DateTime paymentDate) {
     final name = _nameController.text.trim();
     final amount = double.tryParse(_amountController.text.replaceAll('.', '').replaceAll(',', '')) ?? 0.0;
     if (name.isEmpty || amount <= 0) {
@@ -81,15 +81,15 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
       _showStyledSnackBar("Vui lòng chọn ví để thực chi.", isError: true);
       return;
     }
+
     final now = DateTime.now();
     final correctTransactionDate = DateTime(
         appState.selectedDate.year,
         appState.selectedDate.month,
         appState.selectedDate.day,
-        now.hour,
-        now.minute,
-        now.second
+        now.hour, now.minute, now.second
     );
+
     final newExpense = {
       'id': Uuid().v4(),
       'name': name,
@@ -97,8 +97,11 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
       'date': correctTransactionDate.toIso8601String(),
       'createdBy': appState.authUserId,
       'walletId': isCashSpent ? selectedWalletId : null,
+      // THÊM MỚI: Gán ngày thanh toán nếu có
+      if (isCashSpent) 'paymentDate': paymentDate.toIso8601String(),
       'category': 'Chi phí khác',
     };
+
     appState.addOtherExpenseAndUpdateState(newExpense: newExpense).then((_) {
       _nameController.clear();
       _amountController.clear();
@@ -190,17 +193,52 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
   void _showPayExpenseDialog(Map<String, dynamic> expenseToPay) {
     String? selectedWalletIdForPayment;
     final appState = context.read<AppState>();
+    // THÊM MỚI: Biến state cho ngày
+    DateTime paymentDate = DateTime.now();
+
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: Text('Xác nhận Thực chi'),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            title: Text('Xác nhận Thực chi', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Thanh toán cho khoản chi: "${expenseToPay['name']}"?'),
-                SizedBox(height: 16),
+                const SizedBox(height: 20),
+
+                // THÊM MỚI: Giao diện chọn ngày
+                InkWell(
+                  onTap: () async {
+                    final DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: paymentDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null && picked != paymentDate) {
+                      setDialogState(() {
+                        paymentDate = picked;
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Ngày thực chi',
+                      prefixIcon: Icon(Icons.calendar_today, color: AppColors.chartRed),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      DateFormat('dd/MM/yyyy').format(paymentDate),
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 ValueListenableBuilder<List<Map<String, dynamic>>>(
                   valueListenable: appState.wallets,
                   builder: (context, walletList, child) {
@@ -210,7 +248,10 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
                       value: selectedWalletIdForPayment,
                       items: walletList.map((w) => DropdownMenuItem(value: w['id'] as String, child: Text(w['name']))).toList(),
                       onChanged: (val) => setDialogState(() => selectedWalletIdForPayment = val),
-                      decoration: InputDecoration(labelText: 'Chi từ ví'),
+                      decoration: InputDecoration(
+                        labelText: 'Chi từ ví',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
                     );
                   },
                 ),
@@ -224,6 +265,7 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
                     appState.payForOtherExpense(
                       expenseToPay: expenseToPay,
                       walletId: selectedWalletIdForPayment!,
+                      paymentDate: paymentDate, // << TRUYỀN NGÀY VÀO HÀM
                     ).then((_){
                       _showStyledSnackBar("Đã thực chi thành công.");
                     }).catchError((e){
@@ -338,7 +380,7 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
                       key: const ValueKey('otherExpenseInput'),
                       amountController: _amountController,
                       nameController: _nameController,
-                      onAddExpense: canEdit ? (isCash, walletId) => _addExpense(appState, isCash, walletId) : null,
+                      onAddExpense: canEdit ? (isCash, walletId, paymentDate) => _addExpense(appState, isCash, walletId, paymentDate) : null,
                       appState: appState,
                       inputPriceFormatter: _inputPriceFormatter,
                     ),
@@ -373,7 +415,7 @@ class _EditOtherExpenseScreenState extends State<EditOtherExpenseScreen>
 class ExpenseInputSection extends StatefulWidget {
   final TextEditingController amountController;
   final TextEditingController nameController;
-  final Function(bool isCashSpent, String? walletId)? onAddExpense;
+  final Function(bool isCashSpent, String? walletId, DateTime paymentDate)? onAddExpense;
   final AppState appState;
   final NumberFormat inputPriceFormatter;
   const ExpenseInputSection({
@@ -391,6 +433,7 @@ class ExpenseInputSection extends StatefulWidget {
 class _ExpenseInputSectionState extends State<ExpenseInputSection> {
   bool _isCashSpent = true;
   String? _selectedWalletId;
+  DateTime _paymentDate = DateTime.now();
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -457,13 +500,44 @@ class _ExpenseInputSectionState extends State<ExpenseInputSection> {
                           _isCashSpent = value;
                           if (!value) {
                             _selectedWalletId = null;
+                          } else {
+                            _paymentDate = DateTime.now();
                           }
                         });
                       },
                       activeColor: AppColors.chartRed,
                       contentPadding: EdgeInsets.zero,
                     ),
-                    if (_isCashSpent)
+                    if (_isCashSpent) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: InkWell(
+                          onTap: () async {
+                            final DateTime? picked = await showDatePicker(
+                              context: context,
+                              initialDate: _paymentDate,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (picked != null && picked != _paymentDate) {
+                              setState(() {
+                                _paymentDate = picked;
+                              });
+                            }
+                          },
+                          child: InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: 'Ngày thực chi',
+                              prefixIcon: Icon(Icons.calendar_today, color: AppColors.chartRed),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: Text(
+                              DateFormat('dd/MM/yyyy').format(_paymentDate),
+                              style: GoogleFonts.poppins(fontSize: 16, color: AppColors.getTextColor(context)),
+                            ),
+                          ),
+                        ),
+                      ),
                       ValueListenableBuilder<List<Map<String, dynamic>>>(
                         valueListenable: widget.appState.wallets,
                         builder: (context, walletList, child) {
@@ -501,6 +575,7 @@ class _ExpenseInputSectionState extends State<ExpenseInputSection> {
                           );
                         },
                       ),
+                    ],
                     const SizedBox(height: 28),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -512,7 +587,7 @@ class _ExpenseInputSectionState extends State<ExpenseInputSection> {
                         elevation: 2,
                       ),
                       onPressed: widget.onAddExpense != null
-                          ? () => widget.onAddExpense!(_isCashSpent, _selectedWalletId)
+                          ? () => widget.onAddExpense!(_isCashSpent, _selectedWalletId, _paymentDate) // << TRUYỀN NGÀY
                           : null,
                       child: Text(
                         "Thêm chi phí",

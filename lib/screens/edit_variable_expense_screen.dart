@@ -423,6 +423,9 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
 
   void _showPayExpenseDialog(BuildContext context, AppState appState, Map<String, dynamic> expense) {
     String? selectedWalletId;
+    // BIẾN STATE MỚI: Lưu ngày thanh toán được chọn, mặc định là hôm nay
+    DateTime paymentDate = DateTime.now();
+
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -438,6 +441,36 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                 const SizedBox(height: 4),
                 Text('Số tiền: ${currencyFormat.format(expense['amount'] ?? 0.0)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: AppColors.chartRed)),
                 const SizedBox(height: 20),
+
+                // THÊM MỚI: Giao diện chọn ngày thanh toán
+                InkWell(
+                  onTap: () async {
+                    final DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: paymentDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null && picked != paymentDate) {
+                      setDialogState(() {
+                        paymentDate = picked;
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Ngày thực chi',
+                      prefixIcon: Icon(Icons.calendar_today, color: AppColors.chartRed),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      DateFormat('dd/MM/yyyy').format(paymentDate),
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 ValueListenableBuilder<List<Map<String, dynamic>>>(
                   valueListenable: appState.wallets,
                   builder: (context, walletList, child) {
@@ -466,10 +499,11 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                 onPressed: () async {
                   if (selectedWalletId != null) {
                     try {
-                      // Gọi hàm mới cho chi phí biến đổi
+                      // CẬP NHẬT: Gọi hàm với paymentDate mới
                       await appState.payForVariableExpenseAndUpdateState(
                         expenseToPay: expense,
                         walletId: selectedWalletId!,
+                        paymentDate: paymentDate, // << SỬ DỤNG NGÀY ĐÃ CHỌN
                       );
                       Navigator.pop(dialogContext);
                       _showStyledSnackBar("Đã ghi nhận thanh toán thành công!");
@@ -630,13 +664,16 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
     final double totalAmount = group['totalAmount'];
     final String groupName = group['groupTitle'];
 
+    // BIẾN STATE MỚI: Lưu ngày thanh toán được chọn, mặc định là hôm nay
+    DateTime paymentDate = DateTime.now();
+
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            title: Text('Xác nhận Thực chi', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            title: Text('Xác nhận Thực chi Nhóm', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,6 +682,36 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                 const SizedBox(height: 4),
                 Text('Tổng số tiền: ${currencyFormat.format(totalAmount)}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: AppColors.chartRed)),
                 const SizedBox(height: 20),
+
+                // THÊM MỚI: Giao diện chọn ngày thanh toán
+                InkWell(
+                  onTap: () async {
+                    final DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: paymentDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null && picked != paymentDate) {
+                      setDialogState(() {
+                        paymentDate = picked;
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Ngày thực chi',
+                      prefixIcon: Icon(Icons.calendar_today, color: AppColors.chartRed),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      DateFormat('dd/MM/yyyy').format(paymentDate),
+                      style: GoogleFonts.poppins(fontSize: 16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 ValueListenableBuilder<List<Map<String, dynamic>>>(
                   valueListenable: appState.wallets,
                   builder: (context, walletList, child) {
@@ -673,12 +740,13 @@ class _EditVariableExpenseScreenState extends State<EditVariableExpenseScreen>
                 onPressed: () async {
                   if (selectedWalletId != null) {
                     try {
-                      // Gọi hàm mới cho thanh toán nhóm
+                      // CẬP NHẬT: Gọi hàm với paymentDate mới
                       await appState.payForVariableExpenseGroupAndUpdateState(
                         expensesToPay: items,
                         walletId: selectedWalletId!,
                         totalAmount: totalAmount,
                         groupName: groupName,
+                        paymentDate: paymentDate, // << SỬ DỤNG NGÀY ĐÃ CHỌN
                       );
                       Navigator.pop(dialogContext);
                       _showStyledSnackBar("Đã ghi nhận thanh toán thành công cho nhóm chi phí!");
